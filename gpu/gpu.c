@@ -69,6 +69,7 @@ typedef struct GpuState {
     MemoryRegion vrammem;  // BAR1 VRAM
     QemuConsole *con;
     QEMUTimer *timer;
+    Mat4 regs[8];
 
     uint8_t  cmd[GPU_CMD_SIZE];
     uint8_t  *vram_ptr;
@@ -76,13 +77,44 @@ typedef struct GpuState {
 
 
 
+/*
+.data
+
+.code
+
+mov m1, 32
+*/
+
 typedef struct Instr {
     uint8_t  *opcode;
     uint8_t   dst;
+    uint16_t  opt;
     uint32_t  arg0;
     uint32_t  arg1;
     uint32_t  arg2;
 } Instr;
+
+#define INSTR_MOV 0U
+#define INSTR_MUL 1U
+#define INSTR_ROTX 2U
+#define INSTR_ROTY 3U
+#define INSTR_IDENT 4U
+#define INSTR_TRANS 5U
+#define INSTR_MVP 6U
+#define INSTR_EXIT 7U
+
+
+#define REG_MN(n) (1 << 31) & n
+#define REG_M0 REG_MN(0)
+#define REG_M1 REG_MN(1)
+#define REG_M2 REG_MN(2)
+#define REG_M3 REG_MN(3)
+#define REG_M4 REG_MN(4)
+#define REG_M5 REG_MN(5)
+#define REG_M6 REG_MN(6)
+#define REG_M7 REG_MN(7)
+
+
 /*
 ISA
 0 MOV dst src
@@ -91,7 +123,7 @@ ISA
 3 ROTY dst src0
 4 IDENT dst
 5 TRANS dst src0 src1 src2
-6 SEND dst
+6 MVP dst
 7 EXIT
 */
 DECLARE_INSTANCE_CHECKER(GpuState, GPU, TYPE_PCI_GPU_DEVICE)
@@ -293,9 +325,7 @@ static Mat4 mat4_translate(float x, float y, float z)
     m.m[0][3] = x; m.m[1][3] = y; m.m[2][3] = z;
     return m;
 }
-// rotx m1 32.0
-// 
-//
+
 static Mat4 mat4_perspective(float fov, float aspect, float near, float far) 
 {
     Mat4 m = {0};
