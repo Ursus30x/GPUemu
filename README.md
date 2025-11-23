@@ -12,8 +12,11 @@ This project could be expanded upon to accept kernel code and implement more com
 
 Since most of this project relies on modification od QEMU and EDK2 projetcs, instead of creating two diffrent forks and mixing our code with their relative sources, we've decided to write our code as patches for both QEMU and EDK2.
 
-    TODO
+Here are the instructions:
+- Make sure that all submodules are downloaded and uptodate
+- Run `scripts/apply_patches.sh` 
+- Run `scripts/build.sh`
 
 ## Running
 
-    TODO 
+`scripts/run.sh`
