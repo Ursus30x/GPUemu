@@ -2,11 +2,11 @@
 
 ### What is this project?
 
-This is a uni project for System Firmware (Oprogramowanie Systemowe) course, that targets to emulate a PCI device in UEFI using QEMU. It's used as a learning tool to understand how PCI devices work and some quirks of creating a valid PCI devices.
+This is a uni project for System Firmware (Oprogramowanie Systemowe) course, that targets to emulate a PCI device in UEFI using QEMU. It's used as a learning tool to understand how PCI devices work and learn about some quirks of creating a valid PCI devices.
 
 This GPU will present 2 modes, as a GPU passthrough for VGA and a simple 3D renderer.
 
-This project could be expanded upon to accept kernel code and implement more complex grahpics pipelines.
+This project could be expanded upon to accept GPU kernel code and implement more complex grahpics pipelines, possible features are endless and probably only held back by this being simulated on CPU.
 
 ## Building
 
