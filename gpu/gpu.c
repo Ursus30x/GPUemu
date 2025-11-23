@@ -11,6 +11,10 @@
 #include "qapi/visitor.h"
 #include "ui/console.h"
 #include <math.h>
+typedef struct { double x, y, z; uint32_t rgba; } Vec3;
+typedef struct { uint32_t a, b; } Edge;
+typedef struct { double m[4][4]; }  Mat4;
+typedef struct { double x, y, z, w; } Vec4;
 
 #define TYPE_PCI_GPU_DEVICE "AREK"
 #define GPU_DEVICE_ID 0x2137
@@ -23,35 +27,41 @@
 #define GPU_VRAM_SIZE (1 << 25)  // 32 MB
 #define GPU_CMD_SIZE 0x1000 
 
+#define REG_MAT_SIZE 8
+#define REG_NUM_OK(num) (num < REG_MAT_SIZE)
+#define REG_NUM(r)        ((r) & 0x7FFFFFFF)
+
 #define REG_GPU_MODE_ADDR 0
-#define REG_PROJECTION_MATRIX_ADDR 1 
+#define REG_EXEC_SHADER_ADDR 1 
 #define REG_UPDATE_RENDER_ADDR 2
 #define REG_UPDATE_FB_ADDR 3
 #define REG_FB_WIDTH_ADDR 4
 #define REG_FB_HEIGHT_ADDR 8
 #define REG_VERTEX_SIZE_ADDR 12 
 #define REG_EDGE_SIZE_ADDR 16
+#define REG_SHADER_ADDR 20
 
 #define REG_GPU_MODE(s) s->cmd[REG_GPU_MODE_ADDR]
-#define REG_PROJECTION_MATRIX(s) s->cmd[REG_PROJECTION_MATRIX_ADDR]
+#define REG_EXEC_SHADER(s) s->cmd[REG_EXEC_SHADER_ADDR]
 #define REG_UPDATE_RENDER(s) s->cmd[REG_UPDATE_RENDER_ADDR]
 #define REG_UPDATE_FB(s) s->cmd[REG_UPDATE_FB_ADDR]
 #define REG_FB_WIDTH(s) *(uint32_t*)&s->cmd[REG_FB_WIDTH_ADDR]
 #define REG_FB_HEIGHT(s) *(uint32_t*)&s->cmd[REG_FB_HEIGHT_ADDR]
 #define REG_VERTEX_SIZE(s) *(uint32_t*)&s->cmd[REG_VERTEX_SIZE_ADDR]
 #define REG_EDGE_SIZE(s) *(uint32_t*)&s->cmd[REG_EDGE_SIZE_ADDR]
+#define REG_SHADER(s) *(uint32_t*)&s->cmd[REG_SHADER_ADDR]
 
 /*
 Divide VRAM into segments:
-  - FB SEGMENT     16 MB offset: 0x0000000
-  - VERTEX SEGMENT 8  MB offset: 0x1000000
-  - EDGES SEGMENT  7  MB offset: 0x1800000
-  - SHADER SEGMENT 1  MB offset: 0x1F00000
+  - FB SEGMENT     8  MB offset: 0x0000000
+  - VERTEX SEGMENT 8  MB offset: 0x0800000
+  - EDGES SEGMENT  8  MB offset: 0x1000000
+  - SHADER SEGMENT 8  MB offset: 0x1800000
 */
 #define GPU_VRAM_FB_SEGMENT_ADDR      0x0000000
-#define GPU_VRAM_VERTEX_SEGMENT_ADDR  0x1000000
-#define GPU_VRAM_EDGES_SEGMENT_ADDR   0x1800000
-#define GPU_VRAM_SHATER_SEGMENT_ADDR  0x1F00000
+#define GPU_VRAM_VERTEX_SEGMENT_ADDR  0x0800000
+#define GPU_VRAM_EDGES_SEGMENT_ADDR   0x1000000
+#define GPU_VRAM_SHATER_SEGMENT_ADDR  0x1800000
 
 #define GPU_VRAM_FB_SEGMENT(s)      &((s)->vram_ptr[GPU_VRAM_FB_SEGMENT_ADDR])
 #define GPU_VRAM_VERTEX_SEGMENT(s)  &((s)->vram_ptr[GPU_VRAM_VERTEX_SEGMENT_ADDR])
@@ -61,7 +71,7 @@ Divide VRAM into segments:
 #define FB(s)            ((uint32_t*) GPU_VRAM_FB_SEGMENT(s))
 #define VERTEX_TABLE(s)  ((Vec3*)    GPU_VRAM_VERTEX_SEGMENT(s))
 #define EDGES_TABLE(s)   ((Edge*)    GPU_VRAM_EDGES_SEGMENT(s))
-#define SHATER_PROGRAM(s)((void*)    GPU_VRAM_SHATER_SEGMENT(s))
+#define SHADER_PROGRAM(s)((void*)    GPU_VRAM_SHATER_SEGMENT(s))
 
 typedef struct GpuState {
     PCIDevice pdev;
@@ -69,42 +79,30 @@ typedef struct GpuState {
     MemoryRegion vrammem;  // BAR1 VRAM
     QemuConsole *con;
     QEMUTimer *timer;
-    Mat4 regs[8];
 
     uint8_t  cmd[GPU_CMD_SIZE];
     uint8_t  *vram_ptr;
 } GpuState;
 
-
-
-/*
-.data
-
-.code
-
-mov m1, 32
-*/
+static  Mat4 regs[REG_MAT_SIZE];
+static  Mat4 mvp;
+typedef union {
+    uint32_t u32;
+    float    f32;
+} InstrArg;
 
 typedef struct Instr {
-    uint8_t  *opcode;
-    uint8_t   dst;
-    uint16_t  opt;
-    uint32_t  arg0;
-    uint32_t  arg1;
-    uint32_t  arg2;
+    uint8_t  opcode;
+    uint8_t  dst;
+    uint16_t opt;
+    InstrArg arg0;
+    InstrArg arg1;
+    InstrArg arg2;
 } Instr;
 
-#define INSTR_MOV 0U
-#define INSTR_MUL 1U
-#define INSTR_ROTX 2U
-#define INSTR_ROTY 3U
-#define INSTR_IDENT 4U
-#define INSTR_TRANS 5U
-#define INSTR_MVP 6U
-#define INSTR_EXIT 7U
 
 
-#define REG_MN(n) (1 << 31) & n
+#define REG_MN(n) (1 << 31) | n
 #define REG_M0 REG_MN(0)
 #define REG_M1 REG_MN(1)
 #define REG_M2 REG_MN(2)
@@ -115,6 +113,7 @@ typedef struct Instr {
 #define REG_M7 REG_MN(7)
 
 
+#define ARG_IS_MEM_ADDR(arg) ((arg >> 31) == 0) 
 /*
 ISA
 0 MOV dst src
@@ -126,6 +125,35 @@ ISA
 6 MVP dst
 7 EXIT
 */
+#define INSTR_MOV 0
+#define INSTR_MUL 1
+#define INSTR_ROTX 2
+#define INSTR_ROTY 3
+#define INSTR_IDENT 4
+#define INSTR_TRANS 5
+#define INSTR_MVP 6
+#define INSTR_EXIT 7
+
+
+
+#define ARG_U32(x) ((InstrArg){ .u32 = (uint32_t)(uintptr_t)(x) })
+#define ARG_F32(x) ((InstrArg){ .f32 = (float)(x) })
+
+#define MAKE_INSTR(op, dst, a0, a1, a2) \
+    (Instr){ (uint8_t)(op), (uint8_t)(dst), 0, (a0), (a1), (a2) }
+
+#define I_MOV(dst, src)              MAKE_INSTR(INSTR_MOV,   dst, ARG_U32(src), ARG_U32(0),      ARG_U32(0))
+#define I_MUL(dst, a0, a1)           MAKE_INSTR(INSTR_MUL,   dst, ARG_U32(a0), ARG_U32(a1),     ARG_U32(0))
+#define I_ROTX(dst, a0)              MAKE_INSTR(INSTR_ROTX,  dst, ARG_F32(a0), ARG_U32(0),      ARG_U32(0))
+#define I_ROTY(dst, a0)              MAKE_INSTR(INSTR_ROTY,  dst, ARG_F32(a0), ARG_U32(0),      ARG_U32(0))
+#define I_IDENT(dst)                 MAKE_INSTR(INSTR_IDENT, dst, ARG_U32(0),  ARG_U32(0),      ARG_U32(0))
+#define I_TRANS(dst, a0, a1, a2)     MAKE_INSTR(INSTR_TRANS, dst, ARG_F32(a0), ARG_F32(a1),     ARG_F32(a2))
+#define I_MVP(dst)                   MAKE_INSTR(INSTR_MVP,   dst, ARG_U32(0),  ARG_U32(0),      ARG_U32(0))
+#define I_EXIT()                     MAKE_INSTR(INSTR_EXIT,  0,   ARG_U32(0),  ARG_U32(0),      ARG_U32(0))
+
+#define INSTR_TABLE(name, ...) \
+    Instr name[] = { __VA_ARGS__ };
+
 DECLARE_INSTANCE_CHECKER(GpuState, GPU, TYPE_PCI_GPU_DEVICE)
 
 static void pci_gpu_register_types(void);
@@ -140,7 +168,7 @@ static void gpu_print_cmd(void *opaque)
     GpuState *s = opaque;
     printf("GPU Registers:\n");
     printf("  GPU_MODE            = %X\n",  REG_GPU_MODE(s));
-    printf("  PROJECTION_MATRIX   = %X\n",  REG_PROJECTION_MATRIX(s));
+    printf("  PROJECTION_MATRIX   = %X\n",  REG_EXEC_SHADER(s));
     printf("  UPDATE_RENDER       = %X\n",  REG_UPDATE_RENDER(s));
     printf("  UPDATE_FB           = %X\n",  REG_UPDATE_FB(s));
 
@@ -149,6 +177,8 @@ static void gpu_print_cmd(void *opaque)
     printf("  VERTEX_SIZE         = %X\n",  REG_VERTEX_SIZE(s));
     printf("  EDGE_SIZE           = %X\n",  REG_EDGE_SIZE(s));
 }
+
+static void gpu_render_frame(void *opaque);
 /* cmd callbacks */
 static uint64_t gpu_cmd_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -222,10 +252,6 @@ static void vga_update_text(void *opaque, console_ch_t *chardata)
 }
 
 
-typedef struct { double x, y, z; uint32_t rgba; } Vec3;
-typedef struct { uint32_t a, b; } Edge;
-typedef struct { double m[4][4]; }  Mat4;
-typedef struct { double x, y, z, w; } Vec4;
 
 static inline void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
@@ -233,6 +259,7 @@ static inline void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
         return;
    FB(gpu)[y * GPU_FB_WIDTH + x] = color;
 }
+
 
 
 static void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, uint32_t color2) 
@@ -340,9 +367,129 @@ static Mat4 mat4_perspective(float fov, float aspect, float near, float far)
 static float angle = PI / 3;
 
 
+static inline Mat4 get_mat_from_arg(int arg_num, const Instr* instr, Mat4* gpu_regs, uint8_t* shader_segment) {
+    Mat4 mat;
+
+    uint32_t arg_val;
+    switch(arg_num) {
+        case 0: arg_val = instr->arg0.u32; break;
+        case 1: arg_val = instr->arg1.u32; break;
+        case 2: arg_val = instr->arg2.u32; break;
+        default: /* invalid arg */ return (Mat4){};
+    }
+    printf("ARG0: %X\n", arg_val);
+    printf("arg: %d\n", ARG_IS_MEM_ADDR(arg_val));
+    if (ARG_IS_MEM_ADDR(arg_val)) {
+        memcpy(&mat, shader_segment + arg_val, sizeof(Mat4));
+    } else {
+        uint32_t src = REG_NUM(arg_val);
+
+        mat = gpu_regs[src];
+    }
+
+    return mat;
+}
+static inline void print_mat4(const Mat4* mat, const char* name) {
+    if (!mat) return;
+    printf("Matrix %s:\n", name);
+    for (int i = 0; i < 4; ++i) {
+        printf("[ ");
+        for (int j = 0; j < 4; ++j) {
+            printf("%8.3f ", mat->m[i][j]);
+        }
+        printf("]\n");
+    }
+    printf("\n");
+}
+static void exec_shader(GpuState *gpu)
+{
+    uint32_t program_offset = REG_SHADER(gpu);
+    void *shader_segment = SHADER_PROGRAM(gpu);
+    void *program_address = shader_segment + program_offset;
+    printf("program_offset: %X\n", program_offset);
+    printf("shader_segment: %p\n", shader_segment);
+    printf("program_address: %p\n", program_address);
+    int end = 1;
+    #define CHECK_REG_NUM(num) if(!REG_NUM_OK(num)){printf("Panic invalid regnum!\n");end = 0;break;}
+
+    do{
+        printf("read\n");
+        Instr instr = *(Instr*)program_address;
+        printf("OPCODE: %d\n", instr.opcode);
+        switch (instr.opcode)
+        {
+        case INSTR_MOV:
+        {
+            CHECK_REG_NUM(instr.dst);
+            if(ARG_IS_MEM_ADDR(instr.arg0.u32))
+                memcpy(&regs[instr.dst], shader_segment+instr.arg0.u32,  sizeof(Mat4));
+            else
+            {
+                uint32_t src = REG_NUM(instr.arg0.u32);
+                CHECK_REG_NUM(src);
+                regs[instr.dst] = regs[src];
+            }
+            break;
+        }
+        case INSTR_MUL:
+        {
+            CHECK_REG_NUM(instr.dst);
+
+            Mat4 a = get_mat_from_arg(0, &instr, regs, shader_segment);
+            Mat4 b = get_mat_from_arg(1, &instr, regs, shader_segment);
+            regs[instr.dst] = mat4_mul(&a,&b);
+            print_mat4(&regs[instr.dst], "mul");
+            break;
+        }
+        case INSTR_MVP:
+            CHECK_REG_NUM(instr.dst);
+            mvp = regs[instr.dst];
+            print_mat4(&mvp, "mvp");
+            break;
+        case INSTR_ROTX:
+            CHECK_REG_NUM(instr.dst);
+            regs[instr.dst] = mat4_rotate_x(instr.arg0.f32);
+            print_mat4(&regs[instr.dst], "rotx");
+            break;
+        case INSTR_ROTY:
+            CHECK_REG_NUM(instr.dst);
+            regs[instr.dst] = mat4_rotate_y(instr.arg0.f32);
+            print_mat4(&regs[instr.dst], "roty");
+            break;
+        case INSTR_TRANS:
+            CHECK_REG_NUM(instr.dst);
+            regs[instr.dst] = mat4_translate(instr.arg0.f32,instr.arg1.f32,instr.arg2.f32);
+            print_mat4(&regs[instr.dst], "trans");
+            break;
+        case INSTR_IDENT:
+            CHECK_REG_NUM(instr.dst);
+            regs[instr.dst] = mat4_identity();
+            break;
+        case INSTR_EXIT:
+            end = 0;
+            REG_EXEC_SHADER(gpu) = 0;
+            printf("[gpu] Exit shader\n");
+            break;
+        default:
+            printf("Panic unkown opcode!\n");
+            end = 0;
+            break;
+        }
+        program_address+=sizeof(Instr);
+    }while(end);
+
+}
+
+
+
 static void gpu_render_frame(void *opaque)
 {
     GpuState *gpu = opaque;
+    if(REG_EXEC_SHADER(gpu) == 1)
+    {
+        return;
+    }
+
     uint32_t width =  REG_FB_WIDTH(gpu);
     uint32_t height =  REG_FB_HEIGHT(gpu);
     uint32_t vertex_size = REG_VERTEX_SIZE(gpu);
@@ -355,14 +502,14 @@ static void gpu_render_frame(void *opaque)
     for(uint32_t i=0;i<width*height;i++) fb[i] = 0xFF000000;
 
 
-    // create MVP matrix
-    Mat4  ry        = mat4_rotate_y(angle);
-    Mat4  rx        = mat4_rotate_x(angle);
+    Mat4  ry        = mat4_rotate_y(0.2f);
+    Mat4  rx        = mat4_rotate_x(0.2f);
     Mat4  model     = mat4_mul(&ry,&rx);
     Mat4  translate = mat4_translate(0, 0, 5);
     model           = mat4_mul(&translate, &model);
+
     Mat4  proj      = mat4_perspective(PI/3, (float)width/height, 1.0f, 10.0f);
-    Mat4  mvp       = mat4_mul(&proj, &model);
+    Mat4  mvp_local       = mat4_mul(&proj, &mvp);
     //
 
     uint32_t *px = malloc(sizeof(uint32_t)* vertex_size);
@@ -370,7 +517,7 @@ static void gpu_render_frame(void *opaque)
     for(uint32_t i=0;i<vertex_size;i++) 
     {
         Vec4 v = {vertices[i].x, vertices[i].y, vertices[i].z, 1.0f};
-        Vec4 tv = mat4_mul_vec4(&mvp, v);
+        Vec4 tv = mat4_mul_vec4(&mvp_local, v);
 
         float ndc_x = tv.x / tv.w;
         float ndc_y = tv.y / tv.w;
@@ -424,7 +571,30 @@ static void timer_callback(void *opaque)
 {
     GpuState *gpu = opaque;
 
-    angle+=0.02f;
+    angle+=0.002f;
+    /*
+    rotx m0, angle
+    roty m1, angle
+    mul m2, m0, m1
+    trans m1, 0, 0, 5
+    mul m0, m1, m2
+    mvp m0
+    exit
+    */
+    void *ss = SHADER_PROGRAM(gpu) + REG_SHADER(gpu);
+    INSTR_TABLE(program,
+    I_ROTX(REG_M0, angle),          
+    I_ROTY(REG_M1, angle),           
+    I_MUL(REG_M2, REG_M0, REG_M1), 
+    I_TRANS(REG_M1, 0, 0, 5), 
+    I_MUL(REG_M0, REG_M1, REG_M2), 
+    I_MVP(REG_M0),
+    I_EXIT()
+    );
+    memcpy(ss, program, sizeof(program));
+    REG_EXEC_SHADER(gpu) = 1;
+    exec_shader(gpu);
+
     vga_update_display(gpu);
 
     graphic_hw_update(gpu->con);
@@ -432,6 +602,29 @@ static void timer_callback(void *opaque)
     timer_mod(gpu->timer,
         qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000000ULL);
 }
+// static const char* st(uint8_t op) {
+//     switch(op) {
+//         case INSTR_MOV:   return "MOV";
+//         case INSTR_MUL:   return "MUL";
+//         case INSTR_ROTX:  return "ROTX";
+//         case INSTR_TRANS: return "TRANS";
+//         case INSTR_EXIT:  return "EXIT";
+//         default:          return "UNKNOWN";
+//     }
+// }
+
+// static void print_program(Instr* prog, size_t count) {
+//     for(size_t i = 0; i < count; i++) {
+//         Instr* instr = &prog[i];
+//         printf("%02zu: %s dst=%u arg0=%u arg1=%u arg2=%u\n",
+//                i, st(instr->opcode),
+//                instr->dst,
+//                instr->arg0.u32,
+//                instr->arg1.u32,
+//                instr->arg2.u32);
+//     }
+//}
+
 
 /* Realize GPU device */
 static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
@@ -458,7 +651,8 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     REG_FB_WIDTH(gpu) = 640;
     REG_VERTEX_SIZE(gpu) = 8;
     REG_EDGE_SIZE(gpu) = 13;
-
+    REG_SHADER(gpu) = 0;
+ 
     Vec3 cube_vertices[] = {
     { -1, -1, -1, 0xFFFF0000 },
     {  1, -1, -1, 0xFF00FF00 },
@@ -479,6 +673,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     memcpy(vertices, cube_vertices, sizeof(cube_vertices));
     memcpy(edges, cube_edges, sizeof(cube_edges));
 
+        REG_EXEC_SHADER(gpu) = 1;
 
     gpu->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, timer_callback, gpu);
     timer_mod(   gpu->timer , qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000000ULL);
