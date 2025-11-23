@@ -46,34 +46,54 @@ Divide VRAM into segments:
   - FB SEGMENT     16 MB offset: 0x0000000
   - VERTEX SEGMENT 8  MB offset: 0x1000000
   - EDGES SEGMENT  7  MB offset: 0x1800000
-  - MATRIX SEGMENT 1  MB offset: 0x1F00000
+  - SHADER SEGMENT 1  MB offset: 0x1F00000
 */
 #define GPU_VRAM_FB_SEGMENT_ADDR      0x0000000
 #define GPU_VRAM_VERTEX_SEGMENT_ADDR  0x1000000
 #define GPU_VRAM_EDGES_SEGMENT_ADDR   0x1800000
-#define GPU_VRAM_MATRIX_SEGMENT_ADDR  0x1F00000
+#define GPU_VRAM_SHATER_SEGMENT_ADDR  0x1F00000
 
 #define GPU_VRAM_FB_SEGMENT(s)      &((s)->vram_ptr[GPU_VRAM_FB_SEGMENT_ADDR])
 #define GPU_VRAM_VERTEX_SEGMENT(s)  &((s)->vram_ptr[GPU_VRAM_VERTEX_SEGMENT_ADDR])
 #define GPU_VRAM_EDGES_SEGMENT(s)   &((s)->vram_ptr[GPU_VRAM_EDGES_SEGMENT_ADDR])
-#define GPU_VRAM_MATRIX_SEGMENT(s)  &((s)->vram_ptr[GPU_VRAM_MATRIX_SEGMENT_ADDR])
+#define GPU_VRAM_SHATER_SEGMENT(s)  &((s)->vram_ptr[GPU_VRAM_SHATER_SEGMENT_ADDR])
 
 #define FB(s)            ((uint32_t*) GPU_VRAM_FB_SEGMENT(s))
 #define VERTEX_TABLE(s)  ((Vec3*)    GPU_VRAM_VERTEX_SEGMENT(s))
 #define EDGES_TABLE(s)   ((Edge*)    GPU_VRAM_EDGES_SEGMENT(s))
-#define MATRIX_TABLE(s)  ((Mat4*)    GPU_VRAM_MATRIX_SEGMENT(s))
+#define SHATER_PROGRAM(s)((void*)    GPU_VRAM_SHATER_SEGMENT(s))
 
 typedef struct GpuState {
     PCIDevice pdev;
     MemoryRegion cmdmem;   // BAR0 commannds
     MemoryRegion vrammem;  // BAR1 VRAM
     QemuConsole *con;
+    QEMUTimer *timer;
 
     uint8_t  cmd[GPU_CMD_SIZE];
     uint8_t  *vram_ptr;
 } GpuState;
 
 
+
+typedef struct Instr {
+    uint8_t  *opcode;
+    uint8_t   dst;
+    uint32_t  arg0;
+    uint32_t  arg1;
+    uint32_t  arg2;
+} Instr;
+/*
+ISA
+0 MOV dst src
+1 MUL dst src0 src1
+2 ROTX dst src0
+3 ROTY dst src0
+4 IDENT dst
+5 TRANS dst src0 src1 src2
+6 SEND dst
+7 EXIT
+*/
 DECLARE_INSTANCE_CHECKER(GpuState, GPU, TYPE_PCI_GPU_DEVICE)
 
 static void pci_gpu_register_types(void);
@@ -273,7 +293,9 @@ static Mat4 mat4_translate(float x, float y, float z)
     m.m[0][3] = x; m.m[1][3] = y; m.m[2][3] = z;
     return m;
 }
-
+// rotx m1 32.0
+// 
+//
 static Mat4 mat4_perspective(float fov, float aspect, float near, float far) 
 {
     Mat4 m = {0};
@@ -285,7 +307,7 @@ static Mat4 mat4_perspective(float fov, float aspect, float near, float far)
     m.m[3][2] = 1.0f;
     return m;
 }
-
+static float angle = PI / 3;
 
 
 static void gpu_render_frame(void *opaque)
@@ -304,10 +326,7 @@ static void gpu_render_frame(void *opaque)
 
 
     // create MVP matrix
-    //RX_ANGLE, RY_ANGLE TRANSTATE(X,Y,Z)  fov aspect near far
-    float angle = PI / 3;
-
-    Mat4  ry        = mat4_rotate_y(0);
+    Mat4  ry        = mat4_rotate_y(angle);
     Mat4  rx        = mat4_rotate_x(angle);
     Mat4  model     = mat4_mul(&ry,&rx);
     Mat4  translate = mat4_translate(0, 0, 5);
@@ -349,6 +368,8 @@ static void vga_update_display(void *opaque)
     DisplaySurface *surface = qemu_console_surface(gpu->con);
 	for(uint32_t i = 0; i<width*height; i++) 
 		((uint32_t*)surface_data(surface))[i] = FB(gpu)[i];
+    dpy_gfx_update(gpu->con, 0, 0, 640, 480);
+
 }
 
 static const GraphicHwOps ghwops = {
@@ -369,6 +390,18 @@ static void gpu_class_init(ObjectClass *class, const void *data)
     k->class_id  = PCI_CLASS_OTHERS;
 }
 
+static void timer_callback(void *opaque)
+{
+    GpuState *gpu = opaque;
+
+    angle+=0.02f;
+    vga_update_display(gpu);
+
+    graphic_hw_update(gpu->con);
+    /* Re-arm the periodic timer */
+    timer_mod(gpu->timer,
+        qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000000ULL);
+}
 
 /* Realize GPU device */
 static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
@@ -415,6 +448,10 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 
     memcpy(vertices, cube_vertices, sizeof(cube_vertices));
     memcpy(edges, cube_edges, sizeof(cube_edges));
+
+
+    gpu->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, timer_callback, gpu);
+    timer_mod(   gpu->timer , qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000000ULL);
 }
 
 /* Uninitialize GPU device */
