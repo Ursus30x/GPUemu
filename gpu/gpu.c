@@ -82,10 +82,12 @@ typedef struct GpuState {
 
     uint8_t  cmd[GPU_CMD_SIZE];
     uint8_t  *vram_ptr;
+
+    Mat4 regs[REG_MAT_SIZE];
+    Mat4 mvp;
 } GpuState;
 
-static  Mat4 regs[REG_MAT_SIZE];
-static  Mat4 mvp;
+
 typedef union {
     uint32_t u32;
     float    f32;
@@ -367,18 +369,9 @@ static Mat4 mat4_perspective(float fov, float aspect, float near, float far)
 static float angle = PI / 3;
 
 
-static inline Mat4 get_mat_from_arg(int arg_num, const Instr* instr, Mat4* gpu_regs, uint8_t* shader_segment) {
+static inline Mat4 get_mat_from_arg(int arg_val, Mat4* gpu_regs, uint8_t* shader_segment) 
+{
     Mat4 mat;
-
-    uint32_t arg_val;
-    switch(arg_num) {
-        case 0: arg_val = instr->arg0.u32; break;
-        case 1: arg_val = instr->arg1.u32; break;
-        case 2: arg_val = instr->arg2.u32; break;
-        default: /* invalid arg */ return (Mat4){};
-    }
-    printf("ARG0: %X\n", arg_val);
-    printf("arg: %d\n", ARG_IS_MEM_ADDR(arg_val));
     if (ARG_IS_MEM_ADDR(arg_val)) {
         memcpy(&mat, shader_segment + arg_val, sizeof(Mat4));
     } else {
@@ -389,7 +382,8 @@ static inline Mat4 get_mat_from_arg(int arg_num, const Instr* instr, Mat4* gpu_r
 
     return mat;
 }
-static inline void print_mat4(const Mat4* mat, const char* name) {
+static inline void print_mat4(const Mat4* mat, const char* name)
+{
     if (!mat) return;
     printf("Matrix %s:\n", name);
     for (int i = 0; i < 4; ++i) {
@@ -422,12 +416,12 @@ static void exec_shader(GpuState *gpu)
         {
             CHECK_REG_NUM(instr.dst);
             if(ARG_IS_MEM_ADDR(instr.arg0.u32))
-                memcpy(&regs[instr.dst], shader_segment+instr.arg0.u32,  sizeof(Mat4));
+                memcpy(&gpu->regs[instr.dst], shader_segment+instr.arg0.u32,  sizeof(Mat4));
             else
             {
                 uint32_t src = REG_NUM(instr.arg0.u32);
                 CHECK_REG_NUM(src);
-                regs[instr.dst] = regs[src];
+                gpu->regs[instr.dst] = gpu->regs[src];
             }
             break;
         }
@@ -435,35 +429,35 @@ static void exec_shader(GpuState *gpu)
         {
             CHECK_REG_NUM(instr.dst);
 
-            Mat4 a = get_mat_from_arg(0, &instr, regs, shader_segment);
-            Mat4 b = get_mat_from_arg(1, &instr, regs, shader_segment);
-            regs[instr.dst] = mat4_mul(&a,&b);
-            print_mat4(&regs[instr.dst], "mul");
+            Mat4 a = get_mat_from_arg(instr.arg0.u32, gpu->regs, shader_segment);
+            Mat4 b = get_mat_from_arg(instr.arg1.u32, gpu->regs, shader_segment);
+            gpu->regs[instr.dst] = mat4_mul(&a,&b);
+            print_mat4(&gpu->regs[instr.dst], "mul");
             break;
         }
         case INSTR_MVP:
             CHECK_REG_NUM(instr.dst);
-            mvp = regs[instr.dst];
-            print_mat4(&mvp, "mvp");
+            gpu->mvp = gpu->regs[instr.dst];
+            print_mat4(&gpu->mvp, "mvp");
             break;
         case INSTR_ROTX:
             CHECK_REG_NUM(instr.dst);
-            regs[instr.dst] = mat4_rotate_x(instr.arg0.f32);
-            print_mat4(&regs[instr.dst], "rotx");
+            gpu->regs[instr.dst] = mat4_rotate_x(instr.arg0.f32);
+            print_mat4(&gpu->regs[instr.dst], "rotx");
             break;
         case INSTR_ROTY:
             CHECK_REG_NUM(instr.dst);
-            regs[instr.dst] = mat4_rotate_y(instr.arg0.f32);
-            print_mat4(&regs[instr.dst], "roty");
+            gpu->regs[instr.dst] = mat4_rotate_y(instr.arg0.f32);
+            print_mat4(&gpu->regs[instr.dst], "roty");
             break;
         case INSTR_TRANS:
             CHECK_REG_NUM(instr.dst);
-            regs[instr.dst] = mat4_translate(instr.arg0.f32,instr.arg1.f32,instr.arg2.f32);
-            print_mat4(&regs[instr.dst], "trans");
+            gpu->regs[instr.dst] = mat4_translate(instr.arg0.f32,instr.arg1.f32,instr.arg2.f32);
+            print_mat4(&gpu->regs[instr.dst], "trans");
             break;
         case INSTR_IDENT:
             CHECK_REG_NUM(instr.dst);
-            regs[instr.dst] = mat4_identity();
+            gpu->regs[instr.dst] = mat4_identity();
             break;
         case INSTR_EXIT:
             end = 0;
@@ -509,7 +503,7 @@ static void gpu_render_frame(void *opaque)
     model           = mat4_mul(&translate, &model);
 
     Mat4  proj      = mat4_perspective(PI/3, (float)width/height, 1.0f, 10.0f);
-    Mat4  mvp_local       = mat4_mul(&proj, &mvp);
+    Mat4  mvp_local       = mat4_mul(&proj, &gpu->mvp);
     //
 
     uint32_t *px = malloc(sizeof(uint32_t)* vertex_size);
