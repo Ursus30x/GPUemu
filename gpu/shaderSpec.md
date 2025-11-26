@@ -5,7 +5,7 @@
 
 ### 1.1 Registers
 
-The core contains **8 General Purpose Registers**, each capable of storing a standard $4 \times 4$ floating-point matrix.
+The core contains **8 General Purpose Registers**, each capable of storing a standard 4*4  floating-point matrix.
 
 | Register Name | Index | Description |
 | :--- | :--- | :--- |
@@ -45,7 +45,7 @@ typedef struct Instr {
 Arguments (`arg0`, `arg1`, `arg2`) are 32-bit values interpreted based on the instruction context and specific bit-flags.
 
   * **Matrix Register:**
-    If the Most Significant Bit (MSB) is set ($1 \ll 31$), the lower bits represent the register index.
+    If the Most Significant Bit (MSB) is set (1 << 31), the lower bits represent the register index.
       * *Mask:* `0x80000000 | reg_index`
   * **Memory Address (Data Segment):**
     If the MSB is **0** and the instruction expects a matrix, the value is treated as an offset (in bytes) from the start of the Data Segment.
@@ -87,7 +87,7 @@ Arguments (`arg0`, `arg1`, `arg2`) are 32-bit values interpreted based on the in
   * **Opcode:** `1`
   * **Syntax:** `MUL dst, src0, src1`
   * **Description:** Performs matrix multiplication.
-    $$Dst = Src0 \times Src1$$
+    Dst = Src0 * Src1
   * **Operands:**
       * `dst`: Register Index
       * `src0`: Register Index OR Data Segment Offset
@@ -115,7 +115,7 @@ Arguments (`arg0`, `arg1`, `arg2`) are 32-bit values interpreted based on the in
 
   * **Opcode:** `4`
   * **Syntax:** `IDENT dst`
-  * **Description:** Loads the $4 \times 4$ Identity matrix into the destination register.
+  * **Description:** Loads the 4x4 Identity matrix into the destination register.
   * **Operands:**
       * `dst`: Register Index
 
