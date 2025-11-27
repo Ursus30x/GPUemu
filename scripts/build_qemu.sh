@@ -7,6 +7,6 @@ cd "$CWD"
 
 cd "$CWD/qemu"
 ./configure --target-list="x86_64-softmmu" --enable-debug \
- --extra-cflags="-Wno-error=redundant-decls" --enable-gtk
+ --extra-cflags="-Wno-error=redundant-decls" --enable-gtk  
 
 make -j"$(nproc)"

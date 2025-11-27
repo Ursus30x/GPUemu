@@ -111,11 +111,11 @@ static void gpu_print_cmd(void *opaque)
     printf("  PROJECTION_MATRIX   = %X\n",  REG_PROJECTION_MATRIX(s));
     printf("  UPDATE_RENDER       = %X\n",  REG_UPDATE_RENDER(s));
     printf("  UPDATE_FB           = %X\n",  REG_UPDATE_FB(s));
-
     printf("  FB_WIDTH            = %X\n",  REG_FB_WIDTH(s));
     printf("  FB_HEIGHT           = %X\n",  REG_FB_HEIGHT(s));
     printf("  VERTEX_SIZE         = %X\n",  REG_VERTEX_SIZE(s));
     printf("  EDGE_SIZE           = %X\n",  REG_EDGE_SIZE(s));
+    printf("  FB                  = %X\n",   FB(s)[0]);
 }
 
 static uint64_t lower_n_bytes(uint64_t data, unsigned nbytes) {
@@ -235,7 +235,7 @@ static void gpu_class_init(ObjectClass *class, const void *data)
     k->vendor_id = PCI_VENDOR_ID_CUSTOM;
     k->device_id = GPU_DEVICE_ID;
     k->revision  = 0x01;
-    k->class_id  = PCI_CLASS_OTHERS;
+    k->class_id  = PCI_CLASS_DISPLAY_OTHER;
 }
 
 /* Realize GPU device */
