@@ -29,6 +29,9 @@
 #define REG_VERTEX_SHADER_ADDR         20
 #define REG_FRAGMENT_SHADER_ADDR       24
 
+#define GPU_MODE_GOP 0
+#define GPU_MODE_3D  1
+
 typedef struct { double x, y, z; uint32_t rgba; } Vec3;
 typedef struct { uint32_t a, b; } Edge;
 typedef struct { double m[4][4]; } Mat4;

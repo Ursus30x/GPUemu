@@ -12,6 +12,7 @@ static void gpu_instance_init(Object *obj);
 static void gpu_class_init(ObjectClass *class, const void *data);
 static void pci_gpu_realize(PCIDevice *pdev, Error **errp);
 static void pci_gpu_uninit(PCIDevice *pdev);
+static void vga_update_display(void *opaque);
 
 type_init(pci_gpu_register_types)
 static void gpu_print_cmd(void *opaque)
@@ -27,8 +28,44 @@ static void gpu_print_cmd(void *opaque)
     printf("  VERTEX_SIZE         = %X\n",  REG_VERTEX_SIZE(s));
     printf("  EDGE_SIZE           = %X\n",  REG_EDGE_SIZE(s));
 }
+static float angle = PI / 3;
 
+static void simple_3d_mode(GpuState *gpu)
+{
 
+    if(REG_GPU_MODE(gpu) == GPU_MODE_3D)
+    {
+        angle+=0.02f;
+        /*
+        rotx m0, angle
+        roty m1, angle
+        mul m2, m0, m1
+        trans m1, 0, 0, 5
+        mul m0, m1, m2
+        mvp m0
+        exit
+        */
+        void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
+        INSTR_TABLE(program,
+        I_ROTX(REG_M0, angle),          
+        I_ROTY(REG_M1, angle),           
+        I_MUL(OP_TYPE_MAT, 0,REG_M2, REG_M0, REG_M1), 
+        I_TRANS(REG_M1, 0, 0, 5), 
+        I_MUL(OP_TYPE_MAT, 0, REG_M0, REG_M1, REG_M2), 
+        I_MVP(REG_M0),
+        I_MOV(OP_TYPE_F32, REG_P0, 0x3ecccccd),
+        I_ADD(OP_TYPE_F32, 0, REG_P1, REG_P0, 0x3f800000), 
+        I_CMP(C_FLAG_EQ, OP_TYPE_I32, REG_P0, REG_P1),
+        I_EXIT()
+        );
+        memcpy(ss, program, sizeof(program));
+        REG_EXEC_VERTEX_SHADER(gpu) = 1;
+        exec_shader(gpu);
+
+        vga_update_display(gpu);
+        graphic_hw_update(gpu->con);
+    }
+}
 /* cmd callbacks */
 static uint64_t gpu_cmd_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -105,8 +142,8 @@ static void vga_update_text(void *opaque, console_ch_t *chardata)
 static void vga_update_display(void *opaque)
 {
 	GpuState* gpu = opaque;
-    gpu_render_frame(opaque);
-
+    if(REG_GPU_MODE(gpu) == GPU_MODE_3D)
+        gpu_render_frame(opaque);
 
     uint32_t width =  REG_FB_WIDTH(gpu);
     uint32_t height =  REG_FB_HEIGHT(gpu);
@@ -134,41 +171,12 @@ static void gpu_class_init(ObjectClass *class, const void *data)
     k->revision  = 0x01;
     k->class_id  = PCI_CLASS_OTHERS;
 }
-static float angle = PI / 3;
+
 static void timer_callback(void *opaque)
 {
+
     GpuState *gpu = opaque;
-
-    angle+=0.02f;
-    /*
-    rotx m0, angle
-    roty m1, angle
-    mul m2, m0, m1
-    trans m1, 0, 0, 5
-    mul m0, m1, m2
-    mvp m0
-    exit
-    */
-    void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
-    INSTR_TABLE(program,
-    I_ROTX(REG_M0, angle),          
-    I_ROTY(REG_M1, angle),           
-    I_MUL(OP_TYPE_MAT, 0,REG_M2, REG_M0, REG_M1), 
-    I_TRANS(REG_M1, 0, 0, 5), 
-    I_MUL(OP_TYPE_MAT, 0, REG_M0, REG_M1, REG_M2), 
-    I_MVP(REG_M0),
-    I_MOV(OP_TYPE_F32, REG_P0, 0x3ecccccd),
-    I_ADD(OP_TYPE_F32, 0, REG_P1, REG_P0, 0x3f800000), 
-    I_CMP(C_FLAG_EQ, OP_TYPE_I32, REG_P0, REG_P1),
-    I_EXIT()
-    );
-    memcpy(ss, program, sizeof(program));
-    REG_EXEC_VERTEX_SHADER(gpu) = 1;
-    exec_shader(gpu);
-
-    vga_update_display(gpu);
-
-    graphic_hw_update(gpu->con);
+    simple_3d_mode(gpu);
     /* Re-arm the periodic timer */
     timer_mod(gpu->timer,
         qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000ULL);
@@ -198,6 +206,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     REG_VERTEX_SIZE(gpu) = 8;
     REG_EDGE_SIZE(gpu) = 13;
     REG_VERTEX_SHADER(gpu) = 0;
+    REG_GPU_MODE(gpu) = GPU_MODE_3D; // change to GPU_MODE_GOP to use gop output
  
     Vec3 cube_vertices[] = {
     { -1, -1, -1, 0xFFFF0000 },
