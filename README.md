@@ -14,9 +14,17 @@ Since most of this project relies on modification od QEMU and EDK2 projetcs, ins
 
 Here are the instructions:
 - Make sure that all submodules are downloaded and uptodate
-- Run `scripts/apply_patches.sh` 
-- Run `scripts/build.sh`
+
+- Run `scripts/apply_patches.sh` - This prepares submodules, applies patches to them and symlinks directories to respective submodules.
+
+- Run `scripts/build_all.sh` - Builds both QEMU and EDK2 with 
 
 ## Running
 
-`scripts/run.sh`
+To run UEFI Shell using our card run `scripts/run.sh`.
+
+## Documentation
+
+```
+TODO
+```
