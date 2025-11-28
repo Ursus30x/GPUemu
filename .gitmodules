@@ -1,6 +1,8 @@
 [submodule "qemu"]
 	path = qemu
 	url = git@github.com:qemu/qemu.git
+	ignore = dirty
 [submodule "edk2"]
 	path = edk2
 	url = git@github.com:tianocore/edk2.git
+	ignore = dirty
