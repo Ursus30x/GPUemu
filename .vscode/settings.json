@@ -1,7 +1,0 @@
-{
-    "files.associations": {
-        "acpi.h": "c",
-        "*.inc": "c",
-        "cstdint": "c"
-    }
-}
