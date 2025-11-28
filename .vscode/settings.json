@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "acpi.h": "c",
-        "*.inc": "c"
+        "*.inc": "c",
+        "cstdint": "c"
     }
 }

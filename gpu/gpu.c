@@ -20,7 +20,7 @@
 
 #define PI 3.14159265358979323846
 
-#define GPU_VRAM_SIZE (1 << 26)  // 64 MB
+#define GPU_VRAM_SIZE (1 << 25)  // 64 MB
 #define GPU_CMD_SIZE 0x1000 
 
 #define REG_GPU_MODE_ADDR 0
@@ -385,7 +385,9 @@ static void gpu_render_frame(void *opaque)
 static void vga_update_display(void *opaque)
 {
 	GpuState* gpu = opaque;
-    gpu_render_frame(opaque);
+    if(false){
+        gpu_render_frame(opaque);
+    }
 
 
     uint32_t width =  REG_FB_WIDTH(gpu);
@@ -412,12 +414,13 @@ static void gpu_class_init(ObjectClass *class, const void *data)
     k->vendor_id = PCI_VENDOR_ID_CUSTOM;
     k->device_id = GPU_DEVICE_ID;
     k->revision  = 0x01;
-    k->class_id  = PCI_CLASS_OTHERS;
+    k->class_id  = PCI_CLASS_DISPLAY_OTHER;
 }
 
 static void timer_callback(void *opaque)
 {
     GpuState *gpu = opaque;
+
 
     angle+=0.02f;
     vga_update_display(gpu);
