@@ -230,7 +230,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     REG_VERTEX_SIZE(gpu) = 8;
     REG_EDGE_SIZE(gpu) = 13;
     REG_VERTEX_SHADER(gpu) = 0;
-    REG_GPU_MODE(gpu) = GPU_MODE_3D; // change to GPU_MODE_GOP to use gop output
+    REG_GPU_MODE(gpu) = GPU_MODE_GOP;
  
     Vec3 cube_vertices[] = {
     { -1, -1, -1, 0xFFFF0000 },
