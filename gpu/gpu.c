@@ -20,7 +20,7 @@
 
 #define PI 3.14159265358979323846
 
-#define GPU_VRAM_SIZE (1 << 25)  // 32 MB
+#define GPU_VRAM_SIZE (1 << 26)  // 64 MB
 #define GPU_CMD_SIZE 0x1000 
 
 #define REG_GPU_MODE_ADDR 0
@@ -70,8 +70,8 @@ typedef struct GpuState {
     QemuConsole *con;
     QEMUTimer *timer;
 
-    uint8_t  cmd[GPU_CMD_SIZE];
-    uint8_t  *vram_ptr;
+    uint32_t  cmd[GPU_CMD_SIZE];
+    uint32_t  *vram_ptr;
 } GpuState;
 
 
@@ -117,11 +117,36 @@ static void gpu_print_cmd(void *opaque)
     printf("  VERTEX_SIZE         = %X\n",  REG_VERTEX_SIZE(s));
     printf("  EDGE_SIZE           = %X\n",  REG_EDGE_SIZE(s));
 }
+
+
+static uint64_t lower_n_bytes(uint64_t data, unsigned nbytes) 
+{
+	uint64_t result;
+
+	if (nbytes < 8) {
+		uint64_t bitcount = ((uint64_t)nbytes)<<3;
+		uint64_t mask = (1ULL << bitcount)-1;
+
+		result = data & mask;
+	} else {
+		result = data;
+	}
+    
+	return result;
+}
+
 /* cmd callbacks */
 static uint64_t gpu_cmd_read(void *opaque, hwaddr addr, unsigned size)
 {
-    printf("cmd Read: addr=0x%llx size=%u\n", (unsigned long long)addr, size);
-    return 0;
+    GpuState *gpu = opaque;
+
+	uint64_t index = lower_n_bytes(addr, size);
+	uint32_t index_u32 = index / sizeof(uint32_t);
+	uint64_t result = ((uint32_t*)gpu->cmd)[index_u32];
+
+	printf("reading idx %lu = %lu\n", index, result);
+
+	return result;
 }
 
 static void gpu_cmd_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
