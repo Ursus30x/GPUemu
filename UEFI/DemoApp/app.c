@@ -1,0 +1,227 @@
+#include <Uefi.h>
+#include <stddef.h>
+#include <Protocol/PciIo.h>
+#include <Protocol/GraphicsOutput.h>
+#include <Library/UefiLib.h>
+#include <Library/DebugLib.h>
+#include <Library/MemoryAllocationLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/FrameBufferBltLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <IndustryStandard/Acpi.h>
+#include <IndustryStandard/Pci.h>
+#include <Library/UefiBootServicesTableLib.h> // gBS
+#include <Library/DevicePathLib.h>
+
+#define WAIT_FOR_KEYPRESS() Status = gBS->WaitForEvent(1, &gST->ConIn->WaitForKey, NULL); \
+    if (!EFI_ERROR(Status)) { \
+        Status = gST->ConIn->ReadKeyStroke(gST->ConIn, &Key); \
+    }
+
+
+STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL *mGraphicsOutput = NULL;
+
+/*==========================================================================*/
+/*                                  GOP TEST                                */
+/*==========================================================================*/
+VOID DrawPixel(UINT32 X, UINT32 Y, EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Color) {
+    if (X >= mGraphicsOutput->Mode->Info->HorizontalResolution ||
+        Y >= mGraphicsOutput->Mode->Info->VerticalResolution) {
+        return;
+    }
+    
+    mGraphicsOutput->Blt(
+        mGraphicsOutput,
+        Color,
+        EfiBltVideoFill,
+        0, 0,
+        X, Y,
+        1, 1,
+        0
+    );
+}
+
+VOID DrawRect(UINT32 X, UINT32 Y, UINT32 Width, UINT32 Height, 
+              EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Color) {
+    mGraphicsOutput->Blt(
+        mGraphicsOutput,
+        Color,
+        EfiBltVideoFill,
+        0, 0,
+        X, Y,
+        Width, Height,
+        0
+    );
+}
+
+VOID DrawTestPattern() {
+    UINT32 Width = mGraphicsOutput->Mode->Info->HorizontalResolution;
+    UINT32 Height = mGraphicsOutput->Mode->Info->VerticalResolution;
+    EFI_GRAPHICS_OUTPUT_BLT_PIXEL Color;
+    UINT32 i, j;
+    
+    // Clear screen to black
+    Color.Blue = 0;
+    Color.Green = 0;
+    Color.Red = 0;
+    Color.Reserved = 0;
+    DrawRect(0, 0, Width, Height, &Color);
+    
+    // Draw color bars in the top third
+    UINT32 BarHeight = Height / 3;
+    UINT32 BarWidth = Width / 7;
+    
+    // Red
+    Color.Red = 255; Color.Green = 0; Color.Blue = 0;
+    DrawRect(0, 0, BarWidth, BarHeight, &Color);
+    
+    // Green
+    Color.Red = 0; Color.Green = 255; Color.Blue = 0;
+    DrawRect(BarWidth, 0, BarWidth, BarHeight, &Color);
+    
+    // Blue
+    Color.Red = 0; Color.Green = 0; Color.Blue = 255;
+    DrawRect(BarWidth * 2, 0, BarWidth, BarHeight, &Color);
+    
+    // Yellow
+    Color.Red = 255; Color.Green = 255; Color.Blue = 0;
+    DrawRect(BarWidth * 3, 0, BarWidth, BarHeight, &Color);
+    
+    // Cyan
+    Color.Red = 0; Color.Green = 255; Color.Blue = 255;
+    DrawRect(BarWidth * 4, 0, BarWidth, BarHeight, &Color);
+    
+    // Magenta
+    Color.Red = 255; Color.Green = 0; Color.Blue = 255;
+    DrawRect(BarWidth * 5, 0, BarWidth, BarHeight, &Color);
+    
+    // White
+    Color.Red = 255; Color.Green = 255; Color.Blue = 255;
+    DrawRect(BarWidth * 6, 0, Width - (BarWidth * 6), BarHeight, &Color);
+    
+    // Draw horizontal gradient in the middle third
+    UINT32 GradientStart = BarHeight;
+    UINT32 GradientHeight = Height / 3;
+    
+    for (i = 0; i < Width; i++) {
+        UINT8 Value = (UINT8)((i * 255) / Width);
+        Color.Red = Value;
+        Color.Green = Value;
+        Color.Blue = Value;
+        DrawRect(i, GradientStart, 1, GradientHeight, &Color);
+    }
+    
+    // Draw checkerboard pattern in the bottom third
+    UINT32 CheckerStart = GradientStart + GradientHeight;
+    UINT32 CheckerSize = 40;
+    
+    for (i = 0; i < Width; i += CheckerSize) {
+        for (j = CheckerStart; j < Height; j += CheckerSize) {
+            if (((i / CheckerSize) + (j / CheckerSize)) % 2 == 0) {
+                Color.Red = 255; Color.Green = 255; Color.Blue = 255;
+            } else {
+                Color.Red = 100; Color.Green = 100; Color.Blue = 100;
+            }
+            DrawRect(i, j, CheckerSize, CheckerSize, &Color);
+        }
+    }
+    
+    // Draw a border around the entire screen
+    Color.Red = 255; Color.Green = 0; Color.Blue = 0;
+    UINT32 BorderWidth = 5;
+    DrawRect(0, 0, Width, BorderWidth, &Color); // Top
+    DrawRect(0, Height - BorderWidth, Width, BorderWidth, &Color); // Bottom
+    DrawRect(0, 0, BorderWidth, Height, &Color); // Left
+    DrawRect(Width - BorderWidth, 0, BorderWidth, Height, &Color); // Right
+}
+
+EFI_STATUS EFIAPI TestGop() {
+    EFI_STATUS Status;
+    EFI_INPUT_KEY Key;
+
+    DEBUG((EFI_D_INFO, "TestGop start\n"));
+
+    Status = gBS->LocateProtocol(
+        &gEfiGraphicsOutputProtocolGuid, 
+        NULL, 
+        (VOID **)&mGraphicsOutput
+    );
+
+    if (EFI_ERROR(Status)) {
+        Print(L"Failed to locate GOP: %r\n", Status);
+        return Status;
+    }
+    
+    // Print GOP information
+    Print(L"GOP Located Successfully!\n");
+    Print(L"Current Mode: %d\n", mGraphicsOutput->Mode->Mode);
+    Print(L"Resolution: %dx%d\n", 
+          mGraphicsOutput->Mode->Info->HorizontalResolution,
+          mGraphicsOutput->Mode->Info->VerticalResolution);
+    Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
+    
+    
+    WAIT_FOR_KEYPRESS()
+
+    Print(L"\nDrawing test pattern...\n");
+
+    // Draw the test pattern
+    DrawTestPattern();
+    
+    Print(L"Test pattern complete! Press any key to exit.\n");
+    
+    WAIT_FOR_KEYPRESS()
+    
+    DEBUG((EFI_D_INFO, "TestGop end\n"));
+    return EFI_SUCCESS;
+}
+
+/*==========================================================================*/
+/*                                  3D TEST                                 */
+/*==========================================================================*/
+
+// STATIC EFI_PCI_IO_PROTOCOL *PciIo = NULL;
+
+// EFI_STATUS EFIAPI Test3D(){
+//     EFI_STATUS Status;
+
+//     Status = gBS->OpenProtocol(
+//         DeviceHandle,                           // Handle to open protocol on
+//         &gEfiPciIoProtocolGuid,                // Protocol GUID
+//         (VOID **)PciIo,                        // Interface pointer
+//         AgentHandle,                            // Agent handle (your driver/app)
+//         NULL,                                   // Controller handle (NULL for apps)
+//         EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL   // Open mode
+//     );
+// }
+
+
+/*==========================================================================*/
+/*                               MAIN APP ENTRY                             */
+/*==========================================================================*/
+
+
+EFI_STATUS EFIAPI DemoAppEntry(
+    IN EFI_HANDLE ImageHandle,
+    IN EFI_SYSTEM_TABLE *SystemTable) {
+        
+    EFI_STATUS Status;
+
+    Status = TestGop();
+
+    ASSERT_EFI_ERROR(Status);
+    
+    // Wait for keypress
+    if (!EFI_ERROR(Status)) {
+        EFI_INPUT_KEY Key;
+        SystemTable->ConIn->Reset(SystemTable->ConIn, FALSE);
+        SystemTable->BootServices->WaitForEvent(1, &SystemTable->ConIn->WaitForKey, NULL);
+        SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &Key);
+    }
+    
+    return Status;
+}
+
+EFI_STATUS EFIAPI DemoAppEntryUnload (IN  EFI_HANDLE  ImageHandle) {
+    return EFI_SUCCESS;
+}

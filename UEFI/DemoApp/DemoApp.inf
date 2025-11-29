@@ -1,0 +1,28 @@
+[Defines]
+  INF_VERSION    = 0x00010005
+  BASE_NAME      = DemoApp
+  FILE_GUID      = a33be53a-998f-4e14-9506-1d77dda4e951
+  MODULE_TYPE    = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = DemoAppEntry
+
+[Sources]
+  app.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  DebugLib
+  PciLib
+  PrintLib
+  DevicePathLib
+  UefiApplicationEntryPoint
+  UefiLib
+  FrameBufferBltLib
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid                # PROTOCOL BY_START
+  gEfiDevicePathProtocolGuid                    # PROTOCOL BY_START
+  gEfiPciIoProtocolGuid                         # PROTOCOL TO_START

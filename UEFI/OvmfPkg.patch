@@ -1,0 +1,14 @@
+diff --git a/OvmfPkg/OvmfPkgX64.dsc b/OvmfPkg/OvmfPkgX64.dsc
+index 9180e88645..5e5e8bf7c6 100644
+--- a/OvmfPkg/OvmfPkgX64.dsc
++++ b/OvmfPkg/OvmfPkgX64.dsc
+@@ -771,7 +771,8 @@
+ ################################################################################
+ [Components]
+   OvmfPkg/ResetVector/ResetVector.inf
+-
++  OptionRom/Rom.inf
++  DemoApp/DemoApp.inf
+   #
+   # SEC Phase modules
+   #
