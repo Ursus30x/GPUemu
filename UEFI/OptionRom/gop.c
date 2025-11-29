@@ -18,86 +18,19 @@ EFI_STATUS EFIAPI MyGpuBlt(
     ) 
 {
     MY_GPU_PRIVATE_DATA *Private = MY_GPU_PRIVATE_DATA_FROM_THIS(This);
-    
-    // 1. Calculate the Buffer Stride (Width in Pixels of the source buffer)
-    // If Delta is 0, Stride is just the Width. Delta is in Bytes.
-    UINTN BufferStrideInPixels = (Delta == 0) ? Width : (Delta / sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL));
-    
-    // 2. Variables for loops
-    UINTN  Row, Col;
-    UINT32 ScreenWidth = Private->Info.HorizontalResolution;
-    UINT32 HardwarePixel;
-    UINT64 VramOffset;
-    // 3. Switch based on the requested operation
-    switch (BltOperation) {
-        
-    case EfiBltVideoFill:
-        // Case: Fill a rectangle on screen with a single color (BltBuffer[0])
-        {
-        EFI_GRAPHICS_OUTPUT_BLT_PIXEL FillColor = *BltBuffer;
-        
-        // FIX: Change to BGR Format (Blue << 16, Red << 0)
-        HardwarePixel = ((UINT32)FillColor.Blue  << 16) |  // Blue -> byte 2
-                        ((UINT32)FillColor.Green << 8)  |  // Green -> byte 1
-                         (UINT32)FillColor.Red;           // Red -> byte 0
-
-        for (Row = 0; Row < Height; Row++) {
-            for (Col = 0; Col < Width; Col++) {
-                VramOffset = ((DestinationY + Row) * ScreenWidth + (DestinationX + Col)) * 4;
-                Private->PciIo->Mem.Write (
-                    Private->PciIo, EfiPciIoWidthUint32, 1, 
-                    VramOffset, 1, &HardwarePixel
-                );
-            }
-        }
-    }
-        break;
-
-  case EfiBltBufferToVideo:
-  {
-      UINTN PixelSize = sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
-      // Allocate a buffer for one scanline (required for batch writing)
-      UINT32 *LineBuffer = AllocatePool(Width * PixelSize);
-      if (LineBuffer == NULL) return EFI_OUT_OF_RESOURCES;
-
-      for (Row = 0; Row < Height; Row++) {
-          // 1. Get pointer to the source row
-          EFI_GRAPHICS_OUTPUT_BLT_PIXEL *SrcRow = 
-              &BltBuffer[(SourceY + Row) * BufferStrideInPixels + SourceX];
-          
-          // 2. Convert and copy the entire row to LineBuffer (Inner loop is necessary here)
-          for (UINTN Col = 0; Col < Width; Col++) {
-              // Use the BGR conversion that may have fixed the color:
-              LineBuffer[Col] = ((UINT32)SrcRow[Col].Red  << 16) | 
-                                ((UINT32)SrcRow[Col].Green << 8)  | 
-                                  (UINT32)SrcRow[Col].Blue;
-          }
-
-          // 3. Write the entire converted row to VRAM in one batch
-          VramOffset = ((DestinationY + Row) * ScreenWidth + DestinationX) * 4;
-          
-          Private->PciIo->Mem.Write (
-              Private->PciIo, EfiPciIoWidthUint32, 1, 
-              VramOffset, Width, LineBuffer // Batch write of 'Width' pixels
-          );
-      }
-      FreePool(LineBuffer);
-  }
-break;
-
-    case EfiBltVideoToVideo:
-        // Copy VRAM to VRAM (Scrolling). 
-        // NOTE: This is complex with PciIo because you must Read then Write.
-        // For now, returning unsupported is safer than doing it wrong, 
-        // or you must implement a Read loop here.
-        // DEBUG((EFI_D_ERROR, "VideoToVideo Not Implemented yet\n"));
-        return EFI_UNSUPPORTED; 
-
-    default:
-        return EFI_INVALID_PARAMETER;
-    }
-
-    return EFI_SUCCESS;
+    DEBUG ((EFI_D_INFO, "blt\n"));
+    return FrameBufferBlt(
+            Private->FrameBufferBltConfigure,
+            BltBuffer,
+            BltOperation,
+            SourceX,
+            SourceY,
+            DestinationX,
+            DestinationY,
+            Width,
+            Height,
+            Delta
+        );
 }
 
 EFI_STATUS EFIAPI MyGpuSetMode(
