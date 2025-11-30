@@ -159,16 +159,16 @@ EFI_STATUS EFIAPI TestGop() {
           mGraphicsOutput->Mode->Info->HorizontalResolution,
           mGraphicsOutput->Mode->Info->VerticalResolution);
     Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
-    
+    Print(L"\nPress any key to draw test pattern.\n");
     
     WAIT_FOR_KEYPRESS()
 
-    Print(L"\nDrawing test pattern...\n");
-
     // Draw the test pattern
     DrawTestPattern();
+
+    WAIT_FOR_KEYPRESS()
     
-    Print(L"Test pattern complete! Press any key to exit.\n");
+    Print(L"Test pattern complete!\n");
     
     WAIT_FOR_KEYPRESS()
     
@@ -210,14 +210,6 @@ EFI_STATUS EFIAPI DemoAppEntry(
     Status = TestGop();
 
     ASSERT_EFI_ERROR(Status);
-    
-    // Wait for keypress
-    if (!EFI_ERROR(Status)) {
-        EFI_INPUT_KEY Key;
-        SystemTable->ConIn->Reset(SystemTable->ConIn, FALSE);
-        SystemTable->BootServices->WaitForEvent(1, &SystemTable->ConIn->WaitForKey, NULL);
-        SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &Key);
-    }
     
     return Status;
 }
