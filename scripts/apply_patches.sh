@@ -58,9 +58,12 @@ make -C BaseTools
 
 # Symlink driver implementation to EDK2
 rm -f "$CWD/edk2/OptionRom"
-ln -sf "$CWD/OptionRom" "$CWD/edk2/OptionRom"
+rm -f "$CWD/edk2/DemoApp"
+ln -sf "$CWD/UEFI/OptionRom" "$CWD/edk2/OptionRom"
+ln -sf "$CWD/UEFI/DemoApp" "$CWD/edk2/DemoApp"
+
 # Apply dsc patches
-git apply "$CWD/OptionRom/OvmfPkg.patch"
+git apply "$CWD/UEFI/OvmfPkg.patch"
 
 ################################################
 ################################################
