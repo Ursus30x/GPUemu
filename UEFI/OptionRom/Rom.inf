@@ -10,6 +10,7 @@
   rom.c
   gop.c
   oprom.h
+  # gop3d.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -28,3 +29,5 @@
   gEfiGraphicsOutputProtocolGuid                # PROTOCOL BY_START
   gEfiDevicePathProtocolGuid                    # PROTOCOL BY_START
   gEfiPciIoProtocolGuid                         # PROTOCOL TO_START
+  # Our GPU protocols
+  # gGop3dProtocolGuid 
