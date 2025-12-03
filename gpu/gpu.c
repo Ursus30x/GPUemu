@@ -45,14 +45,18 @@ static uint64_t lower_n_bytes(uint64_t data, unsigned nbytes)
 	return result;
 }
 
-static float angle = PI / 3;
-
 static void simple_3d_mode(GpuState *gpu)
 {
 
     if(REG_GPU_MODE(gpu) == GPU_MODE_3D)
     {
-        angle+=0.02f;
+        // Get time in nanoseconds
+        int64_t time_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
+        // Convert to seconds and calculate angle
+        double rotation_period = 2.0; // 2 seconds for full rotation
+        double angle_radians = (2.0 * M_PI * time_ns) / (rotation_period * 1000000000.0);
+
         /*
         rotx m0, angle
         roty m1, angle
@@ -64,8 +68,8 @@ static void simple_3d_mode(GpuState *gpu)
         */
         void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
         INSTR_TABLE(program,
-        I_ROTX(REG_M0, angle),          
-        I_ROTY(REG_M1, angle),           
+        I_ROTX(REG_M0, angle_radians),          
+        I_ROTY(REG_M1, angle_radians),           
         I_MUL(OP_TYPE_MAT, 0,REG_M2, REG_M0, REG_M1), 
         I_TRANS(REG_M1, 0, 0, 5), 
         I_MUL(OP_TYPE_MAT, 0, REG_M0, REG_M1, REG_M2), 
