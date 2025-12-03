@@ -59,12 +59,17 @@ make -C BaseTools
 # Symlink driver implementation to EDK2
 rm -f "$CWD/edk2/OptionRom"
 rm -f "$CWD/edk2/DemoApp"
+rm -f "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
+rm -f "$CWD/edk2/OptionRom/isa.h"
 ln -sf "$CWD/UEFI/OptionRom" "$CWD/edk2/OptionRom"
 ln -sf "$CWD/UEFI/DemoApp" "$CWD/edk2/DemoApp"
+ln -sf "$CWD/UEFI/OvmfPkg/Include/Protocol/Gop3D.h" "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
+ln -sf "$CWD/include/isa.h" "$CWD/edk2/OptionRom/isa.h"
 
 # Apply dsc patches
 git apply "$CWD/UEFI/OvmfPkg.patch"
 
 ################################################
 ################################################
+
 cd "$CWD"

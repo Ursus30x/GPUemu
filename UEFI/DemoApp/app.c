@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <Protocol/PciIo.h>
 #include <Protocol/GraphicsOutput.h>
+#include <Protocol/Gop3D.h>
 #include <Library/UefiLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
@@ -20,6 +21,7 @@
 
 
 STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL *mGraphicsOutput = NULL;
+STATIC GOP_3D_PROTOCOL              *mGOP3D          = NULL;
 
 /*==========================================================================*/
 /*                                  GOP TEST                                */
@@ -147,6 +149,12 @@ EFI_STATUS EFIAPI TestGop() {
         (VOID **)&mGraphicsOutput
     );
 
+    Status = gBS->LocateProtocol(
+        &gGop3dProtocolGuid, 
+        NULL, 
+        (VOID **)&mGOP3D
+    );
+
     if (EFI_ERROR(Status)) {
         Print(L"Failed to locate GOP: %r\n", Status);
         return Status;
@@ -159,19 +167,29 @@ EFI_STATUS EFIAPI TestGop() {
           mGraphicsOutput->Mode->Info->HorizontalResolution,
           mGraphicsOutput->Mode->Info->VerticalResolution);
     Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
-    
+    Print(L"\nPress any key to draw test pattern.\n");
     
     WAIT_FOR_KEYPRESS()
-
-    Print(L"\nDrawing test pattern...\n");
 
     // Draw the test pattern
     DrawTestPattern();
-    
-    Print(L"Test pattern complete! Press any key to exit.\n");
-    
+
     WAIT_FOR_KEYPRESS()
     
+    Print(L"Test pattern complete!\n");
+    
+    WAIT_FOR_KEYPRESS()
+
+    Print(L"Test 3D capabilities\n\nPress any key to test 3D\n");
+    
+    WAIT_FOR_KEYPRESS()
+
+    mGOP3D->SetGpuMode(mGOP3D,1);
+
+    WAIT_FOR_KEYPRESS()  
+
+    mGOP3D->SetGpuMode(mGOP3D,0);
+
     DEBUG((EFI_D_INFO, "TestGop end\n"));
     return EFI_SUCCESS;
 }
@@ -210,14 +228,6 @@ EFI_STATUS EFIAPI DemoAppEntry(
     Status = TestGop();
 
     ASSERT_EFI_ERROR(Status);
-    
-    // Wait for keypress
-    if (!EFI_ERROR(Status)) {
-        EFI_INPUT_KEY Key;
-        SystemTable->ConIn->Reset(SystemTable->ConIn, FALSE);
-        SystemTable->BootServices->WaitForEvent(1, &SystemTable->ConIn->WaitForKey, NULL);
-        SystemTable->ConIn->ReadKeyStroke(SystemTable->ConIn, &Key);
-    }
     
     return Status;
 }

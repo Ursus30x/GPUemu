@@ -195,6 +195,14 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     return Status;
   }
 
+  // Add GOP3D setup here
+  Status = Gop3DSetup(Private);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "failed to Gop3DSetup\n"));
+    return Status;
+  }
+
+
   // Install the GOP protocol
   Status = gBS->InstallMultipleProtocolInterfaces(
       &Private->Handle,
@@ -208,6 +216,20 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     FreePool(Private);
     DEBUG ((EFI_D_INFO, "very bad\n"));
   }
+
+  // Install the GOP3D protocol
+  Status = gBS->InstallMultipleProtocolInterfaces(
+      &Private->Handle,
+      &gGop3dProtocolGuid,
+      &Private->Gop3dProtocol,
+      NULL
+      );
+  DEBUG ((EFI_D_INFO, "did install GOP3D\n"));
+  if (EFI_ERROR(Status)) {
+    DEBUG ((EFI_D_ERROR, "failed to install GOP3D protocol\n"));
+    // TODO: cleanup
+  }
+  
   //
   // Reference parent handle from child handle.
   //

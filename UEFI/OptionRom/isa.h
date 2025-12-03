@@ -1,0 +1,1 @@
+/home/ursus/studia/OS/GPUemu/include/isa.h
