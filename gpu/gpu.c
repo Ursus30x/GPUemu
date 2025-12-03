@@ -50,22 +50,19 @@ static void simple_3d_mode(GpuState *gpu)
 
     if(REG_GPU_MODE(gpu) == GPU_MODE_3D)
     {
-        // Get time in nanoseconds
-        int64_t time_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-
-        // Convert to seconds and calculate angle
-        double rotation_period = 2.0; // 2 seconds for full rotation
-        double angle_radians = (2.0 * M_PI * time_ns) / (rotation_period * 1000000000.0);
-
+        void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
         /*
-        rotx m0, angle
-        roty m1, angle
-        mul m2, m0, m1
-        trans m1, 0, 0, 5
-        mul m0, m1, m2
+        addf p2 p2 0.02
+        fsan p2
+        roty m0 p2
+        rotx m1 0.3232
+        mulm m2 m0 m1
+        trans m1 0 0 5
+        mulm m0 m1 m2
         mvp m0
         exit
         */
+<<<<<<< HEAD
         void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
         INSTR_TABLE(program,
         I_ROTX(REG_M0, M_PI - M_PI/3 + 0.6f),          
@@ -81,6 +78,10 @@ static void simple_3d_mode(GpuState *gpu)
         );
         memcpy(ss, program, sizeof(program));
         REG_EXEC_VERTEX_SHADER(gpu) = 1;
+=======
+        uint64_t bin_shader[] = { 0x241020909, 0x3CA3D70A, 0x4002090E, 0x0, 0x281000903, 0x0, 0x3EA57A7880010902, 0x0, 0x85020901, 0x1, 0x80010905, 0x500000000, 0x185000901, 0x2, 0x80000906, 0x0, 0x907, 0x0 };
+        memcpy(ss, bin_shader, sizeof(bin_shader));
+>>>>>>> 7a601b8 ([Compiler][Qemu] New isa interpreter and simple compiler)
         exec_shader(gpu);
 
         vga_update_display(gpu);
@@ -207,7 +208,7 @@ static void timer_callback(void *opaque)
     simple_3d_mode(gpu);
     /* Re-arm the periodic timer */
     timer_mod(gpu->timer,
-        qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000ULL);
+        qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 10000000ULL);
 }
 
 /* Realize GPU device */
@@ -234,7 +235,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     REG_VERTEX_SIZE(gpu) = 0;
     REG_EDGE_SIZE(gpu) = 0;
     REG_VERTEX_SHADER(gpu) = 0;
-    REG_GPU_MODE(gpu) = GPU_MODE_GOP;
+    REG_GPU_MODE(gpu) = GPU_MODE_3D;
  
     REG_EXEC_VERTEX_SHADER(gpu) = 1;
 

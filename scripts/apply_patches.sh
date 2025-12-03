@@ -29,7 +29,7 @@ ln -sf "$CWD/gpu/renderer.h" "$CWD/qemu/hw/misc/renderer.h"
 ln -sf "$CWD/gpu/math3d.c" "$CWD/qemu/hw/misc/math3d.c"
 ln -sf "$CWD/gpu/math3d.h" "$CWD/qemu/hw/misc/math3d.h"
 ln -sf "$CWD/include/isa.h" "$CWD/qemu/hw/misc/isa.h"
-
+ln -sf "$CWD/include/isa.h" "$CWD/compiler/isa.h"
 # Apply config patches
 git apply "$CWD/gpu/qemu.patch"
 
