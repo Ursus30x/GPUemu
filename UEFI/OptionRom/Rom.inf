@@ -10,11 +10,13 @@
   rom.c
   gop.c
   oprom.h
-  # gop3d.c
+  isa.h
+  gop3d.c
 
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
+  OvmfPkg/OvmfPkg.dec
 
 [LibraryClasses]
   DebugLib
@@ -30,4 +32,4 @@
   gEfiDevicePathProtocolGuid                    # PROTOCOL BY_START
   gEfiPciIoProtocolGuid                         # PROTOCOL TO_START
   # Our GPU protocols
-  # gGop3dProtocolGuid 
+  gGop3dProtocolGuid 

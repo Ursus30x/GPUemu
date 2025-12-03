@@ -10,27 +10,25 @@
 #include <Library/FrameBufferBltLib.h>
 #include <stddef.h>
 
-#define GOP_3D_PROTOCOL_GUID \
-  { 0x12345678, 0x1234, 0x5678, \
-    { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0 } }
+#define GOP_3D_PROTOCOL_GUID { 0x12345678, 0x1234, 0x5678, { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0 } }
 
 typedef struct GOP_3D_PROTOCOL GOP_3D_PROTOCOL;
 
 // TODO: Shouldnt this enum, structs and defines be shared with QEMU gpu emulation code?
-enum GPU_MODE{
+typedef enum GPU_MODE{
   MODE_GOP,
   MODE_3D
-};
+}GPU_MODE;
 
-enum DATA_TYPE{
+typedef enum DATA_TYPE{
   VERTEX_BUFFER,
   EDGE_BUFFER
-};
+}DATA_TYPE;
 
-enum SHADER_TYPE{
+typedef enum SHADER_TYPE{
   VERTEX_SHADER,
   FRAGMENT_SHADER
-};
+}SHADER_TYPE;
 
 /* ------------------------- Function declarations ------------------------- */
 
