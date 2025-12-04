@@ -28,15 +28,17 @@
 #define SHADER_PROGRAM(s)((void*)     GPU_VRAM_SHADER_SEGMENT(s))
 
 
-#define REG_GPU_MODE(s)           (s->cmd[REG_GPU_MODE_ADDR])
-#define REG_EXEC_VERTEX_SHADER(s) (s->cmd[REG_EXEC_VERTEX_SHADER_ADDR])
-#define REG_UPDATE_RENDER(s)      (s->cmd[REG_UPDATE_RENDER_ADDR])
-#define REG_UPDATE_FB(s)          (s->cmd[REG_UPDATE_FB_ADDR])
-#define REG_FB_WIDTH(s)           (*(uint32_t*)&s->cmd[REG_FB_WIDTH_ADDR])
-#define REG_FB_HEIGHT(s)          (*(uint32_t*)&s->cmd[REG_FB_HEIGHT_ADDR])
-#define REG_VERTEX_SIZE(s)        (*(uint32_t*)&s->cmd[REG_VERTEX_SIZE_ADDR])
-#define REG_EDGE_SIZE(s)          (*(uint32_t*)&s->cmd[REG_EDGE_SIZE_ADDR])
-#define REG_VERTEX_SHADER(s)      (*(uint32_t*)&s->cmd[REG_VERTEX_SHADER_ADDR])
+#define REG_GPU_MODE(s)             (s->cmd[REG_GPU_MODE_ADDR])
+#define REG_EXEC_VERTEX_SHADER(s)   (s->cmd[REG_EXEC_VERTEX_SHADER_ADDR])
+#define REG_UPDATE_RENDER(s)        (s->cmd[REG_UPDATE_RENDER_ADDR])
+#define REG_UPDATE_FB(s)            (s->cmd[REG_UPDATE_FB_ADDR])
+#define REG_FB_WIDTH(s)             (*(uint32_t*)&s->cmd[REG_FB_WIDTH_ADDR])
+#define REG_FB_HEIGHT(s)            (*(uint32_t*)&s->cmd[REG_FB_HEIGHT_ADDR])
+#define REG_VERTEX_SIZE(s)          (*(uint32_t*)&s->cmd[REG_VERTEX_SIZE_ADDR])
+#define REG_EDGE_SIZE(s)            (*(uint32_t*)&s->cmd[REG_EDGE_SIZE_ADDR])
+#define REG_VERTEX_SHADER(s)        (*(uint32_t*)&s->cmd[REG_VERTEX_SHADER_ADDR])
+#define REG_FRAGMENT_SHADER(s)      (*(uint32_t*)&s->cmd[REG_FRAGMENT_SHADER_ADDR])
+#define REG_EXEC_FRAGMENT_SHADER(s) (s->cmd[REG_EXEC_FRAGMENT_SHADER_ADDR])
 
 typedef struct GpuState {
     PCIDevice pdev;

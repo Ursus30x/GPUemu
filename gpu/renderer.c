@@ -4,14 +4,25 @@
 #define DEDUG_MAT
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
-    // gpu->pRegs[REG_PX].u32 = x;
-    // gpu->pRegs[REG_PY].u32 = y;
-    // uint8_t r  = (color >> 16) & 0xFF;
-    // uint8_t g  = (color >> 8) & 0xFF;
-    // uint8_t b  = color & 0xFF;
-    // gpu->pRegs[REG_PR].u32 = r;
-    // gpu->pRegs[REG_PG].u32 = g;
-    // gpu->pRegs[REG_PB].u32 = b;
+    if(REG_EXEC_FRAGMENT_SHADER(gpu))
+    {
+        gpu->pRegs[REG_PX].u32 = x;
+        gpu->pRegs[REG_PY].u32 = y;
+        uint8_t r  = (color >> 16) & 0xFF;
+        uint8_t g  = (color >> 8) & 0xFF;
+        uint8_t b  = color & 0xFF;
+        gpu->pRegs[REG_PR].u32 = r;
+        gpu->pRegs[REG_PG].u32 = g;
+        gpu->pRegs[REG_PB].u32 = b;
+        exec_shader(gpu, REG_FRAGMENT_SHADER(gpu));
+        color = (gpu->pRegs[REG_PR].u32 << 16) |
+                (gpu->pRegs[REG_PG].u32 << 8)  |
+                    gpu->pRegs[REG_PB].u32; 
+        
+       
+        
+    }
+    
     FB(gpu)[y * GPU_FB_WIDTH + x] = color;
 }
 
@@ -63,6 +74,7 @@ void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, u
 
 uint8_t cmp_u32(uint32_t a, uint32_t b, uint8_t flag)
 {
+    
     switch (flag) {
         case C_FLAG_EQ: return a == b;
         case C_FLAG_NEQ: return a != b;
@@ -100,9 +112,8 @@ static inline InstrArg get_arg_scalar_value(GpuState *gpu, uint8_t argType, Inst
             else \
                 gpu->pRegs[instr.arg0.u32].f32 op b.f32;\
 
-void exec_shader(GpuState *gpu)
+void exec_shader(GpuState *gpu, uint32_t program_offset)
 {
-    uint32_t program_offset = REG_VERTEX_SHADER(gpu);
     void *shader_segment = SHADER_PROGRAM(gpu);
     void *program_address = shader_segment + program_offset;
     int end = 1;
@@ -110,6 +121,7 @@ void exec_shader(GpuState *gpu)
         Instr instr = *(Instr*)program_address;
         if(instr.cFlag == C_FLAG_ENABLE && gpu->cFlag != 1)
         {
+            program_address+=sizeof(Instr);
             continue;
         }
         switch (instr.opcode)
@@ -263,7 +275,7 @@ void exec_shader(GpuState *gpu)
         }
         case INSTR_CMP:
         {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg1);
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
             InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
             if(instr.opType == OP_TYPE_F32)
                 gpu->cFlag = cmp_f32(a.f32, b.f32, instr.cFlag);

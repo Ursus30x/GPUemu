@@ -31,6 +31,7 @@
 #define REG_EDGE_SIZE_ADDR             16
 #define REG_VERTEX_SHADER_ADDR         20
 #define REG_FRAGMENT_SHADER_ADDR       24
+#define REG_EXEC_FRAGMENT_SHADER_ADDR  28
 
 #define GPU_MODE_GOP 0
 #define GPU_MODE_3D  1

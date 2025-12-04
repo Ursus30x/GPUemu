@@ -50,21 +50,7 @@ static void simple_3d_mode(GpuState *gpu)
 
     if(REG_GPU_MODE(gpu) == GPU_MODE_3D)
     {
-        void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
-        /*
-        addf p2 p2 0.02
-        fsan p2
-        roty m0 p2
-        rotx m1 0.3232
-        mulm m2 m0 m1
-        trans m1 0 0 5
-        mulm m0 m1 m2
-        mvp m0
-        exit
-        */
-        uint64_t bin_shader[] = { 0x241020909, 0x3CA3D70A, 0x4002090E, 0x0, 0x281000903, 0x0, 0x3EA57A7880010902, 0x0, 0x85020901, 0x1, 0x80010905, 0x500000000, 0x185000901, 0x2, 0x80000906, 0x0, 0x907, 0x0 };
-        memcpy(ss, bin_shader, sizeof(bin_shader));
-        exec_shader(gpu);
+        exec_shader(gpu, REG_VERTEX_SHADER(gpu));
 
         vga_update_display(gpu);
         graphic_hw_update(gpu->con);
@@ -220,6 +206,35 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     REG_GPU_MODE(gpu) = GPU_MODE_GOP;
  
     REG_EXEC_VERTEX_SHADER(gpu) = 1;
+    REG_EXEC_FRAGMENT_SHADER(gpu) = 1;
+    
+    REG_FRAGMENT_SHADER(gpu) = 300;
+
+    void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
+    /*
+    addf p2 p2 0.02
+    fsan p2
+    roty m0 p2
+    rotx m1 0.3232
+    mulm m2 m0 m1
+    trans m1 0 0 5
+    mulm m0 m1 m2
+    mvp m0
+    exit
+    */
+    uint64_t bin_vertex_shader[] = { 0x241020909, 0x3CA3D70A, 0x4002090E, 0x0, 0x281000903, 0x0, 0x3EA57A7880010902, 0x0, 0x85020901, 0x1, 0x80010905, 0x500000000, 0x185000901, 0x2, 0x80000906, 0x0, 0x907, 0x0 };
+    memcpy(ss, bin_vertex_shader, sizeof(bin_vertex_shader));
+    /*
+    mov pr 255
+    mov pg 0
+    mov pb 0
+    cmpi gt px 300
+    !mov pb 100
+    exit
+    */
+    uint64_t bin_fragment_shader[] ={ 0xFF000A0900, 0x0, 0xB0900, 0x0, 0xC0900, 0x0, 0x801000408, 0x12C, 0x64000C0800, 0x0, 0xA0800, 0x0, 0x907, 0x0 };
+
+    memcpy(ss + REG_FRAGMENT_SHADER(gpu) , bin_fragment_shader, sizeof(bin_fragment_shader));
 
     gpu->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, timer_callback, gpu);
     timer_mod(   gpu->timer , qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000000ULL);
