@@ -68,7 +68,7 @@ static void simple_3d_mode(GpuState *gpu)
         */
         void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
         INSTR_TABLE(program,
-        I_ROTX(REG_M0, angle_radians),          
+        I_ROTX(REG_M0, M_PI - M_PI/3 + 0.6f),          
         I_ROTY(REG_M1, angle_radians),           
         I_MUL(OP_TYPE_MAT, 0,REG_M2, REG_M0, REG_M1), 
         I_TRANS(REG_M1, 0, 0, 5), 
@@ -231,32 +231,12 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     //init state
     REG_FB_HEIGHT(gpu) = 480;
     REG_FB_WIDTH(gpu) = 640;
-    REG_VERTEX_SIZE(gpu) = 8;
-    REG_EDGE_SIZE(gpu) = 13;
+    REG_VERTEX_SIZE(gpu) = 0;
+    REG_EDGE_SIZE(gpu) = 0;
     REG_VERTEX_SHADER(gpu) = 0;
     REG_GPU_MODE(gpu) = GPU_MODE_GOP;
  
-    Vec3 cube_vertices[] = {
-    { -1, -1, -1, 0xFFFF0000 },
-    {  1, -1, -1, 0xFF00FF00 },
-    {  1,  1, -1, 0xFF0000FF },
-    { -1,  1, -1, 0xFFFFFF00 }, 
-    { -1, -1,  1, 0xFFFF00FF },
-    {  1, -1,  1, 0xFF00FFFF },
-    {  1,  1,  1, 0xFFFFFFFF }, 
-    { -1,  1,  1, 0xFF808080 }  
-    };
-    Edge cube_edges[] = {
-    {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7},{5,3}
-    };
-
-    Vec3 *vertices = VERTEX_TABLE(gpu);
-    Edge *edges = EDGES_TABLE(gpu);
-
-    memcpy(vertices, cube_vertices, sizeof(cube_vertices));
-    memcpy(edges, cube_edges, sizeof(cube_edges));
-
-        REG_EXEC_VERTEX_SHADER(gpu) = 1;
+    REG_EXEC_VERTEX_SHADER(gpu) = 1;
 
     gpu->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, timer_callback, gpu);
     timer_mod(   gpu->timer , qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000000ULL);

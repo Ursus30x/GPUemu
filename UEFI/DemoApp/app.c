@@ -19,6 +19,8 @@
         Status = gST->ConIn->ReadKeyStroke(gST->ConIn, &Key); \
     }
 
+typedef struct { double x, y, z; UINT32 rgba; } Vec3;
+typedef struct { UINT32 a, b; } Edge;
 
 STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL *mGraphicsOutput = NULL;
 STATIC GOP_3D_PROTOCOL              *mGOP3D          = NULL;
@@ -186,7 +188,68 @@ EFI_STATUS EFIAPI TestGop() {
 
     mGOP3D->SetGpuMode(mGOP3D,1);
 
-    WAIT_FOR_KEYPRESS()  
+    WAIT_FOR_KEYPRESS()
+
+    Vec3 cube_vertices[] = {
+        { -1, -1, -1, 0xFFFF0000 },
+        {  1, -1, -1, 0xFF00FF00 },
+        {  1,  1, -1, 0xFF0000FF },
+        { -1,  1, -1, 0xFFFFFF00 }, 
+        { -1, -1,  1, 0xFFFF00FF },
+        {  1, -1,  1, 0xFF00FFFF },
+        {  1,  1,  1, 0xFFFFFFFF }, 
+        { -1,  1,  1, 0xFF808080 }  
+    };
+    Edge cube_edges[] = {
+    {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7},{5,3}
+    };
+
+    mGOP3D->TransferDataBuffer(mGOP3D,VERTEX_BUFFER,cube_vertices,sizeof(cube_vertices));
+    mGOP3D->TransferDataBuffer(mGOP3D,EDGE_BUFFER,cube_edges,sizeof(cube_edges));
+
+    WAIT_FOR_KEYPRESS()
+
+    Vec3 piramid_vertices[] = {
+        {  1,  0, 1, 0xFF00FF00 }, 
+        {  1,  0,-1, 0xFF0000FF }, 
+        { -1,  0,-1, 0xFFFF00FF },
+        { -1,  0, 1, 0xFFFFFFFF },
+        {  0, -2.5, 0, 0xFFFF0000 }
+    };
+
+    Edge piramid_edges[] = {
+        {0,1},{1,2},{2,3},{3,0},
+        {0,4},{1,4},{2,4},{3,4}
+    };
+
+    mGOP3D->TransferDataBuffer(mGOP3D,VERTEX_BUFFER,piramid_vertices,sizeof(piramid_vertices));
+    mGOP3D->TransferDataBuffer(mGOP3D,EDGE_BUFFER,piramid_edges,sizeof(piramid_edges));
+
+
+    WAIT_FOR_KEYPRESS()
+
+    Vec3 star_vertices[] = {
+        {  0.000,  2.000,  0.000, 0xFFFFFF00 },  // 0: top point
+        {  0.500,  0.500,  0.000, 0xFFFFFFFF },  // 1
+        {  2.000,  0.500,  0.000, 0xFFFF0000 },  // 2: right point
+        {  0.700, -0.300,  0.000, 0xFFFFFFFF },  // 3
+        {  1.200, -1.500,  0.000, 0xFF00FF00 },  // 4: bottom-right
+        {  0.000, -0.700,  0.000, 0xFFFFFFFF },  // 5: center
+        { -1.200, -1.500,  0.000, 0xFF0000FF },  // 6: bottom-left
+        { -0.700, -0.300,  0.000, 0xFFFFFFFF },  // 7
+        { -2.000,  0.500,  0.000, 0xFFFF00FF },  // 8: left point
+        { -0.500,  0.500,  0.000, 0xFFFFFFFF }   // 9
+    };
+
+    Edge star_edges[] = {
+        {0,1}, {1,2}, {2,3}, {3,4}, {4,5},
+        {5,6}, {6,7}, {7,8}, {8,9}, {9,0}
+    };
+
+    mGOP3D->TransferDataBuffer(mGOP3D,VERTEX_BUFFER,star_vertices,sizeof(star_vertices));
+    mGOP3D->TransferDataBuffer(mGOP3D,EDGE_BUFFER,star_edges,sizeof(star_edges));
+
+    WAIT_FOR_KEYPRESS()
 
     mGOP3D->SetGpuMode(mGOP3D,0);
 
