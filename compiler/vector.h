@@ -71,5 +71,4 @@ static inline void vector_free(Vector* vec) {
     vec->capacity = 0;
 }
 
-
 #endif // VECTOR_IMPLEMENTATION

@@ -62,26 +62,8 @@ static void simple_3d_mode(GpuState *gpu)
         mvp m0
         exit
         */
-<<<<<<< HEAD
-        void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
-        INSTR_TABLE(program,
-        I_ROTX(REG_M0, M_PI - M_PI/3 + 0.6f),          
-        I_ROTY(REG_M1, angle_radians),           
-        I_MUL(OP_TYPE_MAT, 0,REG_M2, REG_M0, REG_M1), 
-        I_TRANS(REG_M1, 0, 0, 5), 
-        I_MUL(OP_TYPE_MAT, 0, REG_M0, REG_M1, REG_M2), 
-        I_MVP(REG_M0),
-        I_MOV(OP_TYPE_F32, REG_P0, 0x3ecccccd),
-        I_ADD(OP_TYPE_F32, 0, REG_P1, REG_P0, 0x3f800000), 
-        I_CMP(C_FLAG_EQ, OP_TYPE_I32, REG_P0, REG_P1),
-        I_EXIT()
-        );
-        memcpy(ss, program, sizeof(program));
-        REG_EXEC_VERTEX_SHADER(gpu) = 1;
-=======
         uint64_t bin_shader[] = { 0x241020909, 0x3CA3D70A, 0x4002090E, 0x0, 0x281000903, 0x0, 0x3EA57A7880010902, 0x0, 0x85020901, 0x1, 0x80010905, 0x500000000, 0x185000901, 0x2, 0x80000906, 0x0, 0x907, 0x0 };
         memcpy(ss, bin_shader, sizeof(bin_shader));
->>>>>>> 7a601b8 ([Compiler][Qemu] New isa interpreter and simple compiler)
         exec_shader(gpu);
 
         vga_update_display(gpu);
@@ -235,7 +217,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     REG_VERTEX_SIZE(gpu) = 0;
     REG_EDGE_SIZE(gpu) = 0;
     REG_VERTEX_SHADER(gpu) = 0;
-    REG_GPU_MODE(gpu) = GPU_MODE_3D;
+    REG_GPU_MODE(gpu) = GPU_MODE_GOP;
  
     REG_EXEC_VERTEX_SHADER(gpu) = 1;
 

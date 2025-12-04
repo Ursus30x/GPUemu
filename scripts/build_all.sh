@@ -7,3 +7,4 @@ cd "$CWD/scripts"
 
 ./build_qemu.sh
 ./build_edk2.sh
+./build_compiler.sh
