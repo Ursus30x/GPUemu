@@ -3,8 +3,8 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-cd "$CWD/scripts"
+cd "$CWD/compiler"
+make
 
-./build_qemu.sh
-./build_edk2.sh
-./build_compiler.sh
+mkdir -p ../tools
+mv compiler ../tools/compiler

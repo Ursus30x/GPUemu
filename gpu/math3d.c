@@ -79,7 +79,7 @@ Mat4 get_mat_from_arg(int arg_val, Mat4* gpu_regs, uint8_t* shader_segment)
 void print_mat4(const Mat4* mat, const char* name)
 {
     if (!mat) return;
-    #ifdef DEDUG_MAT
+    #ifdef DEBUG_MAT
     printf("Matrix %s:\n", name);
     for (int i = 0; i < 4; ++i) {
         printf("[ ");

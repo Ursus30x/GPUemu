@@ -1,16 +1,28 @@
 #include "renderer.h"
 #include "math3d.h"
-
+#include "math.h"
+#define DEDUG_MAT
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
-    // gpu->pRegs[REG_PX].u32 = x;
-    // gpu->pRegs[REG_PY].u32 = y;
-    // uint8_t r  = (color >> 16) & 0xFF;
-    // uint8_t g  = (color >> 8) & 0xFF;
-    // uint8_t b  = color & 0xFF;
-    // gpu->pRegs[REG_PR].u32 = r;
-    // gpu->pRegs[REG_PG].u32 = g;
-    // gpu->pRegs[REG_PB].u32 = b;
+    if(REG_EXEC_FRAGMENT_SHADER(gpu))
+    {
+        gpu->pRegs[REG_PX].u32 = x;
+        gpu->pRegs[REG_PY].u32 = y;
+        uint8_t r  = (color >> 16) & 0xFF;
+        uint8_t g  = (color >> 8) & 0xFF;
+        uint8_t b  = color & 0xFF;
+        gpu->pRegs[REG_PR].u32 = r;
+        gpu->pRegs[REG_PG].u32 = g;
+        gpu->pRegs[REG_PB].u32 = b;
+        exec_shader(gpu, REG_FRAGMENT_SHADER(gpu));
+        color = (gpu->pRegs[REG_PR].u32 << 16) |
+                (gpu->pRegs[REG_PG].u32 << 8)  |
+                    gpu->pRegs[REG_PB].u32; 
+        
+       
+        
+    }
+    
     FB(gpu)[y * GPU_FB_WIDTH + x] = color;
 }
 
@@ -62,6 +74,7 @@ void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, u
 
 uint8_t cmp_u32(uint32_t a, uint32_t b, uint8_t flag)
 {
+    
     switch (flag) {
         case C_FLAG_EQ: return a == b;
         case C_FLAG_NEQ: return a != b;
@@ -86,131 +99,212 @@ uint8_t cmp_f32(float a, float b, uint8_t flag)
     }
 }
 
-
- 
-void exec_shader(GpuState *gpu)
+static inline InstrArg get_arg_scalar_value(GpuState *gpu, uint8_t argType, InstrArg arg)
 {
-    uint32_t program_offset = REG_VERTEX_SHADER(gpu);
+    if(argType == ARG_TYPE_IMM) return arg;
+        return gpu->pRegs[arg.u32];
+}
+
+#define ARITHMETIC_OP(op) \
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1); \
+            if(instr.opType == OP_TYPE_U32) \
+                 gpu->pRegs[instr.arg0.u32].u32 op b.u32; \
+            else \
+                gpu->pRegs[instr.arg0.u32].f32 op b.f32;\
+
+void exec_shader(GpuState *gpu, uint32_t program_offset)
+{
     void *shader_segment = SHADER_PROGRAM(gpu);
     void *program_address = shader_segment + program_offset;
     int end = 1;
-    #define CHECK_REG_MAT_NUM(num) if(!REG_MAT_NUM_OK(num)){printf("Panic invalid regnum!\n");end = 0;break;}
-    #define CHECK_REG_P_NUM(num) if(!REG_P_NUM_OK(num)){printf("Panic invalid regnum!\n");end = 0;break;}
-
     do{ 
         Instr instr = *(Instr*)program_address;
+        if(instr.cFlag == C_FLAG_ENABLE && gpu->cFlag != 1)
+        {
+            program_address+=sizeof(Instr);
+            continue;
+        }
         switch (instr.opcode)
         {
         
         case INSTR_MOV:
         {
-            switch (instr.opType) 
+            if(instr.opType == OP_TYPE_MATRIX)
             {
-                case OP_TYPE_MAT: 
-                {
-                    CHECK_REG_MAT_NUM(instr.dst);
-                    if(ARG_IS_MEM_ADDR(instr.arg0.u32))
-                        memcpy(&gpu->regs[instr.dst], shader_segment+instr.arg0.u32,  sizeof(Mat4));
-                    else
-                    {
-                        uint32_t src = REG_NUM(instr.arg0.u32);
-                        CHECK_REG_MAT_NUM(src);
-                        gpu->regs[instr.dst] = gpu->regs[src];
-                    }
-                    break;
-                }
-                case OP_TYPE_P_P:
-                {
-                    CHECK_REG_P_NUM(instr.dst);
-                    CHECK_REG_P_NUM(instr.arg0.u32);
-                    gpu->pRegs[instr.dst] = gpu->pRegs[instr.arg0.u32];
-                    break;
-                }
-                case OP_TYPE_I32:
-                case OP_TYPE_F32:
-                {
-                    CHECK_REG_P_NUM(instr.dst);
-                    gpu->pRegs[instr.dst] = instr.arg0;
-                    break;
-                }
-            
+                gpu->regs[instr.dest] = gpu->regs[instr.arg0.u32];
+                break;
             }
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            gpu->pRegs[instr.dest] = a;
+            break;
+        }
+        case INSTR_ROTX:
+        {
+            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            gpu->regs[instr.dest] = mat4_rotate_x(rot.f32);
+            print_mat4(&gpu->regs[instr.dest], "ROTX");
+            break;
+        }
+        case INSTR_ROTY:
+        {
+            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            gpu->regs[instr.dest] = mat4_rotate_y(rot.f32);
+            print_mat4(&gpu->regs[instr.dest], "ROTY");
+            break;
+        }
+        case INSTR_SIN:
+        {
+            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            gpu->pRegs[instr.dest].f32 = sinf(rot.f32);
+            break;
+        }
+        case INSTR_COS:
+        {
+            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            gpu->pRegs[instr.dest].f32 = cosf(rot.f32);
+            break;
+        }
+        case INSTR_SQRT:
+        {
+            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            gpu->pRegs[instr.dest].f32 = sqrtf(rot.f32);
+            break;
+        }
+        case INSTR_FSAN:
+        {
+            float val = gpu->pRegs[instr.dest].f32;
+            if(!isfinite(val))
+                gpu->pRegs[instr.dest].f32 = 0.0f;
+            break;
+        }
+        case INSTR_IDENT:
+        {
+            gpu->regs[instr.dest] = mat4_identity();
+            break;
+        }
+        case INSTR_MVP:
+        {
+            gpu->mvp = gpu->regs[instr.dest];
+            print_mat4(&gpu->regs[instr.dest], "MVP");
+            break;
+        }
+        case INSTR_MOD:
+        {
+            InstrArg a = gpu->pRegs[instr.arg0.u32];
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            gpu->pRegs[instr.dest].u32 = a.u32 % b.u32;
+            break;
+        }
 
+        case INSTR_COL:
+        {
+            InstrArg r = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg1);
+            InstrArg g = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
+
+            gpu->pr = r.u32;
+            gpu->pg = g.u32;
+            gpu->pb = b.u32;
+            break;
+        }
+        case INSTR_ABS:
+        {
+            InstrArg a = gpu->pRegs[instr.arg0.u32];
+
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].f32 = fabsf(a.f32);
+            else 
+                gpu->pRegs[instr.dest].u32 = abs(a.u32);
+            
+            break;
+        }
+        // a + (b - a) * t
+        case INSTR_LERP:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg1);
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            InstrArg t = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
+
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].f32 = a.f32 + (b.f32 - a.f32) * t.f32;
+            else 
+                gpu->pRegs[instr.dest].u32 = (int)((float)(a.u32 + (b.u32 - a.u32)) * t.f32);
+            
+            break;
+        }
+        // a * (1 - weight) + b * weight
+        case INSTR_BLEND:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg1);
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            InstrArg w = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
+
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].f32 = a.f32 * (1.0 - w.f32)  + b.f32 * w.f32;
+            else 
+                gpu->pRegs[instr.dest].u32 = (int)(a.u32 * (1.0 - w.f32)  + b.u32 * w.f32);      
             break;
         }
         case INSTR_MUL:
         {
-            if (instr.opType == OP_TYPE_MAT)
+            if(instr.opType == OP_TYPE_MATRIX)
             {
-                /* Matrix multiply */
-                CHECK_REG_MAT_NUM(instr.dst);
-
-                Mat4 a = get_mat_from_arg(instr.arg0.u32, gpu->regs, shader_segment);
-                Mat4 b = get_mat_from_arg(instr.arg1.u32, gpu->regs, shader_segment);
-
-                gpu->regs[instr.dst] = mat4_mul(&a, &b);
-                print_mat4(&gpu->regs[instr.dst], "mul");
+                Mat4 *a =  &gpu->regs[instr.arg0.u32];
+                Mat4 *b =  &gpu->regs[instr.arg1.u32];
+                gpu->regs[instr.dest] = mat4_mul(a,b);
+                print_mat4(&gpu->regs[instr.dest], "MUL");
+                break;
             }
-            else
-            {
-                EXEC_P_OP("MUL", *);
-            }
-            break;
+           ARITHMETIC_OP(*=);
+           break;
         }
         case INSTR_ADD:
-            EXEC_P_OP("ADD", +);
-        break;
+        {
+            ARITHMETIC_OP(+=);
+            break;
+        }
+        case INSTR_SUB:
+        {
+            ARITHMETIC_OP(-=);
+            break;
+        }
         case INSTR_DIV:
-            EXEC_P_OP("div", /);
-        break;
-         case INSTR_SUB:
-            EXEC_P_OP("SUB", -);
-        break;
-        case INSTR_MVP:
-            CHECK_REG_MAT_NUM(instr.dst);
-            gpu->mvp = gpu->regs[instr.dst];
-            print_mat4(&gpu->mvp, "mvp");
+        {
+            ARITHMETIC_OP(/=);
             break;
-        case INSTR_ROTX:
-            CHECK_REG_MAT_NUM(instr.dst);
-            gpu->regs[instr.dst] = mat4_rotate_x(instr.arg0.f32);
-            print_mat4(&gpu->regs[instr.dst], "rotx");
+        }
+        case INSTR_CMP:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            if(instr.opType == OP_TYPE_F32)
+                gpu->cFlag = cmp_f32(a.f32, b.f32, instr.cFlag);
+            else 
+                gpu->cFlag = cmp_u32(a.u32, b.u32, instr.cFlag);   
             break;
-        case INSTR_ROTY:
-            CHECK_REG_MAT_NUM(instr.dst);
-            gpu->regs[instr.dst] = mat4_rotate_y(instr.arg0.f32);
-            print_mat4(&gpu->regs[instr.dst], "roty");
+        }
+        case INSTR_CAST:
+        {
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.arg0.u32].f32 = (float) (gpu->pRegs[instr.arg0.u32].u32);
+            else 
+                gpu->pRegs[instr.arg0.u32].u32 = (int)(gpu->pRegs[instr.arg0.u32].f32);   
             break;
+        }
         case INSTR_TRANS:
-            CHECK_REG_MAT_NUM(instr.dst);
-            gpu->regs[instr.dst] = mat4_translate(instr.arg0.f32,instr.arg1.f32,instr.arg2.f32);
-            print_mat4(&gpu->regs[instr.dst], "trans");
+        {
+            InstrArg x = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg1);
+            InstrArg y = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            InstrArg z = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
+            gpu->regs[instr.dest] = mat4_translate(x.u32, y.u32, z.u32);
+            print_mat4(&gpu->regs[instr.dest], "TRANS");
             break;
-        case INSTR_IDENT:
-            CHECK_REG_MAT_NUM(instr.dst);
-            gpu->regs[instr.dst] = mat4_identity();
-            break;
+        }
         case INSTR_EXIT:
             end = 0;
             REG_EXEC_VERTEX_SHADER(gpu) = 0;
-            break;
-        case INSTR_CMP:
-        {
-            CHECK_REG_P_NUM(instr.arg0.u32)
-            CHECK_REG_P_NUM(instr.arg1.u32)
-           
-            Preg a = gpu->pRegs[instr.arg0.u32];
-            Preg b = gpu->pRegs[instr.arg1.u32];
-            if (instr.opType == OP_TYPE_I32)
-                gpu->cFlag = cmp_u32(a.u32, b.u32, instr.cFlag);
-            else if (instr.opType == OP_TYPE_F32)
-                gpu->cFlag = cmp_f32(a.f32, b.f32, instr.cFlag);
-            break;
-        }
-        default:
-            printf("Panic unkown opcode!\n");
-            end = 0;
-            break;
+            return;
+        break;
         }
         program_address+=sizeof(Instr);
     }while(end);
@@ -247,6 +341,8 @@ void gpu_render_frame(void *opaque)
 
     Mat4  proj      = mat4_perspective(PI/3, (float)width/height, 1.0f, 10.0f);
     Mat4  mvp_local = mat4_mul(&proj, &gpu->mvp);
+
+    print_mat4(&mvp_local, "MVP RENDER");
     
     uint32_t *px = malloc(sizeof(uint32_t)* vertex_size);
     uint32_t *py = malloc(sizeof(uint32_t)* vertex_size);
@@ -254,13 +350,11 @@ void gpu_render_frame(void *opaque)
     {
         Vec4 v = {vertices[i].x, vertices[i].y, vertices[i].z, 1.0f};
         Vec4 tv = mat4_mul_vec4(&mvp_local, v);
-
         float ndc_x = tv.x / tv.w;
         float ndc_y = tv.y / tv.w;
         px[i] = (int)((ndc_x*0.5f + 0.5f) * width);
         py[i] = (int)((-ndc_y*0.5f + 0.5f) * height);
     }
-
     for(uint32_t i=0;i<edges_size;i++)
     {
         Edge e = edges[i];

@@ -49,12 +49,12 @@ Instructions are fixed-size structures. Operand interpretation depends on opcode
 ```c
 typedef struct Instr {
     uint8_t  opcode;        // Operation identifier
-    uint8_t  dst;           // Destination register (M0–M7 or P0–P7 depending on op)
+    uint8_t  dest;           // Destination register (M0–M7 or P0–P7 depending on op)
     uint8_t  cFlag;         // Condition flag handling (see below)
-    uint8_t  arg0Type:1;    // 0=reg, 1=imm/data
-    uint8_t  arg1Type:1;    // 0=reg, 1=imm/data
-    uint8_t  arg2Type:1;    // 0=reg, 1=imm/data
-    uint8_t  opType:5;      // Operand type: I32/F32/Matrix
+    uint8_t  arg0Type:2;    // 0=reg, 1=imm/data
+    uint8_t  arg1Type:2;    // 0=reg, 1=imm/data
+    uint8_t  arg2Type:2;    // 0=reg, 1=imm/data
+    uint8_t  opType:2;      // Operand type: I32/F32/Matrix
     uint32_t arg0;          // Source operand 0
     uint32_t arg1;          // Source operand 1
     uint32_t arg2;          // Source operand 2
@@ -111,7 +111,7 @@ If `cFlag = 0`, the check is disabled.
 | `2`   | `Matrix` |
 
 Most instructions require a specific `opType`.
-Scalar instructions use `_i`/`_f` suffixes, matrix instructions use `_m`.
+Scalar instructions use `i`/`f` suffixes, matrix instructions use `m`.
 
 
 -----
@@ -154,7 +154,7 @@ Scalar instructions use `_i`/`_f` suffixes, matrix instructions use `_m`.
 ## **MOV** (Move)
 
 * **Opcode:** `0`
-* **Syntax:** `MOV[_i|_f|_m] dst, src`
+* **Syntax:** `MOV[ |m] dst, src`
 * **Description:** Copies the value from `src` into `dst`. Supports matrix and scalar transfers.
 * **Type:** I32, F32, Matrix
 * **Type Field:** Present
@@ -168,7 +168,7 @@ Scalar instructions use `_i`/`_f` suffixes, matrix instructions use `_m`.
 ## **MUL** (Multiply)
 
 * **Opcode:** `1`
-* **Syntax:** `MUL[_i|_f|_m] dst, src0, src1`
+* **Syntax:** `MUL[i|f|m] dst, src0, src1`
 * **Description:** Performs multiplication (`src0 * src1`). Supports matrix or scalar arithmetic.
 * **Type:** I32, F32, Matrix
 * **Type Field:** Present
@@ -264,7 +264,7 @@ Scalar instructions use `_i`/`_f` suffixes, matrix instructions use `_m`.
 ## **CMP** (Compare)
 
 * **Opcode:** `8`
-* **Syntax:** `CMP[_i|_f] mode, src0, src1`
+* **Syntax:** `CMP[i|f] mode, src0, src1`
 * **Description:** Compares `src0` and `src1` using `mode` and writes result (0 or 1) into the runtime `cFlag`.
 * **Type:** I32 or F32
 * **Type Field:** Present
@@ -279,7 +279,7 @@ Scalar instructions use `_i`/`_f` suffixes, matrix instructions use `_m`.
 ## **ADD** (Addition)
 
 * **Opcode:** `9`
-* **Syntax:** `ADD[_i|_f|_m] dst, src0, src1`
+* **Syntax:** `ADD[i|f|m] dst, src0, src1`
 * **Description:** Computes `dst = src0 + src1`. Supports scalar or matrix addition.
 * **Type:** I32, F32, Matrix
 * **Type Field:** Present
@@ -294,7 +294,7 @@ Scalar instructions use `_i`/`_f` suffixes, matrix instructions use `_m`.
 ## **SUB** (Subtraction)
 
 * **Opcode:** `10`
-* **Syntax:** `SUB[_i|_f|_m] dst, src0, src1`
+* **Syntax:** `SUB[i|f|m] dst, src0, src1`
 * **Description:** Computes `dst = src0 − src1`.
 * **Type:** I32, F32, Matrix
 * **Type Field:** Present
@@ -309,7 +309,7 @@ Scalar instructions use `_i`/`_f` suffixes, matrix instructions use `_m`.
 ## **DIV** (Division)
 
 * **Opcode:** `11`
-* **Syntax:** `DIV[_i|_f] dst, src0, src1`
+* **Syntax:** `DIV[i|f] dst, src0, src1`
 * **Description:** Computes scalar division `dst = src0 / src1`.
 * **Type:** I32 or F32
 * **Type Field:** Present
@@ -414,7 +414,7 @@ Scalar instructions use `_i`/`_f` suffixes, matrix instructions use `_m`.
 ## **ABS** (Absolute Value)
 
 * **Opcode:** `18`
-* **Syntax:** `ABS[_i|_f] dst, src`
+* **Syntax:** `ABS[i|f] dst, src`
 * **Description:** Computes absolute value of integer or float.
 * **Type:** I32 or F32
 * **Type Field:** Present
@@ -456,12 +456,12 @@ Scalar instructions use `_i`/`_f` suffixes, matrix instructions use `_m`.
 ## **CAST** (Scalar Type Conversion)
 
 * **Opcode:** `21`
-* **Syntax:** `CAST[_i|_f] dst, src`
+* **Syntax:** `CAST[i|f] dst, src`
 * **Description:** Converts scalar between integer and float types.
 
 ```
-CAST_f (i32 → f32)  
-CAST_i (f32 → i32)
+CASTf (i32 → f32)  
+CASTi (f32 → i32)
 ```
 
 * **Type:** I32 or F32 depending on direction
