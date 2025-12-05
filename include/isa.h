@@ -8,7 +8,7 @@
 #define PCI_VENDOR_ID_CUSTOM 0x6969
 
 #define GPU_MMIO_BAR    0
-#define GPU_VRAM_BAT    1
+#define GPU_VRAM_BAR    1
 
 #define GPU_FB_WIDTH  640
 #define GPU_FB_HEIGHT 480

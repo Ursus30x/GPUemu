@@ -46,12 +46,104 @@ Gop3DSetGpuMode (
   return EFI_SUCCESS;
 }
 
+EFI_STATUS
+EFIAPI
+Gop3DTransferDataBuffer (
+  IN GOP_3D_PROTOCOL  *This,
+  IN DATA_TYPE         DataType,
+  IN VOID             *Data,
+  IN UINT32            Size
+  )
+{
+  MY_GPU_PRIVATE_DATA *Private;
+  EFI_STATUS           Status;
+  UINT64               BaseAddress;
+  UINT32               i;
+  UINT32               Count;
+
+  if (This == NULL || Data == NULL || Size == 0) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
+
+  if (DataType == VERTEX_BUFFER) {
+    BaseAddress = GPU_VRAM_VERTEX_SEGMENT_ADDR;
+    
+    // Write vertices via PCI
+    for (i = 0; i < Size; i += 4) {
+      Status = Private->PciIo->Mem.Write(
+        Private->PciIo,
+        EfiPciIoWidthUint32,
+        GPU_VRAM_BAR,
+        BaseAddress + i,
+        1,
+        (UINT8*)Data + i
+      );
+      if (EFI_ERROR(Status)) {
+        return Status;
+      }
+    }
+    
+    // Set vertex count (Size / sizeof(Vec3))
+    Count = Size / sizeof(Vec3);
+    Status = Private->PciIo->Mem.Write(
+      Private->PciIo,
+      EfiPciIoWidthUint32,
+      GPU_MMIO_BAR,
+      REG_VERTEX_SIZE_ADDR,
+      1,
+      &Count
+    );
+    if (EFI_ERROR(Status)) {
+      return Status;
+    }
+  }
+  else if (DataType == EDGE_BUFFER) {
+    BaseAddress = GPU_VRAM_EDGES_SEGMENT_ADDR;
+    
+    // Write edges via PCI
+    for (i = 0; i < Size; i += 4) {
+      Status = Private->PciIo->Mem.Write(
+        Private->PciIo,
+        EfiPciIoWidthUint32,
+        GPU_VRAM_BAR,
+        BaseAddress + i,
+        1,
+        (UINT8*)Data + i
+      );
+      if (EFI_ERROR(Status)) {
+        return Status;
+      }
+    }
+    
+    // Set edge count (Size / sizeof(Edge))
+    Count = Size / sizeof(Edge);
+    Status = Private->PciIo->Mem.Write(
+      Private->PciIo,
+      EfiPciIoWidthUint32,
+      GPU_MMIO_BAR,
+      REG_EDGE_SIZE_ADDR,
+      1,
+      &Count
+    );
+    if (EFI_ERROR(Status)) {
+      return Status;
+    }
+  }
+  else {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  return EFI_SUCCESS;
+}
+
 EFI_STATUS EFIAPI Gop3DSetup(IN OUT MY_GPU_PRIVATE_DATA *Private) {
   DEBUG((DEBUG_INFO, "GOP3D: Setting up GOP3D protocol\n"));
   
   // Initialize the GOP3D protocol function pointers
   Private->Gop3dProtocol.SetGpuMode = Gop3DSetGpuMode;
-  
+  Private->Gop3dProtocol.TransferDataBuffer = Gop3DTransferDataBuffer;
   // TODO: Add other functions when implemented
   // Private->Gop3dProtocol.SetCmdBuffer = Gop3DSetCmdBuffer;
   // Private->Gop3dProtocol.TransferDataBuffer = Gop3DTransferDataBuffer;
