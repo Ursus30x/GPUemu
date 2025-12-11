@@ -4,7 +4,7 @@
 #define DEDUG_MAT
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
-    if(REG_EXEC_FRAGMENT_SHADER(gpu))
+    if(0) // TO DO TRIGGER FRAGMENT
     {
         gpu->pRegs[REG_PX].u32 = x;
         gpu->pRegs[REG_PY].u32 = y;
@@ -14,7 +14,7 @@ void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
         gpu->pRegs[REG_PR].u32 = r;
         gpu->pRegs[REG_PG].u32 = g;
         gpu->pRegs[REG_PB].u32 = b;
-        exec_shader(gpu, REG_FRAGMENT_SHADER(gpu));
+       // exec_shader(gpu, REG_FRAGMENT_SHADER(gpu));
         color = (gpu->pRegs[REG_PR].u32 << 16) |
                 (gpu->pRegs[REG_PG].u32 << 8)  |
                     gpu->pRegs[REG_PB].u32; 
@@ -302,7 +302,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         }
         case INSTR_EXIT:
             end = 0;
-            REG_EXEC_VERTEX_SHADER(gpu) = 0;
+        //    / REG_EXEC_VERTEX_SHADER(gpu) = 0;
             return;
         break;
         }
@@ -316,16 +316,20 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 void gpu_render_frame(void *opaque)
 {
     GpuState *gpu = opaque;
-    if(REG_EXEC_VERTEX_SHADER(gpu) == 1)
+    if(0)//REG_EXEC_VERTEX_SHADER(gpu) == 1
     {
         return;
     }
 
-    uint32_t width =  REG_FB_WIDTH(gpu);
-    uint32_t height =  REG_FB_HEIGHT(gpu);
-    uint32_t vertex_size = REG_VERTEX_SIZE(gpu);
-    uint32_t edges_size = REG_EDGE_SIZE(gpu);
-
+    // uint32_t width =  REG_FB_WIDTH(gpu);
+    // uint32_t height =  REG_FB_HEIGHT(gpu);
+    // uint32_t vertex_size = REG_VERTEX_SIZE(gpu);
+    // uint32_t edges_size = REG_EDGE_SIZE(gpu);
+    //TO-DO CHANGE
+    uint32_t width =  gpu->width;
+    uint32_t height = gpu->height;
+    uint32_t vertex_size = 0;
+    uint32_t edges_size = 0;
     uint32_t *fb = FB(gpu);
     Vec3 *vertices = VERTEX_TABLE(gpu);
     Edge *edges = EDGES_TABLE(gpu);

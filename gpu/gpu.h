@@ -40,21 +40,40 @@
 #define REG_FRAGMENT_SHADER(s)      (*(uint32_t*)&s->cmd[REG_FRAGMENT_SHADER_ADDR])
 #define REG_EXEC_FRAGMENT_SHADER(s) (s->cmd[REG_EXEC_FRAGMENT_SHADER_ADDR])
 
+
+
 typedef struct GpuState {
+    
     PCIDevice pdev;
-    MemoryRegion cmdmem;   /* BAR0 */
-    MemoryRegion vrammem;  /* BAR1 */
-    QemuConsole *con;
+    MemoryRegion mmiomem;         // BAR0: MMIO
+    MemoryRegion vrammem;         // BAR1: VRAM
+    QemuConsole *con;             
     QEMUTimer *timer;
 
-    uint8_t cmd[GPU_CMD_SIZE];
-    uint8_t *vram_ptr;
+    uint8_t *vram_ptr;            
 
-    Mat4 regs[REG_MAT_SIZE];
-    Preg pRegs[REG_P_SIZE];
-    Mat4 mvp;
-    uint32_t px,py,pr,pg,pb;
-    uint8_t cFlag;
+
+    uint32_t gpu_mode;            // 0x00
+    uint32_t ring_buffer_head;    // 0x04
+    uint32_t ring_buffer_tail;    // 0x08
+    uint32_t vs_code_addr;        // 0x10
+    uint32_t fs_code_addr;        // 0x14
+    uint32_t width;               // 0x18
+    uint32_t height;              // 0x1C
+    uint32_t framebuffer_vram_offset; // 0x20
+    uint32_t gpu_time;            // 0x24 
+
+    GenericBufferConfig vbo_config;
+    GenericBufferConfig edge_config;
+    GenericBufferConfig uinform_config;
+    
+    Mat4 regs[REG_MAT_SIZE];        
+    Preg pRegs[REG_P_GEN_SIZE];
+    Mat4 mvp;                      
+ 
+    uint32_t px, py;                  
+    uint32_t pr, pg, pb;             
+    uint8_t cFlag;            
 } GpuState;
 
 

@@ -143,4 +143,114 @@ typedef struct  Instr {
 #define OP_TYPE_F32      1
 #define OP_TYPE_MATRIX   2
 
+
+
+#define MAX_UNIFORMS_PER_SHADER  16
+#define MAX_ATTRIBUTES_PER_SHADER 8
+
+typedef enum {
+    D_TYPE_FLOAT = 1,
+    D_TYPE_VEC2,
+    D_TYPE_VEC3,
+    D_TYPE_VEC4,
+    D_TYPE_MAT4,
+    D_TYPE_UINT32
+} DataType;
+
+typedef struct {
+    uint32_t vbo_addr;          
+    uint32_t size;             
+    DataType element_type;     
+    
+} GenericBufferConfig;
+
+
+typedef struct {
+    DataType data_type;        
+    uint32_t offset; 
+} AttributeMap;
+
+typedef struct __attribute__((packed)) {
+    DataType data_type;
+    uint32_t offset_in_buffer; 
+} ShaderResourceMap;
+
+
+
+typedef struct __attribute__((packed)) {
+    uint32_t shader_type;       
+    uint32_t num_instructions;
+    
+    uint32_t num_uniforms;
+    ShaderResourceMap uniform_map[MAX_UNIFORMS_PER_SHADER]; 
+    
+    uint32_t num_attributes;
+    AttributeMap attribute_map[MAX_ATTRIBUTES_PER_SHADER]; 
+
+} Shader_Header;
+
+typedef struct
+{
+    Shader_Header header_section;
+    uint32_t code_section;
+} Shader;
+
+
+
+typedef enum {
+    CMD_NOOP               = 0x00, 
+    CMD_DRAW_PRIMITIVE     = 0x01, 
+    CMD_SET_STATE          = 0x02,
+    CMD_CLEAR_FRAMEBUFFER  = 0x03,
+} CommandOpcode;
+
+
+typedef enum {
+    STATE_ID_VBO_CONFIG = 1,
+    STATE_ID_EDGE_CONFIG,   
+    STATE_ID_UNIFORM_CONFIG,
+    STATE_ID_SHADER_PTRS,    
+} StateID;
+
+
+typedef enum {
+    PRIMITIVE_TYPE_POINTS  = 0x01, //TO-DO IN FUTURE
+    PRIMITIVE_TYPE_LINES   = 0x02,
+    PRIMITIVE_TYPE_TRIANGLES = 0x03, // TO-DO IN FUTURE
+} PrimitiveType;
+
+
+typedef struct __attribute__((packed)) {
+    PrimitiveType type;         
+} DrawPrimitivePayload;
+
+typedef struct __attribute__((packed)) {
+    StateID state_id; 
+    
+    union {
+        GenericBufferConfig buffer_config;
+        struct __attribute__((packed)) {
+            uint32_t vs_addr;             
+            uint32_t fs_addr;
+        } shader_ptrs;
+        
+    } value;
+} SetStatePayload;
+
+typedef struct __attribute__((packed)) {
+    uint8_t options; // TO-DO in future
+} ClearFramebufferPayload;
+
+typedef struct __attribute__((packed)) {
+    CommandOpcode opcode;
+
+    union {
+        DrawPrimitivePayload draw;
+        SetStatePayload state;
+        ClearFramebufferPayload clear;
+        uint32_t raw_data[8]; 
+    } payload;
+} Command;
+
+
 #endif
