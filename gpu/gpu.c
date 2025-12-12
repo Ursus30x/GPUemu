@@ -433,8 +433,25 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->width = 640;
     gpu->gpu_mode = GPU_MODE_GOP;
     gpu->framebuffer_vram_offset = 0x0000000;
-    gpu->ring_buffer_head = 0;
-    gpu->ring_buffer_tail = 0;
+    printf("[INIT] Ring Buffer starts at VRAM offset 0x%x\n", 0);
+
+
+
+     Vec3 cube_vertices[] = {
+        { -1, -1, -1, 0xFFFF0000 },
+        {  1, -1, -1, 0xFF00FF00 },
+        {  1,  1, -1, 0xFF0000FF },
+        { -1,  1, -1, 0xFFFFFF00 }, 
+        { -1, -1,  1, 0xFFFF00FF },
+        {  1, -1,  1, 0xFF00FFFF },
+        {  1,  1,  1, 0xFFFFFFFF }, 
+        { -1,  1,  1, 0xFF808080 }  
+    };
+    memcpy(gpu->vram_ptr + 0x15b000, cube_vertices, sizeof(cube_vertices));
+    Edge cube_edges[] = {
+    {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7},{5,3}
+    };
+    memcpy(gpu->vram_ptr + 0x16b000, cube_edges, sizeof(cube_edges));
     
 
     // DEBUG_PRINT("[INIT] Ring Buffer starts at VRAM offset 0x%x\n", 0);
