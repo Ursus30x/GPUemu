@@ -17,12 +17,9 @@ void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
        // exec_shader(gpu, REG_FRAGMENT_SHADER(gpu));
         color = (gpu->pRegs[REG_PR].u32 << 16) |
                 (gpu->pRegs[REG_PG].u32 << 8)  |
-                    gpu->pRegs[REG_PB].u32; 
-        
-       
-        
+                    gpu->pRegs[REG_PB].u32;         
     }
-    
+
     FB(gpu)[y * GPU_FB_WIDTH + x] = color;
 }
 
@@ -311,40 +308,34 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
 }
 
-
+static float angle = 0;
 
 void gpu_render_frame(void *opaque)
 {
     GpuState *gpu = opaque;
-    if(0)//REG_EXEC_VERTEX_SHADER(gpu) == 1
-    {
-        return;
-    }
+    // if(1)//REG_EXEC_VERTEX_SHADER(gpu) == 1
+    // {
+    //     return;
+    // }
 
-    // uint32_t width =  REG_FB_WIDTH(gpu);
-    // uint32_t height =  REG_FB_HEIGHT(gpu);
-    // uint32_t vertex_size = REG_VERTEX_SIZE(gpu);
-    // uint32_t edges_size = REG_EDGE_SIZE(gpu);
-    //TO-DO CHANGE
-    uint32_t width =  gpu->width;
-    uint32_t height = gpu->height;
-    uint32_t vertex_size = 0;
-    uint32_t edges_size = 0;
-    uint32_t *fb = FB(gpu);
+    uint32_t width = gpu->width;
+    uint32_t height =  gpu->height;
+    uint32_t vertex_size = gpu->vbo_config.size;
+    uint32_t edges_size =  gpu->edge_config.size;
+
+        
     Vec3 *vertices = VERTEX_TABLE(gpu);
     Edge *edges = EDGES_TABLE(gpu);
-
-    for(uint32_t i=0;i<width*height;i++) fb[i] = 0xFF000000;
-
+    angle += 0.02;
 
     Mat4  ry        = mat4_rotate_y(0.2f);
-    Mat4  rx        = mat4_rotate_x(0.2f);
+    Mat4  rx        = mat4_rotate_x(angle);
     Mat4  model     = mat4_mul(&ry,&rx);
     Mat4  translate = mat4_translate(0, 0, 5);
     model           = mat4_mul(&translate, &model);
 
     Mat4  proj      = mat4_perspective(PI/3, (float)width/height, 1.0f, 10.0f);
-    Mat4  mvp_local = mat4_mul(&proj, &gpu->mvp);
+    Mat4  mvp_local = mat4_mul(&proj, &model);
 
     print_mat4(&mvp_local, "MVP RENDER");
     

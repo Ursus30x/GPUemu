@@ -22,9 +22,9 @@
 #define GPU_VRAM_EDGES_SEGMENT(s)   (&((s)->vram_ptr[GPU_VRAM_EDGES_SEGMENT_ADDR]))
 #define GPU_VRAM_SHADER_SEGMENT(s)  (&((s)->vram_ptr[GPU_VRAM_SHADER_SEGMENT_ADDR]))
 
-#define FB(s)            ((uint32_t*) GPU_VRAM_FB_SEGMENT(s))
-#define VERTEX_TABLE(s)  ((Vec3*)     GPU_VRAM_VERTEX_SEGMENT(s))
-#define EDGES_TABLE(s)   ((Edge*)     GPU_VRAM_EDGES_SEGMENT(s))
+#define FB(s)            ((uint32_t*) (gpu->vram_ptr + gpu->framebuffer_vram_offset))
+#define VERTEX_TABLE(s)  ((Vec3*)     (gpu->vram_ptr + gpu->vbo_config.vbo_addr))
+#define EDGES_TABLE(s)   ((Edge*)     (gpu->vram_ptr + gpu->edge_config.vbo_addr))
 #define SHADER_PROGRAM(s)((void*)     GPU_VRAM_SHADER_SEGMENT(s))
 
 
