@@ -47,6 +47,8 @@ The GPU begins executing commands when `RING_HEAD` register has changed.
 
 **Driver writes commands → updates HEAD → GPU detects change → executes.**
 
+![Ring buffer flow](img/ring_buffer.png)
+
 #### GPU Command Table
 
 | Command Name              | Opcode (Hex) | Payload Structure                                              | Description / Purpose                                                                                                  |
@@ -92,10 +94,8 @@ PIPELINE
 | FragmentShaderPtr | Pointer to fragment shader structure          | void*  |   8    |
 | FrameBufferPtr    | Pointer to frame buffer structure             | void*  |   12   |
 
+![Context](img/context.png)
 
-Below is a **clear, technical, self-contained description** of how shaders work in your GPU architecture, based on the structures you defined.
-
----
 
 ### Shaders
 
@@ -192,7 +192,8 @@ This single structure is used for:
 
 Each buffer type is activated by sending a **CMD_SET_STATE** command with the appropriate `StateID`.
 
----
+![Buffer flow](img/flow_driver.png)
+
 
 ###  Vertex Buffer Configuration (VBO)
 
