@@ -325,10 +325,23 @@ static void gpu_class_init(ObjectClass *class, const void *data)
     k->class_id = PCI_CLASS_DISPLAY_OTHER;
 }
 
+static float angle = 0;
+
 static void timer_callback(void *opaque)
 {
 
     GpuState *gpu = opaque;
+    angle += 0.02f;
+    Mat4  ry       = mat4_rotate_y(angle);
+    Mat4  rx        = mat4_rotate_x(angle);
+    Mat4  model     = mat4_mul(&ry,&rx);
+    Mat4  translate = mat4_translate(0, 0, 5);
+    model           = mat4_mul(&translate, &model);
+
+    Mat4  proj      = mat4_perspective(PI/3, (float)640/480, 1.0f, 10.0f);
+    Mat4  mvp_local = mat4_mul(&proj, &model);
+    memcpy(gpu->vram_ptr + 0x19b000, &mvp_local, sizeof(mvp_local));
+
     uint32_t offset = 0x14b000;
     uint8_t *ring_buffer_base = gpu->vram_ptr + offset;
     Command cmd1 = {
@@ -458,6 +471,13 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     };
     memcpy(gpu->vram_ptr + 0x16b000, cube_edges, sizeof(cube_edges));
     
+
+    uint64_t bin_shader[] = { 0x80000916, 0x0, 0xC5010901, 0xA, 0x80010906, 0x0, 0x907, 0x0 };
+    memcpy(gpu->vram_ptr + 0x18b000,bin_shader, sizeof(bin_shader));
+    gpu->vs_code_addr =  0x18b000;
+    
+    GenericBufferConfig uniform = {.element_type = D_TYPE_MAT4, .size = sizeof(Mat4), .vbo_addr = 0x19b000};
+    gpu->uinform_config = uniform;
 
     gpu->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, timer_callback, gpu);
     timer_mod(gpu->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000000ULL);

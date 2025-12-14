@@ -35,12 +35,23 @@
 
 #define GPU_MODE_GOP 0
 #define GPU_MODE_3D  1
+#define GPU_MODE_IDLE  2
 
 typedef struct { double x, y, z; uint32_t rgba; } Vec3;
 typedef struct { uint32_t a, b; } Edge;
-typedef struct { double m[4][4]; } Mat4;
 typedef struct { double x, y, z, w; } Vec4;
+typedef union {
+    double m[4][4]; 
+    double elements[16];
+    Vec4 rows[4]; 
+    struct {
+        Vec4 right;
+        Vec4 up;
+        Vec4 forward;
+        Vec4 position;
+    };
 
+} Mat4;
 #define PI 3.14159265358979323846
 
 #define REG_MAT_SIZE   8
@@ -88,6 +99,8 @@ typedef struct { double x, y, z, w; } Vec4;
 #define REG_M6 REG_MN(6)
 #define REG_M7 REG_MN(7)
 
+#define REG_M_IN 10
+
 #define ARG_IS_MEM_ADDR(arg) (((arg) >> 31) == 0)
 
 typedef union {
@@ -121,6 +134,7 @@ typedef FI32 InstrArg;
 #define INSTR_SIN   19 // F op
 #define INSTR_COS   20 // F op
 #define INSTR_CAST  21 // REG I F op
+#define INSTR_LDU   22
 
 typedef struct  Instr {
     uint8_t  opcode;
@@ -142,6 +156,7 @@ typedef struct  Instr {
 #define OP_TYPE_U32      0
 #define OP_TYPE_F32      1
 #define OP_TYPE_MATRIX   2
+#define OP_TYPE_VEC4     3
 
 
 

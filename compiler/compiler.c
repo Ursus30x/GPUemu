@@ -100,12 +100,16 @@ uint8_t parse_Cflag(Str10 tok)
 }
 uint8_t parse_reg(Str10 tok, uint8_t opType, uint8_t force_scalar)
 {
-    if(opType == OP_TYPE_MATRIX && !force_scalar)
+    if((opType == OP_TYPE_MATRIX || opType == OP_TYPE_VEC4) && !force_scalar)
     {
         if(tok[0] != TOKEN_REG_M) 
         {
             printf("Use matrix reg %s\n", tok);
             exit(EXIT_FAILURE);
+        }
+        if(strcmp(tok, TOKEN_REG_M_IN) == 0)
+        {
+            return REG_M_IN;
         }
         uint8_t num = tok[1] - '0'; 
         if(num > REG_MAT_SIZE)
@@ -155,6 +159,7 @@ arg_data parse_arg(Str10 tok, op_def op)
     uint8_t parseScalar =   op.opcode == INSTR_TRANS  ||  
                             op.opcode == INSTR_ROTX   || 
                             op.opcode == INSTR_ROTY   || 
+                            op.opcode == INSTR_LDU    ||
                             op.opType ==  OP_TYPE_F32 ||  
                             op.opType ==  OP_TYPE_U32;
 
