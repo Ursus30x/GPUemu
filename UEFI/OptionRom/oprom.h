@@ -1,3 +1,7 @@
+#ifndef OPROM_H
+#define OPROM_H
+
+
 #include "isa.h"
 #include <Uefi.h>
 #include <Protocol/PciIo.h>
@@ -17,7 +21,7 @@ typedef struct {
   FRAME_BUFFER_CONFIGURE          *FrameBufferBltConfigure;
   UINTN                           FrameBufferBltConfigureSize;
 
-  EFI_PHYSICAL_ADDRESS            PciFbMemBase;
+  EFI_PHYSICAL_ADDRESS            VRAMBaseAddr;
 
   EFI_GRAPHICS_OUTPUT_PROTOCOL Gop;
   EFI_GRAPHICS_OUTPUT_MODE_INFORMATION Info;
@@ -34,10 +38,12 @@ typedef struct {
 
 // Setup functions
 EFI_STATUS EFIAPI GopSetup(IN OUT MY_GPU_PRIVATE_DATA *Private);
-EFI_STATUS EFIAPI Gop3DSetup(IN OUT MY_GPU_PRIVATE_DATA *Private);  // Add this line
+EFI_STATUS EFIAPI Gop3DSetup(IN OUT MY_GPU_PRIVATE_DATA *Private);
 
 EFI_STATUS EFIAPI DoBusMasterWrite (
   IN EFI_PCI_IO_PROTOCOL  *PciIo,
   IN UINT8                *HostAddress,
   IN UINTN                 Length
 );
+
+#endif
