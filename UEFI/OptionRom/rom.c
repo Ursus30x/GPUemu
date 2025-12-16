@@ -59,10 +59,6 @@ GpuVideoControllerDriverSupported (
   }
 
   Status = EFI_UNSUPPORTED;
-  //if (!IS_PCI_DISPLAY (&Pci)) {
-  //  goto Done;
-  //}
-
 
   DEBUG ((DEBUG_INFO, "GpuVideo: Class: %x Vendor %x Device %x\n", Pci.Hdr.ClassCode[1], Pci.Hdr.VendorId, Pci.Hdr.DeviceId));
   if (Pci.Hdr.VendorId == 0x6969 && Pci.Hdr.DeviceId == 0x2137) {
@@ -92,15 +88,17 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     ) {
   EFI_STATUS Status;
   MY_GPU_PRIVATE_DATA *Private;
+  EFI_TPL OldTpl = gBS->RaiseTPL (TPL_CALLBACK);
 
   DEBUG ((EFI_D_INFO, "entry\n"));
-  EFI_TPL OldTpl = gBS->RaiseTPL (TPL_CALLBACK);
+
   Private = AllocateZeroPool(sizeof(MY_GPU_PRIVATE_DATA));
   if (Private == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
   Private->Handle = NULL;
 
+  // Open PCI protocol
   Status = gBS->OpenProtocol (
       Controller,
       &gEfiPciIoProtocolGuid,
@@ -109,12 +107,13 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       Controller,
       EFI_OPEN_PROTOCOL_BY_DRIVER
       );
+
   if (EFI_ERROR (Status)) {
     DEBUG ((EFI_D_ERROR, "failed to ReadPci\n"));
     return Status;
   }
-  // TODO: mb save orig attribs
 
+  // Read supported attribiutes
   UINT64                    SupportedAttrs;
   Status = Private->PciIo->Attributes (
       Private->PciIo,
@@ -127,6 +126,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     return Status;
   }
   DEBUG ((EFI_D_INFO, "sup attrs: %x\n", SupportedAttrs));
+
   //
   // Set new PCI attributes
   //
@@ -141,15 +141,19 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     return Status;
   }
 
-  // BAR #1 = VideoMem
+  // Read BAR atribs
   EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR  *Resources;
-  Status = Private->PciIo->GetBarAttributes (Private->PciIo, 0, NULL, (VOID **)&Resources);
-  DEBUG (( EFI_D_INFO, "iomem is at %x and is %x long\n", Resources->AddrRangeMin, Resources->AddrLen));
-  Status = Private->PciIo->GetBarAttributes (Private->PciIo, 1, NULL, (VOID **)&Resources);
-  DEBUG (( EFI_D_INFO, "fbmem is at %x and is %x long\n", Resources->AddrRangeMin, Resources->AddrLen));
-  Private->PciFbMemBase = Resources->AddrRangeMin;
-  FreePool(Resources);
 
+  // BAR #0 = MMIO
+  Status = Private->PciIo->GetBarAttributes (Private->PciIo, 0, NULL, (VOID **)&Resources);
+  DEBUG (( EFI_D_INFO, "MMIO is at %x and is %x long\n", Resources->AddrRangeMin, Resources->AddrLen));
+
+  // BAR #1 = VRAM
+  Status = Private->PciIo->GetBarAttributes (Private->PciIo, 1, NULL, (VOID **)&Resources);
+  DEBUG (( EFI_D_INFO, "VRAM is at %x and is %x long\n", Resources->AddrRangeMin, Resources->AddrLen));
+
+  Private->VRAMBaseAddr = Resources->AddrRangeMin;
+  FreePool(Resources);
 
   //
   // Get ParentDevicePath
@@ -164,6 +168,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     DEBUG ((EFI_D_ERROR, "failed to get parentdevicepath\n"));
     return Status;
   }
+
   // what even is this ACPI & why is it required? installing the proto fails otherwise
   ACPI_ADR_DEVICE_PATH      AcpiDeviceNode;
   ZeroMem (&AcpiDeviceNode, sizeof (ACPI_ADR_DEVICE_PATH));
@@ -178,6 +183,8 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     DEBUG ((EFI_D_ERROR, "failed to AppendDevice\n"));
     return EFI_OUT_OF_RESOURCES;
   }
+
+  // Install PathProtocol
   Status = gBS->InstallMultipleProtocolInterfaces (
       &Private->Handle,
       &gEfiDevicePathProtocolGuid,
@@ -189,19 +196,19 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     return Status;
   }
 
+  // Setup GOP protocol
   Status = GopSetup(Private);
   if (EFI_ERROR (Status)) {
     DEBUG ((EFI_D_ERROR, "failed to GopSetup\n"));
     return Status;
   }
 
-  // Add GOP3D setup here
+  // Setup GOP3D protocol
   Status = Gop3DSetup(Private);
   if (EFI_ERROR (Status)) {
     DEBUG ((EFI_D_ERROR, "failed to Gop3DSetup\n"));
     return Status;
   }
-
 
   // Install the GOP protocol
   Status = gBS->InstallMultipleProtocolInterfaces(
@@ -245,13 +252,16 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       Private->Handle,
       EFI_OPEN_PROTOCOL_BY_CHILD_CONTROLLER
       );
+    
   DEBUG ((EFI_D_INFO, "done1, status=%d\n", Status));
   if (EFI_ERROR (Status)) {
     DEBUG ((EFI_D_ERROR, "failed to ref parent from child\n"));
     return Status;
   }
+
   //DEBUG ((EFI_D_INFO, "torestore=%d\n", OldTpl));
-  gBS->RestoreTPL (OldTpl); // never returns!?
+  gBS->RestoreTPL(OldTpl); // never returns!?
+
   DEBUG ((EFI_D_INFO, "done, status=%d\n", Status));
   return Status;
 }
@@ -290,6 +300,8 @@ EFI_STATUS EFIAPI OptionRomEntry(
       NULL, // name1, optional
       NULL  // name2, optional
       );
+
   ASSERT_EFI_ERROR (Status);
+  
   return Status;
 }
