@@ -1,7 +1,7 @@
 #include "oprom.h"
 #include <Protocol/Gop3D.h>
 #include <Library/UefiBootServicesTableLib.h> // gBS
-
+#include "gpu_hw.h"
 EFI_STATUS
 EFIAPI
 Gop3DSetGpuMode (
@@ -68,7 +68,7 @@ Gop3DTransferDataBuffer (
   Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
 
   if (DataType == VERTEX_BUFFER) {
-    BaseAddress = GPU_VRAM_VERTEX_SEGMENT_ADDR;
+    BaseAddress = 0;
     
     // Write vertices via PCI
     for (i = 0; i < Size; i += 4) {
@@ -91,7 +91,7 @@ Gop3DTransferDataBuffer (
       Private->PciIo,
       EfiPciIoWidthUint32,
       GPU_MMIO_BAR,
-      REG_VERTEX_SIZE_ADDR,
+      0,//REG_VERTEX_SIZE_ADDR
       1,
       &Count
     );
@@ -100,7 +100,7 @@ Gop3DTransferDataBuffer (
     }
   }
   else if (DataType == EDGE_BUFFER) {
-    BaseAddress = GPU_VRAM_EDGES_SEGMENT_ADDR;
+    BaseAddress = 0;//GPU_VRAM_EDGES_SEGMENT_ADDR;
     
     // Write edges via PCI
     for (i = 0; i < Size; i += 4) {
@@ -123,7 +123,7 @@ Gop3DTransferDataBuffer (
       Private->PciIo,
       EfiPciIoWidthUint32,
       GPU_MMIO_BAR,
-      REG_EDGE_SIZE_ADDR,
+      0,//REG_EDGE_SIZE_ADDR
       1,
       &Count
     );

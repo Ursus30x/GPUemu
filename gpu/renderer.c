@@ -1,11 +1,12 @@
 #include "renderer.h"
 #include "math3d.h"
 #include "math.h"
+
 #define DEDUG_MAT
 #define PRINT_V4(v) printf("[%f, %f, %f, %f]\n", v.x, v.y, v.z, v.w);
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
-    if(0) // TO DO TRIGGER FRAGMENT
+    if(1) // TO DO TRIGGER FRAGMENT
     {
         gpu->pRegs[REG_PX].u32 = x;
         gpu->pRegs[REG_PY].u32 = y;
@@ -15,7 +16,7 @@ void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
         gpu->pRegs[REG_PR].u32 = r;
         gpu->pRegs[REG_PG].u32 = g;
         gpu->pRegs[REG_PB].u32 = b;
-       // exec_shader(gpu, REG_FRAGMENT_SHADER(gpu));
+        exec_shader(gpu, gpu->fs_code_addr);     
         color = (gpu->pRegs[REG_PR].u32 << 16) |
                 (gpu->pRegs[REG_PG].u32 << 8)  |
                     gpu->pRegs[REG_PB].u32;         
@@ -112,7 +113,7 @@ static inline InstrArg get_arg_scalar_value(GpuState *gpu, uint8_t argType, Inst
 
 void exec_shader(GpuState *gpu, uint32_t program_offset)
 {
-    void *program_address = gpu->vram_ptr+gpu->vs_code_addr;
+    void *program_address = gpu->vram_ptr+program_offset;
     int end = 1;
     do{ 
         Instr instr = *(Instr*)program_address;
@@ -181,7 +182,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         }
         case INSTR_MVP:
         {
-            gpu->v_out.up = gpu->regs[instr.dest].up;
+            gpu->v_out.right = gpu->regs[instr.dest].right;
             print_mat4(&gpu->regs[instr.dest], "V_OUT");
             break;
         }
@@ -255,11 +256,11 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             if(instr.opType == OP_TYPE_VEC4)
             {
                 Mat4 *a =  &gpu->regs[instr.arg0.u32];
-                Vec4 b = gpu->regs[instr.arg1.u32].up;
+                Vec4 b = gpu->regs[instr.arg1.u32].right;
                 if(instr.arg1.u32 == REG_M_IN)
-                    b = gpu->v_pos.up;
+                    b = gpu->v_pos.right;
                 Vec4 res = mat4_mul_vec4(a,b);
-                gpu->regs[instr.dest].up = res;
+                gpu->regs[instr.dest].right = res;
                 print_mat4(&gpu->regs[instr.dest], "MUL");
                 break;
             }
@@ -311,14 +312,15 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         case INSTR_LDU:
         {
             uint32_t offset = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0).u32;
-            void *ptr = gpu->vram_ptr + gpu->uinform_config.vbo_addr + offset;
+            void *ptr = gpu->vram_ptr + gpu->uinform_config.addr + offset;
             switch (instr.opType)
             {
             case OP_TYPE_MATRIX:
                 gpu->regs[instr.dest] = *(Mat4 *)ptr;
+                print_mat4(& gpu->regs[instr.dest] , "LDUM");
                 break;
             case OP_TYPE_VEC4:
-                gpu->regs[instr.dest].up = (*(Mat4 *)ptr).up;
+                gpu->regs[instr.dest].right = (*(Mat4 *)ptr).right;
                 break;
             case OP_TYPE_U32:
                 gpu->pRegs[instr.dest].u32 = *(uint32_t *)ptr;
@@ -365,10 +367,10 @@ void gpu_render_frame(void *opaque)
     for(uint32_t i=0;i<vertex_size;i++) 
     {
         Vec4 v = {vertices[i].x, vertices[i].y, vertices[i].z, 1.0f};
-        gpu->v_pos.up = v;
+        gpu->v_pos.right = v;
         //exec vertex shader
-        exec_shader(gpu, 0);     
-        Vec4 tv = gpu->v_out.up;
+        exec_shader(gpu, gpu->vs_code_addr);     
+        Vec4 tv = gpu->v_out.right;
         float ndc_x = tv.x / tv.w;
         float ndc_y = tv.y / tv.w;
         px[i] = (int)((ndc_x*0.5f + 0.5f) * width);

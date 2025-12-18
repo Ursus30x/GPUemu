@@ -13,6 +13,9 @@
 #include <stdint.h>
 #include <math.h>
 #include "isa.h"
+#include "gpu_hw.h"
+#include "vram.h"
+
 #ifndef GPU_H
 #define GPU_H
 
@@ -23,8 +26,8 @@
 #define GPU_VRAM_SHADER_SEGMENT(s)  (&((s)->vram_ptr[GPU_VRAM_SHADER_SEGMENT_ADDR]))
 
 #define FB(s)            ((uint32_t*) (gpu->vram_ptr + gpu->framebuffer_vram_offset))
-#define VERTEX_TABLE(s)  ((Vec3*)     (gpu->vram_ptr + gpu->vbo_config.vbo_addr))
-#define EDGES_TABLE(s)   ((Edge*)     (gpu->vram_ptr + gpu->edge_config.vbo_addr))
+#define VERTEX_TABLE(s)  ((Vec3*)     (gpu->vram_ptr + gpu->vbo_config.addr))
+#define EDGES_TABLE(s)   ((Edge*)     (gpu->vram_ptr + gpu->edge_config.addr))
 #define SHADER_PROGRAM(s)((void*)     GPU_VRAM_SHADER_SEGMENT(s))
 
 

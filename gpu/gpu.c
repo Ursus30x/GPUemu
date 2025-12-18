@@ -332,60 +332,53 @@ static void timer_callback(void *opaque)
 
     GpuState *gpu = opaque;
     angle += 0.02f;
-    Mat4  ry       = mat4_rotate_y(angle);
-    Mat4  rx        = mat4_rotate_x(angle);
-    Mat4  model     = mat4_mul(&ry,&rx);
-    Mat4  translate = mat4_translate(0, 0, 5);
-    model           = mat4_mul(&translate, &model);
+    Mat4  mvp1, mvp2;
+    {
+        Mat4  ry        = mat4_rotate_y(angle);
+        Mat4  rx        = mat4_rotate_x(0.2);
+        Mat4  scale     = mat4_scale_uniform(0.5);
+        Mat4  model     = mat4_mul(&ry,&rx);
+        model           = mat4_mul(&scale,&model);
+        Mat4  translate = mat4_translate(0, 0, 5);
+        model           = mat4_mul(&translate, &model);
 
-    Mat4  proj      = mat4_perspective(PI/3, (float)640/480, 1.0f, 10.0f);
-    Mat4  mvp_local = mat4_mul(&proj, &model);
-    memcpy(gpu->vram_ptr + 0x19b000, &mvp_local, sizeof(mvp_local));
+        Mat4  proj      = mat4_perspective(PI/3, (float)640/480, 1.0f, 10.0f);
+        mvp1 = mat4_mul(&proj, &model);
+    }
+    memcpy(gpu->vram_ptr + 0x19b000, &mvp1, sizeof(mvp1));
+
+    {
+        Mat4  ry        = mat4_rotate_y(angle*2);
+        Mat4  rx        = mat4_rotate_x(0);
+        Mat4  scale     = mat4_scale_uniform(0.25);
+        Mat4  model     = mat4_mul(&ry,&rx);
+        model           = mat4_mul(&scale,&model);
+        Mat4  translate = mat4_translate(0, 1, 5);
+        model           = mat4_mul(&translate, &model);
+
+        Mat4  proj      = mat4_perspective(PI/3, (float)640/480, 1.0f, 10.0f);
+        mvp2 = mat4_mul(&proj, &model);
+    }
+    memcpy(gpu->vram_ptr + 0x21b000, &mvp2, sizeof(mvp2));
 
     uint32_t offset = 0x14b000;
     uint8_t *ring_buffer_base = gpu->vram_ptr + offset;
-    Command cmd1 = {
-        .opcode = CMD_CLEAR_FRAMEBUFFER,
-        .payload.clear = {
-            .options = 0b11}};
-    
-    Command cmd2 = {
-        .opcode = CMD_DRAW_PRIMITIVE,
-        .payload.draw = {
-            .type = PRIMITIVE_TYPE_LINES}};
-    GenericBufferConfig vbo_conf = {.element_type = D_TYPE_VEC3, .size = 8, .vbo_addr = 0x15b000};
-    Command cmd3 = {
-        .opcode = CMD_SET_STATE,
-        .payload.state = {
-            .state_id = STATE_ID_VBO_CONFIG,
-            .value.buffer_config = vbo_conf}};
 
-   
-    GenericBufferConfig edge_conf = {.element_type = D_TYPE_VEC2, .size = 13, .vbo_addr = 0x16b000};
-    Command cmd4 = {
-        .opcode = CMD_SET_STATE,
-        .payload.state = {
-            .state_id = STATE_ID_EDGE_CONFIG,
-            .value.buffer_config = edge_conf}};
+    GenericBufferConfig vbo_conf  = {.element_type = D_TYPE_VEC3, .size = 8, .addr = 0x15b000};
+    GenericBufferConfig edge_conf = {.element_type = D_TYPE_VEC2, .size = 13, .addr = 0x16b000};
+    GenericBufferConfig uniform   = {.element_type = D_TYPE_MAT4, .size = sizeof(Mat4), .addr = 0x19b000};
+    GenericBufferConfig uniform2   = {.element_type = D_TYPE_MAT4, .size = sizeof(Mat4), .addr = 0x21b000};
 
-
-    uint32_t current_offset = 0;
-    size_t cmd_size = sizeof(Command);
-
-    memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size);
-    current_offset += cmd_size;
-
-    memcpy(ring_buffer_base + current_offset, &cmd3, cmd_size);
-    current_offset += cmd_size;
-
-    memcpy(ring_buffer_base + current_offset, &cmd4, cmd_size);
-    current_offset += cmd_size;
-
-    memcpy(ring_buffer_base + current_offset, &cmd2, cmd_size);
-    current_offset += cmd_size;
-
-    gpu->ring_buffer_head = offset + current_offset;
-    gpu->ring_buffer_tail = offset;
+    CMD_BEGIN();
+    CMD_CLEAR_FB(ring_buffer_base);
+    CMD_SET_VBO(ring_buffer_base, vbo_conf);
+    CMD_SET_EDGE(ring_buffer_base, edge_conf);
+    CMD_SET_UBO(ring_buffer_base, uniform);
+    CMD_SET_SHADERS(ring_buffer_base, 0x18b000, 0x19c000);
+    CMD_DRAW_WIREFRAME(ring_buffer_base);
+    CMD_SET_UBO(ring_buffer_base, uniform2);
+    CMD_DRAW_WIREFRAME(ring_buffer_base);
+    CMD_DBG_END(offset);
 
     gpu->gpu_mode = GPU_MODE_3D;
     process_ring_buffer(gpu);
@@ -416,41 +409,6 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->gpu_mode = GPU_MODE_GOP;
     gpu->framebuffer_vram_offset = 0x0000000;
 
-    // REG_EXEC_VERTEX_SHADER(gpu) = 1;
-    // REG_EXEC_FRAGMENT_SHADER(gpu) = 1;
-
-    // REG_FRAGMENT_SHADER(gpu) = 300;
-
-    // void *ss = SHADER_PROGRAM(gpu) + REG_VERTEX_SHADER(gpu);
-    // /*
-    // addf p2 p2 0.02
-    // fsan p2
-    // roty m0 p2
-    // rotx m1 0.3232
-    // mulm m2 m0 m1
-    // trans m1 0 0 5
-    // mulm m0 m1 m2
-    // mvp m0
-    // exit
-    // */
-    // uint64_t bin_vertex_shader[] = { 0x241020909, 0x3CA3D70A, 0x4002090E, 0x0, 0x281000903, 0x0, 0x3EA57A7880010902, 0x0, 0x85020901, 0x1, 0x80010905, 0x500000000, 0x185000901, 0x2, 0x80000906, 0x0, 0x907, 0x0 };
-    // memcpy(ss, bin_vertex_shader, sizeof(bin_vertex_shader));
-    // /*
-    // mov pr 255
-    // mov pg 0
-    // mov pb 0
-    // cmpi gt px 300
-    // !mov pb 100
-    // exit
-    // */
-    // uint64_t bin_fragment_shader[] ={ 0xFF000A0900, 0x0, 0xB0900, 0x0, 0xC0900, 0x0, 0x801000408, 0x12C, 0x64000C0800, 0x0, 0xA0800, 0x0, 0x907, 0x0 };
-
-    // memcpy(ss + REG_FRAGMENT_SHADER(gpu) , bin_fragment_shader, sizeof(bin_fragment_shader));
-    
-    
-    
-
-
     printf("[INIT] Ring Buffer starts at VRAM offset 0x%x\n", 0);
 
 
@@ -472,12 +430,12 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     memcpy(gpu->vram_ptr + 0x16b000, cube_edges, sizeof(cube_edges));
     
 
-    uint64_t bin_shader[] = { 0x80000916, 0x0, 0xC5010901, 0xA, 0x80010906, 0x0, 0x907, 0x0 };
+    uint64_t bin_shader[] = { 0x80000916, 0x0, 0xC5010901, 0x8, 0x80010906, 0x0, 0x907, 0x0 };
     memcpy(gpu->vram_ptr + 0x18b000,bin_shader, sizeof(bin_shader));
-    gpu->vs_code_addr =  0x18b000;
-    
-    GenericBufferConfig uniform = {.element_type = D_TYPE_MAT4, .size = sizeof(Mat4), .vbo_addr = 0x19b000};
-    gpu->uinform_config = uniform;
+
+    uint64_t bin_fragment_shader[] ={ 0xFF000A0900, 0x0, 0xB0900, 0x0, 0xC0900, 0x0, 0x801000408, 0x12C, 0x64000C0800, 0x0, 0xA0800, 0x0, 0x907, 0x0 };
+    memcpy(gpu->vram_ptr + 0x19c000 , bin_fragment_shader, sizeof(bin_fragment_shader));
+  
 
     gpu->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, timer_callback, gpu);
     timer_mod(gpu->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000000ULL);

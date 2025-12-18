@@ -274,7 +274,7 @@ ShaderResourceMap {
 The actual value fetch is:
 
 ```
-address = uniform_buffer.vbo_addr + offset_in_buffer
+address = uniform_buffer.addr + offset_in_buffer
 ```
 
 
