@@ -1,8 +1,9 @@
-#ifndef MEMALLOC_H
-#define MEMALLOC_H
 #include "oprom.h"
 
-#define PAGE_SIZE 32
+#ifndef MEMALLOC_H
+#define MEMALLOC_H
+
+#define PAGE_SIZE 64
 
 typedef  UINT32 VRAMADDR;
 
@@ -18,7 +19,9 @@ struct MemoryAllocator{
     // PCI IO vars
     EFI_PCI_IO_PROTOCOL *PciIo; 
     UINT8  VramBarIndex;
-} memAllocator;
+};
+
+extern struct MemoryAllocator memAllocator;
 
 /*---------------- Memory managment functions ----------------*/
 

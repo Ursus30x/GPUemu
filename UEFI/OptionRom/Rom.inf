@@ -12,6 +12,7 @@
   oprom.h
   isa.h
   gop3d.c
+  memAlloc.c
 
 [Packages]
   MdePkg/MdePkg.dec

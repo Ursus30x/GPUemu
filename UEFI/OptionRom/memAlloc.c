@@ -1,6 +1,8 @@
 #include <Library/UefiLib.h>
+#include <Library/MemoryAllocationLib.h>
 #include "memAlloc.h"
 
+struct MemoryAllocator memAllocator;
 
 BOOLEAN CanAlloc(
     IN UINT32 startPage, 
@@ -300,18 +302,19 @@ VOID EFIAPI DebugPrintAllocatorStats(VOID)
     UINT32 freeBytes = freePages * PAGE_SIZE;
     UINT32 totalBytes = memAllocator.totalMemSize;
 
-    // 2. Print Summary
-    Print(L"\n=== VRAM ALLOCATOR STATS ===\n");
-    Print(L"Total Memory:  %d Bytes (%d Pages)\n", totalBytes, memAllocator.pageCount);
-    Print(L"Used Memory:   %d Bytes (%d Pages)\n", usedBytes, usedPages);
-    Print(L"Free Memory:   %d Bytes (%d Pages)\n", freeBytes, freePages);
+    // 2. Print Summary via DEBUG macro
+    // Note: Removed 'L' prefix to use ASCII strings standard for DEBUG macro
+    DEBUG ((EFI_D_INFO, "\n=== VRAM ALLOCATOR STATS ===\n"));
+    DEBUG ((EFI_D_INFO, "Total Memory:  %d Bytes (%d Pages)\n", totalBytes, memAllocator.pageCount));
+    DEBUG ((EFI_D_INFO, "Used Memory:   %d Bytes (%d Pages)\n", usedBytes, usedPages));
+    DEBUG ((EFI_D_INFO, "Free Memory:   %d Bytes (%d Pages)\n", freeBytes, freePages));
     
     // Avoid division by zero
     if (totalBytes > 0) {
         UINT32 percent = (usedBytes * 100) / totalBytes;
-        Print(L"Utilization:   %d%%\n", percent);
+        DEBUG ((EFI_D_INFO, "Utilization:   %d%%\n", percent));
     }
-    Print(L"============================\n");
+    DEBUG ((EFI_D_INFO, "============================\n"));
 }
 
 VOID EFIAPI DebugDumpMemoryMap(VOID)
@@ -322,8 +325,8 @@ VOID EFIAPI DebugDumpMemoryMap(VOID)
     BOOLEAN currentStatus = memAllocator.pageStatus[0];
     UINT32 i;
 
-    Print(L"\n--- VRAM MEMORY MAP ---\n");
-    Print(L"  [START ADDR] - [END ADDR]   : STATUS (SIZE)\n");
+    DEBUG ((EFI_D_INFO, "\n--- VRAM MEMORY MAP ---\n"));
+    DEBUG ((EFI_D_INFO, "  [START ADDR] - [END ADDR]   : STATUS (SIZE)\n"));
 
     // Iterate through pages + 1 (to handle the last block closure)
     for (i = 1; i <= memAllocator.pageCount; i++) {
@@ -339,18 +342,20 @@ VOID EFIAPI DebugDumpMemoryMap(VOID)
             VRAMADDR startAddr = startPage * PAGE_SIZE;
             VRAMADDR endAddr   = (endPage * PAGE_SIZE) - 1;
 
-            Print(L"  [0x%08X] - [0x%08X] : %s (%d Bytes)\n", 
+            // Use %a for ASCII strings ("USED"/"FREE")
+            // Changed L"USED" to "USED"
+            DEBUG ((EFI_D_INFO, "  [0x%08X] - [0x%08X] : %a (%d Bytes)\n", 
                 startAddr, 
                 endAddr, 
-                currentStatus ? L"USED" : L"FREE", 
+                currentStatus ? "USED" : "FREE", 
                 bytes
-            );
+            ));
 
             // If we hit an allocated block, check if it has a valid header
             if (currentStatus == TRUE) {
                 UINT32 recordedSize = memAllocator.allocationSizes[startPage];
                 if (recordedSize != count) {
-                    Print(L"    -> WARNING: Header says %d pages, but physically %d pages are marked!\n", recordedSize, count);
+                    DEBUG ((EFI_D_INFO, "    -> WARNING: Header says %d pages, but physically %d pages are marked!\n", recordedSize, count));
                 }
             }
 
@@ -359,5 +364,5 @@ VOID EFIAPI DebugDumpMemoryMap(VOID)
             startPage = i;
         }
     }
-    Print(L"-----------------------\n");
+    DEBUG ((EFI_D_INFO, "-----------------------\n"));
 }
