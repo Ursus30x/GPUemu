@@ -1,3 +1,4 @@
+#include <Library/UefiLib.h>
 #include "memAlloc.h"
 
 
@@ -276,3 +277,87 @@ EFI_STATUS EFIAPI VramSet(
     return EFI_SUCCESS;
 }
 
+/* -------------------------------------------------------------------------
+ * Debug Functions
+ * ------------------------------------------------------------------------- */
+
+VOID EFIAPI DebugPrintAllocatorStats(VOID)
+{
+    UINT32 usedPages = 0;
+    UINT32 freePages = 0;
+    UINT32 i;
+
+    // 1. Calculate stats
+    for (i = 0; i < memAllocator.pageCount; i++) {
+        if (memAllocator.pageStatus[i] == TRUE) {
+            usedPages++;
+        } else {
+            freePages++;
+        }
+    }
+
+    UINT32 usedBytes = usedPages * PAGE_SIZE;
+    UINT32 freeBytes = freePages * PAGE_SIZE;
+    UINT32 totalBytes = memAllocator.totalMemSize;
+
+    // 2. Print Summary
+    Print(L"\n=== VRAM ALLOCATOR STATS ===\n");
+    Print(L"Total Memory:  %d Bytes (%d Pages)\n", totalBytes, memAllocator.pageCount);
+    Print(L"Used Memory:   %d Bytes (%d Pages)\n", usedBytes, usedPages);
+    Print(L"Free Memory:   %d Bytes (%d Pages)\n", freeBytes, freePages);
+    
+    // Avoid division by zero
+    if (totalBytes > 0) {
+        UINT32 percent = (usedBytes * 100) / totalBytes;
+        Print(L"Utilization:   %d%%\n", percent);
+    }
+    Print(L"============================\n");
+}
+
+VOID EFIAPI DebugDumpMemoryMap(VOID)
+{
+    if (memAllocator.pageCount == 0) return;
+
+    UINT32 startPage = 0;
+    BOOLEAN currentStatus = memAllocator.pageStatus[0];
+    UINT32 i;
+
+    Print(L"\n--- VRAM MEMORY MAP ---\n");
+    Print(L"  [START ADDR] - [END ADDR]   : STATUS (SIZE)\n");
+
+    // Iterate through pages + 1 (to handle the last block closure)
+    for (i = 1; i <= memAllocator.pageCount; i++) {
+        
+        BOOLEAN status = (i < memAllocator.pageCount) ? memAllocator.pageStatus[i] : !currentStatus;
+
+        // If status changed, or we reached the end
+        if (status != currentStatus) {
+            UINT32 endPage = i; // The page before this one was the last of the block
+            UINT32 count = endPage - startPage;
+            UINT32 bytes = count * PAGE_SIZE;
+            
+            VRAMADDR startAddr = startPage * PAGE_SIZE;
+            VRAMADDR endAddr   = (endPage * PAGE_SIZE) - 1;
+
+            Print(L"  [0x%08X] - [0x%08X] : %s (%d Bytes)\n", 
+                startAddr, 
+                endAddr, 
+                currentStatus ? L"USED" : L"FREE", 
+                bytes
+            );
+
+            // If we hit an allocated block, check if it has a valid header
+            if (currentStatus == TRUE) {
+                UINT32 recordedSize = memAllocator.allocationSizes[startPage];
+                if (recordedSize != count) {
+                    Print(L"    -> WARNING: Header says %d pages, but physically %d pages are marked!\n", recordedSize, count);
+                }
+            }
+
+            // Reset for next block
+            currentStatus = status;
+            startPage = i;
+        }
+    }
+    Print(L"-----------------------\n");
+}

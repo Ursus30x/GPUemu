@@ -46,6 +46,12 @@ EFI_STATUS EFIAPI VramRead(IN VOID* destAddr, IN VRAMADDR sourcePtr, IN UINT32 s
 // Clears/Sets given memory area with specified value 
 EFI_STATUS EFIAPI VramSet(IN VRAMADDR DestAddr, IN UINT8 Value, IN UINT32 Size);
 
+/*---------------- Debug functions ----------------*/
 
+// Prints total usage, free space, and fragmentation info
+VOID EFIAPI DebugPrintAllocatorStats(VOID);
+
+// Prints a detailed map of continuous memory blocks (Used vs Free ranges)
+VOID EFIAPI DebugDumpMemoryMap(VOID);
 
 #endif
