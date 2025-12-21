@@ -119,8 +119,8 @@ EFI_STATUS EFIAPI GopSetup(IN OUT MY_GPU_PRIVATE_DATA *Private) {
 
   // Fill in the mode information
   Private->Info.Version = 0;
-  Private->Info.HorizontalResolution = 640; // hardcoded on the adapter
-  Private->Info.VerticalResolution = 480;
+  Private->Info.HorizontalResolution = Private->MainFrameBufferWidth;
+  Private->Info.VerticalResolution = Private->MainFrameBufferHeight;
   Private->Info.PixelFormat = PixelBlueGreenRedReserved8BitPerColor;
   Private->Info.PixelsPerScanLine = Private->Info.HorizontalResolution;
 

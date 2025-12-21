@@ -1,4 +1,5 @@
 #include "oprom.h"
+#include "memAlloc.h"
 #include <Library/BaseMemoryLib.h>
 #include <IndustryStandard/Acpi.h>
 #include <IndustryStandard/Pci.h>
@@ -90,13 +91,17 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
   MY_GPU_PRIVATE_DATA *Private;
   EFI_TPL OldTpl = gBS->RaiseTPL (TPL_CALLBACK);
 
-  DEBUG ((EFI_D_INFO, "entry\n"));
+  DEBUG ((EFI_D_INFO, "UEFI GPU Driver start\n"));
 
   Private = AllocateZeroPool(sizeof(MY_GPU_PRIVATE_DATA));
   if (Private == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
   Private->Handle = NULL;
+
+  // Hardcode FB size
+  Private->MainFrameBufferWidth   = 640;
+  Private->MainFrameBufferHeight  = 480;
 
   // Open PCI protocol
   Status = gBS->OpenProtocol (
@@ -152,6 +157,16 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
   Status = Private->PciIo->GetBarAttributes (Private->PciIo, 1, NULL, (VOID **)&Resources);
   DEBUG (( EFI_D_INFO, "VRAM is at %x and is %x long\n", Resources->AddrRangeMin, Resources->AddrLen));
 
+  // Initalize memory allocator
+  InitMemoryAllocator(Private->PciIo, Resources->AddrLen, Resources->AddrRangeMin);
+
+  // Allocate framebuffer
+  AllocateMemAt(Private->MainFrameBufferHeight * Private->MainFrameBufferWidth * sizeof(UINT32),0x000000);
+
+  DebugPrintAllocatorStats();
+  DebugDumpMemoryMap();
+
+
   Private->VRAMBaseAddr = Resources->AddrRangeMin;
   FreePool(Resources);
 
@@ -192,21 +207,21 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       NULL
       );
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to install PathProtocol\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to install PathProtocol\n"));
     return Status;
   }
 
   // Setup GOP protocol
   Status = GopSetup(Private);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to GopSetup\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to GopSetup\n"));
     return Status;
   }
 
   // Setup GOP3D protocol
   Status = Gop3DSetup(Private);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to Gop3DSetup\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to Gop3DSetup\n"));
     return Status;
   }
 
@@ -217,11 +232,12 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       &Private->Gop,
       NULL
       );
-  DEBUG ((EFI_D_INFO, "did install \n"));
+
+  DEBUG ((EFI_D_INFO, "Installed GOP protocol\n"));
   if (EFI_ERROR(Status)) {
     FreePool(Private->Gop.Mode);
     FreePool(Private);
-    DEBUG ((EFI_D_INFO, "very bad\n"));
+    DEBUG ((EFI_D_INFO, "Failed to install GOP protocol\n"));
   }
 
   // Install the GOP3D protocol
@@ -231,12 +247,12 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       &Private->Gop3dProtocol,
       NULL
       );
-  DEBUG ((EFI_D_INFO, "did install GOP3D\n"));
+  DEBUG ((EFI_D_INFO,  "Installed GOP3D protocol\n"));
   if (EFI_ERROR(Status)) {
     DEBUG ((EFI_D_ERROR, "failed to install GOP3D protocol\n"));
     // TODO: cleanup
   }
-  
+
   //
   // Reference parent handle from child handle.
   //
@@ -261,6 +277,52 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
 
   //DEBUG ((EFI_D_INFO, "torestore=%d\n", OldTpl));
   gBS->RestoreTPL(OldTpl); // never returns!?
+
+
+  // TODO DELTE THIS LATER 
+  // VRAM alloc test
+  DEBUG ((EFI_D_INFO, "------------- VRAM ALLOCATION TEST ------------- \n\n"));
+
+  VRAMADDR ptr1, ptr2, ptr3;
+  
+  DEBUG ((EFI_D_INFO, "Allocating mem for ptr 1\n"));
+  ptr1 = AllocateMem(200*sizeof(UINT32));
+  DEBUG ((EFI_D_INFO, "AllocateMem returned address %x\n\n", ptr1));
+
+  // DebugPrintAllocatorStats();
+  // DebugDumpMemoryMap();
+
+  DEBUG ((EFI_D_INFO, "Allocating mem for ptr 2\n"));
+  ptr2 = AllocateMem(200*sizeof(UINT32));
+  DEBUG ((EFI_D_INFO, "AllocateMem returned address %x\n\n", ptr2));
+
+
+
+  // DebugPrintAllocatorStats();
+  // DebugDumpMemoryMap();
+
+  DEBUG ((EFI_D_INFO, "Allocating mem for ptr 3\n"));
+  ptr3 = AllocateMem(200*sizeof(UINT32));
+  DEBUG ((EFI_D_INFO, "AllocateMem returned address %x\n\n", ptr3));
+
+  // DebugPrintAllocatorStats();
+  // DebugDumpMemoryMap();
+
+  DEBUG ((EFI_D_INFO, "Freeing ptr2\n"));
+
+  FreeMem(ptr2);
+
+  DebugPrintAllocatorStats();
+  DebugDumpMemoryMap();
+
+  DEBUG ((EFI_D_INFO, "Allocating ptr2 again\n"));
+
+  ptr2 = AllocateMem(200*sizeof(UINT32));
+
+
+  DebugPrintAllocatorStats();
+  DebugDumpMemoryMap();
+
 
   DEBUG ((EFI_D_INFO, "done, status=%d\n", Status));
   return Status;
