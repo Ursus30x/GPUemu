@@ -331,19 +331,27 @@ VOID EFIAPI DebugDumpMemoryMap(VOID)
     // Iterate through pages + 1 (to handle the last block closure)
     for (i = 1; i <= memAllocator.pageCount; i++) {
         
-        BOOLEAN status = (i < memAllocator.pageCount) ? memAllocator.pageStatus[i] : !currentStatus;
+        BOOLEAN nextStatus = (i < memAllocator.pageCount) ? memAllocator.pageStatus[i] : !currentStatus;
+        BOOLEAN splitBlock = FALSE;
 
-        // If status changed, or we reached the end
-        if (status != currentStatus) {
-            UINT32 endPage = i; // The page before this one was the last of the block
+        if (nextStatus != currentStatus) {
+            splitBlock = TRUE;
+        }
+        else if (currentStatus == TRUE && i < memAllocator.pageCount) {
+            if (memAllocator.allocationSizes[i] > 0) {
+                splitBlock = TRUE;
+            }
+        }
+
+        // If status changed, New Allocation detected, or we reached the end
+        if (splitBlock) {
+            UINT32 endPage = i; 
             UINT32 count = endPage - startPage;
             UINT32 bytes = count * PAGE_SIZE;
             
             VRAMADDR startAddr = startPage * PAGE_SIZE;
             VRAMADDR endAddr   = (endPage * PAGE_SIZE) - 1;
 
-            // Use %a for ASCII strings ("USED"/"FREE")
-            // Changed L"USED" to "USED"
             DEBUG ((EFI_D_INFO, "  [0x%08X] - [0x%08X] : %a (%d Bytes)\n", 
                 startAddr, 
                 endAddr, 
@@ -351,16 +359,15 @@ VOID EFIAPI DebugDumpMemoryMap(VOID)
                 bytes
             ));
 
-            // If we hit an allocated block, check if it has a valid header
             if (currentStatus == TRUE) {
                 UINT32 recordedSize = memAllocator.allocationSizes[startPage];
                 if (recordedSize != count) {
-                    DEBUG ((EFI_D_INFO, "    -> WARNING: Header says %d pages, but physically %d pages are marked!\n", recordedSize, count));
+                    DEBUG ((EFI_D_INFO, "    -> WARNING: Header says %d pages, but found %d contiguous pages!\n", recordedSize, count));
                 }
             }
 
             // Reset for next block
-            currentStatus = status;
+            currentStatus = nextStatus;
             startPage = i;
         }
     }
