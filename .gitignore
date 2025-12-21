@@ -1,5 +1,12 @@
 *.log
 .vscode
 tools/
+
+# Ignore symlinked include files
 UEFI/OptionRom/isa.h
+UEFI/OptionRom/gpu_hw.h
+UEFI/OptionRom/vram.h
+
 compiler/isa.h
+compiler/gpu_hw.h
+compiler/vram.h
