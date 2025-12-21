@@ -57,19 +57,23 @@ git submodule update --recursive
 
 make -C BaseTools
 
-# Symlink driver implementation to EDK2
+# Remove old driver symlinks/files for driver implementation
 rm -f "$CWD/edk2/OptionRom"
 rm -f "$CWD/edk2/DemoApp"
 rm -f "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
 rm -f "$CWD/edk2/OptionRom/isa.h"
 rm -f "$CWD/edk2/OptionRom/gpu_hw.h"
 rm -f "$CWD/edk2/OptionRom/varm.h"
-ln -sf "$CWD/UEFI/OptionRom" "$CWD/edk2/OptionRom"
-ln -sf "$CWD/UEFI/DemoApp" "$CWD/edk2/DemoApp"
+rm -f "$CWD/edk2/Conf/target.txt"
+
+# Symlink driver implementation to EDK2
+ln -sf "$CWD/UEFI/OptionRom"                        "$CWD/edk2/OptionRom"
+ln -sf "$CWD/UEFI/DemoApp"                          "$CWD/edk2/DemoApp"
 ln -sf "$CWD/UEFI/OvmfPkg/Include/Protocol/Gop3D.h" "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
-ln -sf "$CWD/include/isa.h" "$CWD/edk2/OptionRom/isa.h"
-ln -sf "$CWD/include/gpu_hw.h" "$CWD/edk2/OptionRom/gpu_hw.h"
-ln -sf "$CWD/include/vram.h" "$CWD/edk2/OptionRom/vram.h"
+ln -sf "$CWD/include/isa.h"                         "$CWD/edk2/OptionRom/isa.h"
+ln -sf "$CWD/include/gpu_hw.h"                      "$CWD/edk2/OptionRom/gpu_hw.h"
+ln -sf "$CWD/include/vram.h"                        "$CWD/edk2/OptionRom/vram.h"
+ln -sf "$CWD/UEFI/target.txt"                       "$CWD/edk2/Conf/target.txt"
 
 # Apply dsc patches
 git apply "$CWD/UEFI/OvmfPkg.patch"
@@ -77,7 +81,7 @@ git apply "$CWD/UEFI/OvmfPkg.patch"
 ################################################
 ################################################
 
-#compiler symlink
+# Compiler symlink
 rm -f  "$CWD/compiler/isa.h"
 rm -f  "$CWD/compiler/gpu_hw.h"
 rm -f  "$CWD/compiler/vram.h"
