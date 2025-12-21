@@ -18,8 +18,6 @@ EFI_STATUS EFIAPI MyGpuBlt(
     ) 
 {
     MY_GPU_PRIVATE_DATA *Private = MY_GPU_PRIVATE_DATA_FROM_THIS(This);
-    DEBUG ((EFI_D_INFO, "blt\n"));
-
     // Performs a simple FrameBufferBlt form FrameBufferBltLib
     return FrameBufferBlt(
             Private->FrameBufferBltConfigure,
@@ -39,9 +37,6 @@ EFI_STATUS EFIAPI MyGpuSetMode(
     IN EFI_GRAPHICS_OUTPUT_PROTOCOL *This,
     IN UINT32 ModeNumber
     ) {
-
-  DEBUG ((EFI_D_INFO, "setmode to %d\n", ModeNumber));
-
   MY_GPU_PRIVATE_DATA        *Private;
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL  Black;
   EFI_STATUS Status;
@@ -63,7 +58,7 @@ EFI_STATUS EFIAPI MyGpuSetMode(
 
 
   if (Status == RETURN_BUFFER_TOO_SMALL) {
-    DEBUG((EFI_D_ERROR, "ERROR: was2small\n"));
+    DEBUG((EFI_D_ERROR, "ERROR: FrameBufferConfigureSize was too small\n"));
     return EFI_OUT_OF_RESOURCES;
   }
 
@@ -93,10 +88,9 @@ EFI_STATUS EFIAPI MyGpuQueryMode(
     ) {
   MY_GPU_PRIVATE_DATA *Private = MY_GPU_PRIVATE_DATA_FROM_THIS(This);
 
-  DEBUG ((EFI_D_INFO, "in querymode for mode=%d\n", ModeNumber));
 
   if (ModeNumber >= This->Mode->MaxMode) {
-    DEBUG ((EFI_D_INFO, "badparam\n"));
+    DEBUG ((EFI_D_INFO, "Bad parameter in QueryMode\n"));
     return EFI_INVALID_PARAMETER;
   }
 
@@ -105,7 +99,7 @@ EFI_STATUS EFIAPI MyGpuQueryMode(
   *Info = AllocateCopyPool (*SizeOfInfo, &Private->Info);
 
   //*Info = &Private->Info;
-  DEBUG ((EFI_D_INFO, "donequery hr %d vr %d\n", (*Info)->HorizontalResolution, (*Info)->VerticalResolution));
+  DEBUG ((EFI_D_INFO, "Done query hr %d vr %d\n", (*Info)->HorizontalResolution, (*Info)->VerticalResolution));
   return EFI_SUCCESS;
 }
 
@@ -139,15 +133,15 @@ EFI_STATUS EFIAPI GopSetup(IN OUT MY_GPU_PRIVATE_DATA *Private) {
   Private->Gop.Mode->FrameBufferBase = Private->VRAMBaseAddr;
   Private->Gop.Mode->FrameBufferSize = FbSize;
 
-  Private->FrameBufferBltConfigureSize = SIZE_8KB;  // 4KB should be plenty
+  Private->FrameBufferBltConfigureSize = SIZE_8KB;
   Private->FrameBufferBltConfigure = AllocateZeroPool(SIZE_8KB);
 
   Status = Private->Gop.SetMode(&Private->Gop, 0);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to setmode\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to SetMode\n"));
     return Status;
   }
 
-  DEBUG ((EFI_D_INFO, "installing handle, with private at %p\n", Private));
+  DEBUG ((EFI_D_INFO, "Installing handle, with Private at %p\n", Private));
   return Status;
 }

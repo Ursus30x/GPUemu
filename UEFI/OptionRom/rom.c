@@ -114,7 +114,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       );
 
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to ReadPci\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to open PCI protocol\n"));
     return Status;
   }
 
@@ -127,10 +127,10 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       &SupportedAttrs
       );
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to check attrs\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to check attrs\n"));
     return Status;
   }
-  DEBUG ((EFI_D_INFO, "sup attrs: %x\n", SupportedAttrs));
+  DEBUG ((EFI_D_INFO, "Supported attrs: %x\n", SupportedAttrs));
 
   //
   // Set new PCI attributes
@@ -142,7 +142,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       NULL
       );
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to enable\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to enable device\n"));
     return Status;
   }
 
@@ -180,7 +180,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       (VOID **)&ParentDevicePath
       );
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to get parentdevicepath\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to get ParentDevicePath\n"));
     return Status;
   }
 
@@ -195,7 +195,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
   Private->GopDevicePath = AppendDevicePathNode (ParentDevicePath, (EFI_DEVICE_PATH_PROTOCOL *)&AcpiDeviceNode);
 
   if (Private->GopDevicePath == NULL) {
-    DEBUG ((EFI_D_ERROR, "failed to AppendDevice\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to AppendDevice\n"));
     return EFI_OUT_OF_RESOURCES;
   }
 
@@ -249,7 +249,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       );
   DEBUG ((EFI_D_INFO,  "Installed GOP3D protocol\n"));
   if (EFI_ERROR(Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to install GOP3D protocol\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to install GOP3D protocol\n"));
     // TODO: cleanup
   }
 
@@ -258,7 +258,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
   //
   // i assume, some refcounting shit?
   // this succeeds but then machine hangs - not just this driver
-  DEBUG ((EFI_D_INFO, "about to open proto\n"));
+  DEBUG ((EFI_D_INFO, "Opening child PCI IO protocol\n"));
   EFI_PCI_IO_PROTOCOL       *ChildPciIo;
   Status = gBS->OpenProtocol (
       Controller,
@@ -271,12 +271,11 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     
   DEBUG ((EFI_D_INFO, "done1, status=%d\n", Status));
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "failed to ref parent from child\n"));
+    DEBUG ((EFI_D_ERROR, "Failed to reference parent from child\n"));
     return Status;
   }
 
-  //DEBUG ((EFI_D_INFO, "torestore=%d\n", OldTpl));
-  gBS->RestoreTPL(OldTpl); // never returns!?
+  gBS->RestoreTPL(OldTpl); 
 
 
   // TODO DELTE THIS LATER 
@@ -324,7 +323,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
   DebugDumpMemoryMap();
 
 
-  DEBUG ((EFI_D_INFO, "done, status=%d\n", Status));
+  DEBUG ((EFI_D_INFO, "Driver installation done, status=%d\n", Status));
   return Status;
 }
 
