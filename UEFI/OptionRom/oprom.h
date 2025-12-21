@@ -20,6 +20,9 @@ typedef struct {
   EFI_PCI_IO_PROTOCOL             *PciIo;
   EFI_DEVICE_PATH_PROTOCOL        *GopDevicePath;
 
+  UINT32                          MainFrameBufferWidth;
+  UINT32                          MainFrameBufferHeight;
+
   FRAME_BUFFER_CONFIGURE          *FrameBufferBltConfigure;
   UINTN                           FrameBufferBltConfigureSize;
 
