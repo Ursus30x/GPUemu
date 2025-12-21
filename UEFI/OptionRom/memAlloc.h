@@ -23,17 +23,17 @@ struct MemoryAllocator{
 /*---------------- Memory managment functions ----------------*/
 
 // Initalizes memAllocator and maps out vram buffer
-EFI_STATUS EFIAPI InitMemoryAllocator(IN EFI_PCI_IO_PROTOCOL *PciIo, IN UINT32 VRAMsize);
+EFI_STATUS EFIAPI InitMemoryAllocator(IN EFI_PCI_IO_PROTOCOL *PciIo, IN UINT32 VRAMsize, IN VRAMADDR baseAddr);
 
 // Allocates a block of memory in gpu, returs address to it
-EFI_STATUS EFIAPI AllocateMem(IN UINT32 bytesToAlloc, OUT VRAMADDR addr);
+VRAMADDR AllocateMem(IN UINT32 bytesToAlloc);
 
 // Allocates a block of memory in gpu AT given address (marks a region as non-usable for allocator)
 // Used for static memory areas such as main frame buffer
-EFI_STATUS EFIAPI AllocateMemAt(IN UINT32 bytesToAlloc, IN VRAMADDR addr);
+BOOLEAN AllocateMemAt(IN UINT32 bytesToAlloc, IN VRAMADDR addr);
 
 // Frees a block of memory at given address
-EFI_STATUS EFIAPI FreeMem(IN VRAMADDR addr);
+BOOLEAN FreeMem(IN VRAMADDR addr);
 
 /*---------------- Read/Write helper functions ----------------*/
 
