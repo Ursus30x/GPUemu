@@ -28,7 +28,9 @@ VOID SetStatusPage(IN CONST UINT32 FromPage,
     }
 }
 
-/* ----------------------------- Exposed functions ----------------------------- */
+/* -------------------------------------------------------------------------
+ * Memory Allocation Functions
+ * ------------------------------------------------------------------------- */
 
 EFI_STATUS EFIAPI InitMemoryAllocator(
     IN EFI_PCI_IO_PROTOCOL *PciIo, 
@@ -108,5 +110,169 @@ BOOLEAN FreeMem(IN VRAMADDR addr){
     memAllocator.allocationSizes[page] = 0;
 
     return TRUE;
+}
+
+
+/* -------------------------------------------------------------------------
+ * Read/Write Helper Functions
+ * ------------------------------------------------------------------------- */
+
+EFI_STATUS EFIAPI VramWrite(
+    IN VRAMADDR DestAddr, 
+    IN VOID* SourcePtr, 
+    IN UINT32 Size
+    )
+{
+    EFI_STATUS Status;
+    UINT32 i = 0;
+    UINT8* SourceBytes = (UINT8*)SourcePtr;
+
+    if (memAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    // Write in 32-bit chunks (Aligned to Data Width, not Address Width)
+    while (i + sizeof(UINT32) <= Size) {
+        Status = memAllocator.PciIo->Mem.Write(
+            memAllocator.PciIo,
+            EfiPciIoWidthUint32,
+            memAllocator.VramBarIndex,
+            DestAddr + i,
+            1, 
+            SourceBytes + i
+        );
+
+        if (EFI_ERROR(Status)) {
+            return Status;
+        }
+
+        i += sizeof(UINT32);
+    }
+
+    // Handle remaining bytes
+    while (i < Size) {
+        Status = memAllocator.PciIo->Mem.Write(
+            memAllocator.PciIo,
+            EfiPciIoWidthUint8,
+            memAllocator.VramBarIndex,
+            DestAddr + i,
+            1,
+            SourceBytes + i
+        );
+
+        if (EFI_ERROR(Status)) {
+            return Status;
+        }
+
+        i += sizeof(UINT8);
+    }
+
+    return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI VramRead(
+    IN VOID* DestPtr, 
+    IN VRAMADDR SourceAddr, 
+    IN UINT32 Size
+    )
+{
+    EFI_STATUS Status;
+    UINT32 i = 0;
+    UINT8* DestBytes = (UINT8*)DestPtr;
+
+    if (memAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    // Read in 32-bit chunks
+    while (i + sizeof(UINT32) <= Size) {
+        Status = memAllocator.PciIo->Mem.Read(
+            memAllocator.PciIo,
+            EfiPciIoWidthUint32,
+            memAllocator.VramBarIndex,
+            SourceAddr + i,
+            1,
+            DestBytes + i
+        );
+
+        if (EFI_ERROR(Status)) {
+            return Status;
+        }
+
+        i += sizeof(UINT32);
+    }
+
+    // Handle remaining bytes
+    while (i < Size) {
+        Status = memAllocator.PciIo->Mem.Read(
+            memAllocator.PciIo,
+            EfiPciIoWidthUint8,
+            memAllocator.VramBarIndex,
+            SourceAddr + i,
+            1,
+            DestBytes + i
+        );
+
+        if (EFI_ERROR(Status)) {
+            return Status;
+        }
+
+        i += sizeof(UINT8);
+    }
+
+    return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI VramSet(
+    IN VRAMADDR DestAddr, 
+    IN UINT8 Value, 
+    IN UINT32 Size
+    )
+{
+    EFI_STATUS Status;
+    UINT32 i = 0;
+    
+    // Create a 32-bit pattern
+    UINT32 Pattern = (Value << 24) | (Value << 16) | (Value << 8) | Value;
+
+    if (memAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    // Fill using 32-bit writes
+    while (i + sizeof(UINT32) <= Size) {
+        Status = memAllocator.PciIo->Mem.Write(
+            memAllocator.PciIo,
+            EfiPciIoWidthUint32,
+            memAllocator.VramBarIndex,
+            DestAddr + i,
+            1,
+            &Pattern
+        );
+
+        if (EFI_ERROR(Status)) {
+            return Status;
+        }
+        i += sizeof(UINT32);
+    }
+
+    // Fill remaining bytes
+    while (i < Size) {
+        Status = memAllocator.PciIo->Mem.Write(
+            memAllocator.PciIo,
+            EfiPciIoWidthUint8,
+            memAllocator.VramBarIndex,
+            DestAddr + i,
+            1,
+            &Value
+        );
+
+        if (EFI_ERROR(Status)) {
+            return Status;
+        }
+        i += sizeof(UINT8);
+    }
+
+    return EFI_SUCCESS;
 }
 
