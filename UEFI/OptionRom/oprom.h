@@ -3,6 +3,8 @@
 
 
 #include "isa.h"
+#include "vram.h"
+#include "gpu_hw.h"
 #include <Uefi.h>
 #include <Protocol/PciIo.h>
 #include <Protocol/Gop3D.h>
