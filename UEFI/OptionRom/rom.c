@@ -1,5 +1,5 @@
 #include "oprom.h"
-#include "memAlloc.h"
+#include "gpu_memory.h"
 #include <Library/BaseMemoryLib.h>
 #include <IndustryStandard/Acpi.h>
 #include <IndustryStandard/Pci.h>
@@ -158,13 +158,15 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
   DEBUG (( EFI_D_INFO, "VRAM is at %x and is %x long\n", Resources->AddrRangeMin, Resources->AddrLen));
 
   // Initalize memory allocator
-  InitMemoryAllocator(Private->PciIo, Resources->AddrLen, Resources->AddrRangeMin);
+  GpuInitMemoryAllocator(Private->PciIo, Resources->AddrLen, Resources->AddrRangeMin);
 
   // Allocate framebuffer
-  AllocateMemAt(Private->MainFrameBufferHeight * Private->MainFrameBufferWidth * sizeof(UINT32),0x000000);
+  GpuAllocateMemAt(
+    Private->MainFrameBufferHeight * Private->MainFrameBufferWidth * sizeof(UINT32),
+    0x000000, "FRAMEBUFFER");
 
-  DebugPrintAllocatorStats();
-  DebugDumpMemoryMap();
+  GpuDebugPrintAllocatorStats();
+  GpuDebugDumpMemoryMap();
 
 
   Private->VRAMBaseAddr = Resources->AddrRangeMin;
@@ -285,42 +287,42 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
   VRAMADDR ptr1, ptr2, ptr3;
   
   DEBUG ((EFI_D_INFO, "Allocating mem for ptr 1\n"));
-  ptr1 = AllocateMem(200*sizeof(UINT32));
+  ptr1 = GpuAllocateMem(200*sizeof(UINT32),"ptr1");
   DEBUG ((EFI_D_INFO, "AllocateMem returned address %x\n\n", ptr1));
 
-  // DebugPrintAllocatorStats();
-  // DebugDumpMemoryMap();
+  // GpuDebugPrintAllocatorStats();
+  // GpuDebugDumpMemoryMap();
 
   DEBUG ((EFI_D_INFO, "Allocating mem for ptr 2\n"));
-  ptr2 = AllocateMem(200*sizeof(UINT32));
+  ptr2 = GpuAllocateMem(200*sizeof(UINT32),NULL);
   DEBUG ((EFI_D_INFO, "AllocateMem returned address %x\n\n", ptr2));
 
 
 
-  // DebugPrintAllocatorStats();
-  // DebugDumpMemoryMap();
+  // GpuDebugPrintAllocatorStats();
+  // GpuDebugDumpMemoryMap();
 
   DEBUG ((EFI_D_INFO, "Allocating mem for ptr 3\n"));
-  ptr3 = AllocateMem(200*sizeof(UINT32));
+  ptr3 = GpuAllocateMem(200*sizeof(UINT32),NULL);
   DEBUG ((EFI_D_INFO, "AllocateMem returned address %x\n\n", ptr3));
 
-  // DebugPrintAllocatorStats();
-  // DebugDumpMemoryMap();
+  // GpuDebugPrintAllocatorStats();
+  // GpuDebugDumpMemoryMap();
 
   DEBUG ((EFI_D_INFO, "Freeing ptr2\n"));
 
-  FreeMem(ptr2);
+  GpuFreeMem(ptr2);
 
-  DebugPrintAllocatorStats();
-  DebugDumpMemoryMap();
+  GpuDebugPrintAllocatorStats();
+  GpuDebugDumpMemoryMap();
 
   DEBUG ((EFI_D_INFO, "Allocating ptr2 again\n"));
 
-  ptr2 = AllocateMem(200*sizeof(UINT32));
+  ptr2 = GpuAllocateMem(200*sizeof(UINT32),"realloced ptr2");
 
 
-  DebugPrintAllocatorStats();
-  DebugDumpMemoryMap();
+  GpuDebugPrintAllocatorStats();
+  GpuDebugDumpMemoryMap();
 
 
   DEBUG ((EFI_D_INFO, "Driver installation done, status=%d\n", Status));
