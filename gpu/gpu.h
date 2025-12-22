@@ -25,11 +25,12 @@
 #define GPU_VRAM_EDGES_SEGMENT(s)   (&((s)->vram_ptr[GPU_VRAM_EDGES_SEGMENT_ADDR]))
 #define GPU_VRAM_SHADER_SEGMENT(s)  (&((s)->vram_ptr[GPU_VRAM_SHADER_SEGMENT_ADDR]))
 
-#define FB(s)            ((uint32_t*) (gpu->vram_ptr + gpu->framebuffer_vram_offset))
-#define VERTEX_TABLE(s)  ((Vec3*)     (gpu->vram_ptr + gpu->vbo_config.addr))
-#define EDGES_TABLE(s)   ((Edge*)     (gpu->vram_ptr + gpu->edge_config.addr))
-#define SHADER_PROGRAM(s)((void*)     GPU_VRAM_SHADER_SEGMENT(s))
-
+#define FB(s)              ((uint32_t*) (gpu->vram_ptr + gpu->framebuffer_vram_offset))
+#define VERTEX_TABLE(s)    ((Vec3*)     (gpu->vram_ptr + gpu->vbo_config.addr))
+#define EDGES_TABLE(s)     ((Edge*)     (gpu->vram_ptr + gpu->edge_config.addr))
+#define TRIANGLES_TABLE(s) ((Triangle*) (gpu->vram_ptr + gpu->edge_config.addr))
+#define SHADER_PROGRAM(s)  ((void*)     GPU_VRAM_SHADER_SEGMENT(s))
+#define Z_BUFFER(s)        ((float*)     (s->zbuffer))
 
 #define REG_GPU_MODE(s)             (s->cmd[REG_GPU_MODE_ADDR])
 #define REG_EXEC_VERTEX_SHADER(s)   (s->cmd[REG_EXEC_VERTEX_SHADER_ADDR])
@@ -62,21 +63,21 @@ typedef struct GpuState {
     uint8_t *vram_ptr;            
 
 
-    uint32_t gpu_mode;
-    uint32_t ring_buffer_head;
-    uint32_t ring_buffer_tail;
-    uint32_t ring_buffer_start;
-    uint32_t ring_buffer_end;
-    uint32_t vs_code_addr;
-    uint32_t fs_code_addr;
-    uint32_t width;
-    uint32_t height;
-    uint32_t framebuffer_vram_offset;
-    uint32_t gpu_time;
-
+    uint32_t gpu_mode;            // 0x00
+    uint32_t ring_buffer_head;    // 0x04
+    uint32_t ring_buffer_tail;    // 0x08
+    uint32_t vs_code_addr;        // 0x10
+    uint32_t fs_code_addr;        // 0x14
+    uint32_t width;               // 0x18
+    uint32_t height;              // 0x1C
+    uint32_t framebuffer_vram_offset; // 0x20
+    uint32_t gpu_time;            // 0x24 
+ 
     GenericBufferConfig vbo_config;
     GenericBufferConfig edge_config;
     GenericBufferConfig uinform_config;
+
+    float zbuffer[0x50000];
     
     Mat4 regs[REG_MAT_SIZE];        
     Preg pRegs[REG_P_GEN_SIZE];

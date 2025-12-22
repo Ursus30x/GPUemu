@@ -36,13 +36,21 @@ static void simple_3d_mode(GpuState *gpu)
 
     if (gpu->gpu_mode == GPU_MODE_3D)
     {
-        //exec_shader(gpu, gpu->vs_code_addr);
-        gpu_render_frame(gpu);
+        gpu_render_wireframe(gpu);
         vga_update_display(gpu);
         graphic_hw_update(gpu->con);
     }
 }
+static void triangles_3d_mode(GpuState *gpu)
+{
 
+    if (gpu->gpu_mode == GPU_MODE_3D)
+    {
+        gpu_render_triangles(gpu);
+        vga_update_display(gpu);
+        graphic_hw_update(gpu->con);
+    }
+}
 static void gpu_print_mmio(GpuState *s)
 {
     DEBUG_PRINT("\n--- GPU MMIO Register Snapshot ---\n");
@@ -75,7 +83,10 @@ static void execute_command(GpuState *gpu, Command *cmd)
     case CMD_CLEAR_FRAMEBUFFER:
         DEBUG_PRINT("[CMD] Clear FB %x \n", (gpu->width * gpu->height));
         for (uint32_t i = 0; i < (gpu->width * gpu->height); i++)
-            FB(gpu)[i] = 0xff000000;
+        {
+             FB(gpu)[i] = 0xff000000;
+             Z_BUFFER(gpu)[i] = FLT_MAX;
+        }
         break;
     case CMD_SET_STATE:
         DEBUG_PRINT("[CMD] Set state\n");
@@ -437,21 +448,21 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 
 
 
-     Vec3 cube_vertices[] = {
-        { -1, -1, -1, 0xFFFF0000 },
-        {  1, -1, -1, 0xFF00FF00 },
-        {  1,  1, -1, 0xFF0000FF },
-        { -1,  1, -1, 0xFFFFFF00 }, 
-        { -1, -1,  1, 0xFFFF00FF },
-        {  1, -1,  1, 0xFF00FFFF },
-        {  1,  1,  1, 0xFFFFFFFF }, 
-        { -1,  1,  1, 0xFF808080 }  
-    };
-    memcpy(gpu->vram_ptr + 0x15b000, cube_vertices, sizeof(cube_vertices));
-    Edge cube_edges[] = {
-    {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7},{5,3}
-    };
-    memcpy(gpu->vram_ptr + 0x16b000, cube_edges, sizeof(cube_edges));
+    //  Vec3 cube_vertices[] = {
+    //     { -1, -1, -1, 0xFFFF0000 },
+    //     {  1, -1, -1, 0xFF00FF00 },
+    //     {  1,  1, -1, 0xFF0000FF },
+    //     { -1,  1, -1, 0xFFFFFF00 }, 
+    //     { -1, -1,  1, 0xFFFF00FF },
+    //     {  1, -1,  1, 0xFF00FFFF },
+    //     {  1,  1,  1, 0xFFFFFFFF }, 
+    //     { -1,  1,  1, 0xFF808080 }  
+    // };
+    // memcpy(gpu->vram_ptr + 0x15b000, cube_vertices, sizeof(cube_vertices));
+    // Edge cube_edges[] = {
+    // {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7},{5,3}
+    // };
+    // memcpy(gpu->vram_ptr + 0x16b000, cube_edges, sizeof(cube_edges));
     
 
     // DEBUG_PRINT("[INIT] Ring Buffer starts at VRAM offset 0x%x\n", 0);

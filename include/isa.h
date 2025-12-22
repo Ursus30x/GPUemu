@@ -5,7 +5,8 @@
 
 typedef struct { float x, y, z; uint32_t rgba; } Vec3;
 typedef struct { uint32_t a, b; } Edge;
-typedef struct { float x, y, z, w; } Vec4;
+typedef struct { uint32_t a, b, c, color; } Triangle;
+typedef struct { float x, y, z, w;  } Vec4;
 typedef union {
     float m[4][4]; 
     float elements[16];

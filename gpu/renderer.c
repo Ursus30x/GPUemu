@@ -346,7 +346,108 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
 }
 
-void gpu_render_frame(void *opaque)
+float edge_func(Vec3 a, Vec3 b, Vec3 c) 
+{
+    return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+}
+
+void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, uint32_t color, GpuState *gpu)
+{
+    uint32_t width = gpu->width;
+    uint32_t height =  gpu->height;
+    Vec3 s[3];
+    Vec4 v[3] = {v0, v1, v2};
+
+    for(int i = 0; i < 3; i++) 
+    {
+        float w = (v[i].w < 0.1f) ? 0.1f : v[i].w;
+        float inv_w = 1.0f / w;
+        
+        float ndc_x = v[i].x * inv_w;
+        float ndc_y = v[i].y * inv_w;
+
+        s[i].x = (ndc_x + 1.0f) * 0.5f * width;
+        s[i].y = (1.0f - (ndc_y + 1.0f) * 0.5f) * height;
+        s[i].z = inv_w; 
+    }
+
+   
+    float area = edge_func(s[0], s[1], s[2]);
+    if (area >= 0) return; 
+
+    int min_x = fmax(0, fmin(s[0].x, fmin(s[1].x, s[2].x)));
+    int max_x = fmin(width-1, fmax(s[0].x, fmax(s[1].x, s[2].x)));
+    int min_y = fmax(0, fmin(s[0].y, fmin(s[1].y, s[2].y)));
+    int max_y = fmin(height-1, fmax(s[0].y, fmax(s[1].y, s[2].y)));
+
+   
+    for (int y = min_y; y <= max_y; y++) 
+    {
+        for (int x = min_x; x <= max_x; x++)
+        {
+            Vec3 p = {x + 0.5f, y + 0.5f, 0};
+            float w0 = edge_func(s[1], s[2], p) / area;
+            float w1 = edge_func(s[2], s[0], p) / area;
+            float w2 = edge_func(s[0], s[1], p) / area;
+
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+                //float z_inv = w0 * s[0].z + w1 * s[1].z + w2 * s[2].z;
+                float z = w0 * (1.0f/s[0].z) + w1 * (1.0f/s[1].z) + w2 * (1.0f/s[2].z);
+
+                if (z < Z_BUFFER(gpu)[y * width + x]) {
+                    Z_BUFFER(gpu)[y * width + x] = z;
+                    put_pixel(gpu, x,y,color);
+                }
+            }
+        }
+    }
+}
+void gpu_render_triangles(void *opaque)
+{
+     GpuState *gpu = opaque;
+    if(gpu->gpu_mode == GPU_MODE_IDLE)//REG_EXEC_VERTEX_SHADER(gpu) == 1
+    {
+        return;
+    }
+    gpu->gpu_mode = GPU_MODE_IDLE;
+    //uint32_t vertex_size = gpu->vbo_config.size;
+    uint32_t triangle_size =  gpu->edge_config.size;
+
+        
+    Vec3 *vertices = VERTEX_TABLE(gpu);
+    Triangle *indices = TRIANGLES_TABLE(gpu);
+    for (int i = 0; i < triangle_size; i++) 
+    {
+            Vec4 v[3];
+            v[0].x = vertices[indices[i].a].x;
+            v[0].y = vertices[indices[i].a].y;
+            v[0].z = vertices[indices[i].a].z;
+            v[0].w = 1.0f;
+
+            v[1].x = vertices[indices[i].b].x;
+            v[1].y = vertices[indices[i].b].y;
+            v[1].z = vertices[indices[i].b].z;
+            v[1].w = 1.0f;
+
+            v[2].x = vertices[indices[i].c].x;
+            v[2].y = vertices[indices[i].c].y;
+            v[2].z = vertices[indices[i].c].z;
+            v[2].w = 1.0f;
+
+            for(int j=0; j<3; j++) 
+            {
+                gpu->v_pos.right = v[j];
+                exec_shader(gpu, gpu->vs_code_addr);     
+                v[j] = gpu->v_out.right;
+            }
+            draw_triangle(v[0], v[1], v[2], indices[i].color, gpu);
+    }
+    
+
+    gpu->gpu_mode = GPU_MODE_3D;
+}
+
+void gpu_render_wireframe(void *opaque)
 {
     GpuState *gpu = opaque;
     if(gpu->gpu_mode == GPU_MODE_IDLE)//REG_EXEC_VERTEX_SHADER(gpu) == 1
