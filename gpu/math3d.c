@@ -1,5 +1,5 @@
 #include "math3d.h"
-
+#define  DEBUG_MAT
 Mat4 mat4_mul(Mat4 *a, Mat4 *b) 
 {
     Mat4 r = {0};
@@ -65,15 +65,26 @@ Vec4 mat4_mul_vec4(Mat4 *mat, Vec4 v)
 Mat4 get_mat_from_arg(int arg_val, Mat4* gpu_regs, uint8_t* shader_segment) 
 {
     Mat4 mat;
-    if (ARG_IS_MEM_ADDR(arg_val)) {
+    if (0) {
         memcpy(&mat, shader_segment + arg_val, sizeof(Mat4));
     } else {
-        uint32_t src = REG_NUM(arg_val);
-
+        uint32_t src = arg_val;
         mat = gpu_regs[src];
     }
 
     return mat;
+}
+Mat4 mat4_scale(float sx, float sy, float sz)
+{
+    Mat4 m = mat4_identity();
+    m.m[0][0] = sx;
+    m.m[1][1] = sy;
+    m.m[2][2] = sz;
+    return m;
+}
+Mat4 mat4_scale_uniform(float s)
+{
+    return mat4_scale(s, s, s);
 }
 
 void print_mat4(const Mat4* mat, const char* name)
