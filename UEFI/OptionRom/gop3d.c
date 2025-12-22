@@ -23,7 +23,7 @@ Gop3DSetGpuMode (
   
   Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
 
-  DEBUG((DEBUG_INFO, "GOP3D: Setting GPU mode to %d\n", Mode));
+  // DEBUG((DEBUG_INFO, "GOP3D: Setting GPU mode to %d\n", Mode));
   
   ModeValue = (UINT32)Mode;
   
