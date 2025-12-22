@@ -9,5 +9,7 @@ Mat4 mat4_translate(float x, float y, float z);
 Mat4 mat4_perspective(float fov, float aspect, float near, float far);
 Vec4 mat4_mul_vec4(Mat4 *mat, Vec4 v);
 Mat4 get_mat_from_arg(int arg_val, Mat4* gpu_regs, uint8_t* shader_segment);
+Mat4 mat4_scale(float sx, float sy, float sz);
+Mat4 mat4_scale_uniform(float s);
 void print_mat4(const Mat4* mat, const char* name);
 #endif

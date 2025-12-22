@@ -17,6 +17,7 @@
 #define TOKEN_CMPI "cmpi"
 #define TOKEN_CMPF "cmpf"
 #define TOKEN_MULM "mulm"
+#define TOKEN_MULV "mulv"
 #define TOKEN_MULI "muli"
 #define TOKEN_MULF "mulf"
 #define TOKEN_ADDI "addi"
@@ -39,8 +40,13 @@
 #define TOKEN_COS "cos"
 #define TOKEN_CASTI "casti"
 #define TOKEN_CASTF "castf"
+#define TOKEN_LDUM "ldum"
+#define TOKEN_LDUV "lduv"
+#define TOKEN_LDUF "lduf"
+#define TOKEN_LDUI "ldui"
 
 #define TOKEN_REG_M 'm'
+#define TOKEN_REG_M_IN "mv"
 #define TOKEN_REG_P 'p'
 
 #define TOKEN_REG_PX "px"
@@ -77,6 +83,7 @@ TokenDef token_defs[] = {
     { TOKEN_CMPI,  INSTR_CMP,   OP_TYPE_U32,    2 },
     { TOKEN_CMPF,  INSTR_CMP,   OP_TYPE_F32,    2 },
     { TOKEN_MULM,  INSTR_MUL,   OP_TYPE_MATRIX, 2 },
+    { TOKEN_MULV,  INSTR_MUL,   OP_TYPE_VEC4,   2 },
     { TOKEN_MULI,  INSTR_MUL,   OP_TYPE_U32,    2 },
     { TOKEN_MULF,  INSTR_MUL,   OP_TYPE_F32,    2 },
     { TOKEN_ADDI,  INSTR_ADD,   OP_TYPE_U32,    2 },
@@ -99,7 +106,12 @@ TokenDef token_defs[] = {
     { TOKEN_COS,   INSTR_COS,   OP_TYPE_F32,    1 },
     { TOKEN_CASTI, INSTR_CAST,  OP_TYPE_U32,    1 },
     { TOKEN_CASTF, INSTR_CAST,  OP_TYPE_F32,    1 },
+    { TOKEN_LDUM,  INSTR_LDU,   OP_TYPE_MATRIX, 1 },
+    { TOKEN_LDUV,  INSTR_LDU,   OP_TYPE_VEC4,   1 },
+    { TOKEN_LDUI,  INSTR_LDU,   OP_TYPE_U32,    1 },
+    { TOKEN_LDUF,  INSTR_LDU,   OP_TYPE_F32,    1 }
 };
+
 int num_tokens = sizeof(token_defs)/sizeof(token_defs[0]);
 typedef struct  {
     char* token;

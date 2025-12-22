@@ -29,7 +29,8 @@ ln -sf "$CWD/gpu/renderer.h" "$CWD/qemu/hw/misc/renderer.h"
 ln -sf "$CWD/gpu/math3d.c" "$CWD/qemu/hw/misc/math3d.c"
 ln -sf "$CWD/gpu/math3d.h" "$CWD/qemu/hw/misc/math3d.h"
 ln -sf "$CWD/include/isa.h" "$CWD/qemu/hw/misc/isa.h"
-ln -sf "$CWD/include/isa.h" "$CWD/compiler/isa.h"
+ln -sf "$CWD/include/gpu_hw.h" "$CWD/qemu/hw/misc/gpu_hw.h"
+ln -sf "$CWD/include/vram.h" "$CWD/qemu/hw/misc/vram.h"
 # Apply config patches
 git apply "$CWD/gpu/qemu.patch"
 
@@ -61,15 +62,27 @@ rm -f "$CWD/edk2/OptionRom"
 rm -f "$CWD/edk2/DemoApp"
 rm -f "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
 rm -f "$CWD/edk2/OptionRom/isa.h"
+rm -f "$CWD/edk2/OptionRom/gpu_hw.h"
+rm -f "$CWD/edk2/OptionRom/varm.h"
 ln -sf "$CWD/UEFI/OptionRom" "$CWD/edk2/OptionRom"
 ln -sf "$CWD/UEFI/DemoApp" "$CWD/edk2/DemoApp"
 ln -sf "$CWD/UEFI/OvmfPkg/Include/Protocol/Gop3D.h" "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
 ln -sf "$CWD/include/isa.h" "$CWD/edk2/OptionRom/isa.h"
+ln -sf "$CWD/include/gpu_hw.h" "$CWD/edk2/OptionRom/gpu_hw.h"
+ln -sf "$CWD/include/vram.h" "$CWD/edk2/OptionRom/vram.h"
 
 # Apply dsc patches
 git apply "$CWD/UEFI/OvmfPkg.patch"
 
 ################################################
 ################################################
+
+#compiler symlink
+rm -f  "$CWD/compiler/isa.h"
+rm -f  "$CWD/compiler/gpu_hw.h"
+rm -f  "$CWD/compiler/vram.h"
+ln -sf "$CWD/include/isa.h" "$CWD/compiler/isa.h"
+ln -sf "$CWD/include/gpu_hw.h" "$CWD/compiler/gpu_hw.h"
+ln -sf "$CWD/include/vram.h" "$CWD/compiler/vram.h"
 
 cd "$CWD"
