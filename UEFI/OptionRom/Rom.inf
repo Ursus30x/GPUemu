@@ -12,7 +12,7 @@
   oprom.h
   isa.h
   gop3d.c
-  memAlloc.c
+  gpu_memory.c
 
 [Packages]
   MdePkg/MdePkg.dec
