@@ -32,7 +32,6 @@ typedef struct {
   EFI_GRAPHICS_OUTPUT_MODE_INFORMATION Info;
 
   GOP_3D_PROTOCOL           Gop3dProtocol;
-  GPU_MODE                  CurrentMode;
 } GPU_CONTEXT;
 
 // Macro for accessing from GOP protocol

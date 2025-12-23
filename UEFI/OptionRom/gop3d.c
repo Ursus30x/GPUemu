@@ -1,14 +1,16 @@
 #include <Uefi.h>
+
 #include <Library/UefiLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/UefiBootServicesTableLib.h> // gBS
 
-#include "Gop3D.h"
+#include <Protocol/Gop3D.h>
+
 #include "ringbuffer.h"
 #include "gpu_memory.h"
-#include "vram.h" // For Command structs and CMD macros
+#include "vram.h" 
 
 
 #define RING_BUFFER_SIZE (1 << 16) // 64KB
@@ -242,7 +244,7 @@ EFI_STATUS EFIAPI GpuPresent(
  * Protocol Setup
  * ------------------------------------------------------------------------- */
 
-EFI_STATUS EFIAPI GpuSetup(IN OUT GPU_CONTEXT *Private) 
+EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private) 
 {
   DEBUG((DEBUG_INFO, "GOP3D: Setting up GOP3D protocol\n"));
 

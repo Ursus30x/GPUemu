@@ -143,115 +143,166 @@ EFI_STATUS EFIAPI TestGop() {
     EFI_STATUS Status;
     EFI_INPUT_KEY Key;
 
+    // --- 1. Data Definitions ---
+    // Assuming Vec3 structure matches your hardware expectation (floats + color)
+    typedef struct {
+        float x, y, z;
+        UINT32 color;
+    } Vec3;
+
+    // Cube Data
+    Vec3 cube_vertices[] = {
+        { -1.0f, -1.0f, -1.0f, 0xFFFF0000 },
+        {  1.0f, -1.0f, -1.0f, 0xFF00FF00 },
+        {  1.0f,  1.0f, -1.0f, 0xFF0000FF },
+        { -1.0f,  1.0f, -1.0f, 0xFFFFFF00 }, 
+        { -1.0f, -1.0f,  1.0f, 0xFFFF00FF },
+        {  1.0f, -1.0f,  1.0f, 0xFF00FFFF },
+        {  1.0f,  1.0f,  1.0f, 0xFFFFFFFF }, 
+        { -1.0f,  1.0f,  1.0f, 0xFF808080 }  
+    };
+    // Note: Converted Edge struct {{0,1},...} to flat Index Array for Index Buffer
+    UINT32 cube_indices[] = { 
+        0,1, 1,2, 2,3, 3,0, 4,5, 5,6, 6,7, 7,4, 0,4, 1,5, 2,6, 3,7, 5,3
+    };
+
+    // Pyramid Data
+    Vec3 piramid_vertices[] = {
+        {  1.0f,  0.0f,  1.0f, 0xFF00FF00 }, 
+        {  1.0f,  0.0f, -1.0f, 0xFF0000FF }, 
+        { -1.0f,  0.0f, -1.0f, 0xFFFF00FF },
+        { -1.0f,  0.0f,  1.0f, 0xFFFFFFFF },
+        {  0.0f, -2.5f,  0.0f, 0xFFFF0000 }
+    };
+    UINT32 piramid_indices[] = {
+        0,1, 1,2, 2,3, 3,0, 0,4, 1,4, 2,4, 3,4
+    };
+
+    // Star Data
+    Vec3 star_vertices[] = {
+        {  0.000f,  2.000f,  0.000f, 0xFFFFFF00 }, 
+        {  0.500f,  0.500f,  0.000f, 0xFFFFFFFF }, 
+        {  2.000f,  0.500f,  0.000f, 0xFFFF0000 }, 
+        {  0.700f, -0.300f,  0.000f, 0xFFFFFFFF }, 
+        {  1.200f, -1.500f,  0.000f, 0xFF00FF00 }, 
+        {  0.000f, -0.700f,  0.000f, 0xFFFFFFFF }, 
+        { -1.200f, -1.500f,  0.000f, 0xFF0000FF }, 
+        { -0.700f, -0.300f,  0.000f, 0xFFFFFFFF }, 
+        { -2.000f,  0.500f,  0.000f, 0xFFFF00FF }, 
+        { -0.500f,  0.500f,  0.000f, 0xFFFFFFFF }  
+    };
+    UINT32 star_indices[] = {
+        0,1, 1,2, 2,3, 3,4, 4,5, 5,6, 6,7, 7,8, 8,9, 9,0
+    };
+
+    // Dummy Identity Matrix for MVP (Safety)
+    float identity_matrix[16] = {
+        1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1
+    };
+
+
     DEBUG((EFI_D_INFO, "TestGop start\n"));
 
-    Status = gBS->LocateProtocol(
-        &gEfiGraphicsOutputProtocolGuid, 
-        NULL, 
-        (VOID **)&mGraphicsOutput
-    );
-
-    Status = gBS->LocateProtocol(
-        &gGop3dProtocolGuid, 
-        NULL, 
-        (VOID **)&mGOP3D
-    );
+    // --- 2. Locate Protocols ---
+    Status = gBS->LocateProtocol(&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&mGraphicsOutput);
+    Status = gBS->LocateProtocol(&gGop3dProtocolGuid, NULL, (VOID **)&mGOP3D);
 
     if (EFI_ERROR(Status)) {
-        Print(L"Failed to locate GOP: %r\n", Status);
+        Print(L"Failed to locate Protocols: %r\n", Status);
         return Status;
     }
     
-    // Print GOP information
-    Print(L"GOP Located Successfully!\n");
-    Print(L"Current Mode: %d\n", mGraphicsOutput->Mode->Mode);
-    Print(L"Resolution: %dx%d\n", 
+    Print(L"GOP Located! Mode: %dx%d\n", 
           mGraphicsOutput->Mode->Info->HorizontalResolution,
           mGraphicsOutput->Mode->Info->VerticalResolution);
-    Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
-    Print(L"\nPress any key to draw test pattern.\n");
     
-    WAIT_FOR_KEYPRESS()
-
-    // Draw the test pattern
-    DrawTestPattern();
-
-    WAIT_FOR_KEYPRESS()
+    WAIT_FOR_KEYPRESS();
     
-    Print(L"Test pattern complete!\n");
+    DrawTestPattern(); // 2D Pattern
+    Print(L"2D Test Complete. Press Key for 3D...\n");
+    WAIT_FOR_KEYPRESS();
+
+
+    // --- 3. 3D Setup & Asset Transfer ---
     
-    WAIT_FOR_KEYPRESS()
+    Print(L"Switching to 3D Mode...\n");
+    mGOP3D->GpuSetMode(mGOP3D, 1); 
 
-    Print(L"Test 3D capabilities\n\nPress any key to test 3D\n");
+    VRAMADDR hCubeVBO, hCubeIBO;
+    VRAMADDR hPyrVBO,  hPyrIBO;
+    VRAMADDR hStarVBO, hStarIBO;
+    VRAMADDR hMVP;
+
+    // Upload Assets to VRAM
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, cube_vertices, sizeof(cube_vertices), &hCubeVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  cube_indices,  sizeof(cube_indices),  &hCubeIBO);
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, piramid_vertices, sizeof(piramid_vertices), &hPyrVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  piramid_indices,  sizeof(piramid_indices),  &hPyrIBO);
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, star_vertices, sizeof(star_vertices), &hStarVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  star_indices,  sizeof(star_indices),  &hStarIBO);
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, identity_matrix, sizeof(identity_matrix), &hMVP);
+
+
+    // --- 4. Render Loop Simulation ---
+
+    // === FRAME 1: Cube ===
+    Print(L"Drawing Cube... (Press Key)\n");
+    WAIT_FOR_KEYPRESS();
+
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000); // Clear Black
     
-    WAIT_FOR_KEYPRESS()
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP);     // Bind Matrix
+    mGOP3D->GpuBindVBO(mGOP3D, hCubeVBO); // Bind Cube Vertices
+    mGOP3D->GpuBindIBO(mGOP3D, hCubeIBO); // Bind Cube Indices
+    
+    // Draw Lines, count = number of indices
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, sizeof(cube_indices)/sizeof(UINT32));
+    
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuPresent(mGOP3D); // Submit and Wait
 
-    mGOP3D->SetGpuMode(mGOP3D,1);
+    
+    // === FRAME 2: Pyramid ===
+    Print(L"Drawing Pyramid... (Press Key)\n");
+    WAIT_FOR_KEYPRESS();
 
-    WAIT_FOR_KEYPRESS()
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
 
-    Vec3 cube_vertices[] = {
-        { -1, -1, -1, 0xFFFF0000 },
-        {  1, -1, -1, 0xFF00FF00 },
-        {  1,  1, -1, 0xFF0000FF },
-        { -1,  1, -1, 0xFFFFFF00 }, 
-        { -1, -1,  1, 0xFFFF00FF },
-        {  1, -1,  1, 0xFF00FFFF },
-        {  1,  1,  1, 0xFFFFFFFF }, 
-        { -1,  1,  1, 0xFF808080 }  
-    };
-    Edge cube_edges[] = {
-    {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7},{5,3}
-    };
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP);
+    mGOP3D->GpuBindVBO(mGOP3D, hPyrVBO);
+    mGOP3D->GpuBindIBO(mGOP3D, hPyrIBO);
 
-    mGOP3D->TransferDataBuffer(mGOP3D,VERTEX_BUFFER,cube_vertices,sizeof(cube_vertices));
-    mGOP3D->TransferDataBuffer(mGOP3D,EDGE_BUFFER,cube_edges,sizeof(cube_edges));
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, sizeof(piramid_indices)/sizeof(UINT32));
 
-    WAIT_FOR_KEYPRESS()
-
-    Vec3 piramid_vertices[] = {
-        {  1,  0, 1, 0xFF00FF00 }, 
-        {  1,  0,-1, 0xFF0000FF }, 
-        { -1,  0,-1, 0xFFFF00FF },
-        { -1,  0, 1, 0xFFFFFFFF },
-        {  0, -2.5, 0, 0xFFFF0000 }
-    };
-
-    Edge piramid_edges[] = {
-        {0,1},{1,2},{2,3},{3,0},
-        {0,4},{1,4},{2,4},{3,4}
-    };
-
-    mGOP3D->TransferDataBuffer(mGOP3D,VERTEX_BUFFER,piramid_vertices,sizeof(piramid_vertices));
-    mGOP3D->TransferDataBuffer(mGOP3D,EDGE_BUFFER,piramid_edges,sizeof(piramid_edges));
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuPresent(mGOP3D);
 
 
-    WAIT_FOR_KEYPRESS()
+    // === FRAME 3: Star ===
+    Print(L"Drawing Star... (Press Key)\n");
+    WAIT_FOR_KEYPRESS();
 
-    Vec3 star_vertices[] = {
-        {  0.000,  2.000,  0.000, 0xFFFFFF00 },  // 0: top point
-        {  0.500,  0.500,  0.000, 0xFFFFFFFF },  // 1
-        {  2.000,  0.500,  0.000, 0xFFFF0000 },  // 2: right point
-        {  0.700, -0.300,  0.000, 0xFFFFFFFF },  // 3
-        {  1.200, -1.500,  0.000, 0xFF00FF00 },  // 4: bottom-right
-        {  0.000, -0.700,  0.000, 0xFFFFFFFF },  // 5: center
-        { -1.200, -1.500,  0.000, 0xFF0000FF },  // 6: bottom-left
-        { -0.700, -0.300,  0.000, 0xFFFFFFFF },  // 7
-        { -2.000,  0.500,  0.000, 0xFFFF00FF },  // 8: left point
-        { -0.500,  0.500,  0.000, 0xFFFFFFFF }   // 9
-    };
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
 
-    Edge star_edges[] = {
-        {0,1}, {1,2}, {2,3}, {3,4}, {4,5},
-        {5,6}, {6,7}, {7,8}, {8,9}, {9,0}
-    };
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP);
+    mGOP3D->GpuBindVBO(mGOP3D, hStarVBO);
+    mGOP3D->GpuBindIBO(mGOP3D, hStarIBO);
 
-    mGOP3D->TransferDataBuffer(mGOP3D,VERTEX_BUFFER,star_vertices,sizeof(star_vertices));
-    mGOP3D->TransferDataBuffer(mGOP3D,EDGE_BUFFER,star_edges,sizeof(star_edges));
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, sizeof(star_indices)/sizeof(UINT32));
 
-    WAIT_FOR_KEYPRESS()
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuPresent(mGOP3D);
+    
+    WAIT_FOR_KEYPRESS();
 
-    mGOP3D->SetGpuMode(mGOP3D,0);
+    // --- Cleanup ---
+    mGOP3D->GpuSetMode(mGOP3D, 0); // Back to GOP 2D Mode
 
     DEBUG((EFI_D_INFO, "TestGop end\n"));
     return EFI_SUCCESS;
@@ -261,20 +312,6 @@ EFI_STATUS EFIAPI TestGop() {
 /*                                  3D TEST                                 */
 /*==========================================================================*/
 
-// STATIC EFI_PCI_IO_PROTOCOL *PciIo = NULL;
-
-// EFI_STATUS EFIAPI Test3D(){
-//     EFI_STATUS Status;
-
-//     Status = gBS->OpenProtocol(
-//         DeviceHandle,                           // Handle to open protocol on
-//         &gEfiPciIoProtocolGuid,                // Protocol GUID
-//         (VOID **)PciIo,                        // Interface pointer
-//         AgentHandle,                            // Agent handle (your driver/app)
-//         NULL,                                   // Controller handle (NULL for apps)
-//         EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL   // Open mode
-//     );
-// }
 
 
 /*==========================================================================*/

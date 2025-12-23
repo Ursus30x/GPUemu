@@ -13,6 +13,7 @@
   isa.h
   gop3d.c
   gpu_memory.c
+  ringbuffer.c
 
 [Packages]
   MdePkg/MdePkg.dec
