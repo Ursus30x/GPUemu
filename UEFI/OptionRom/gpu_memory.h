@@ -1,4 +1,5 @@
 #include "oprom.h"
+#include <Protocol/Gop3D.h>
 
 #ifndef GPUMEMORY_H
 #define GPUMEMORY_H
@@ -6,7 +7,6 @@
 #define PAGE_SIZE 64
 #define MEM_DEBUG
 
-typedef UINT32 VRAMADDR;
 
 struct GpuMemoryAllocator {
     // Memory Allocation vars

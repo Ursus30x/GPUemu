@@ -14,79 +14,171 @@
 
 typedef struct GOP_3D_PROTOCOL GOP_3D_PROTOCOL;
 
-// TODO: Shouldnt this enum, structs and defines be shared with QEMU gpu emulation code?
-typedef enum GPU_MODE{
-  MODE_GOP,
-  MODE_3D
-}GPU_MODE;
+/* ---------------------------- Data structures --------------------------- */
 
-typedef enum DATA_TYPE{
-  VERTEX_BUFFER,
-  EDGE_BUFFER
-}DATA_TYPE;
+typedef UINT32 VRAMADDR;
 
-typedef enum SHADER_TYPE{
-  VERTEX_SHADER,
-  FRAGMENT_SHADER
-}SHADER_TYPE;
+// Needed to distinguish buffer types during Transfer
+typedef enum {
+  Gop3dBufferTypeVertex,
+  Gop3dBufferTypeIndex,
+  Gop3dBufferTypeUniform,
+  Gop3dBufferTypeShaderCode
+} GOP_3D_BUFFER_TYPE;
 
-/* ------------------------- Function declarations ------------------------- */
+// Needed for Draw command
+typedef enum {
+  Gop3dTopologyPoints,
+  Gop3dTopologyLines,
+  Gop3dTopologyTriangles
+} GOP_3D_TOPOLOGY;
 
-// Direct write to command buffer memory
-typedef EFI_STATUS (EFIAPI *GOP_3D_SET_CMD_BUFF)(
-  IN GOP_3D_PROTOCOL  *This,
-  IN VOID             *CmdBufferConfig
-);
+/* ------------------------- Function declarations ------------------------ */
 
-// Setting GPU mode
-typedef EFI_STATUS (EFIAPI *GOP_3D_SET_GPU_MODE)(
-  IN GOP_3D_PROTOCOL  *This,
-  IN GPU_MODE          Mode
-);
+/**
+ * Initializes the GPU driver state and PCI I/O.
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_INIT)(
+  IN GOP_3D_PROTOCOL      *This
+  );
 
-// Transfer POD data to GPU memory
-typedef EFI_STATUS (EFIAPI *GOP_3D_TRANSFER_DATA_BUFFER)(
-  IN GOP_3D_PROTOCOL  *This,
-  IN DATA_TYPE         DataType,
-  IN VOID             *Data,
-  IN UINT32            Size
-);
+/**
+ * Cleans up resources and shuts down the GPU driver.
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_DESTROY)(
+  IN GOP_3D_PROTOCOL      *This
+  );
 
-// Transfer shader code to GPU memory
-typedef EFI_STATUS (EFIAPI *GOP_3D_TRANSFER_SHADER_BUFFER)(
-  IN GOP_3D_PROTOCOL  *This,
-  IN SHADER_TYPE       ShaderType,
-  IN VOID             *Data,
-  IN UINT32            Size
-);
+/**
+ * Sets GPU mode (GOP/3D).
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_SET_MODE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32 Mode
+  );
 
-// Draw frame
-typedef EFI_STATUS (EFIAPI *GOP_3D_DRAW_FRAME)(
-  IN GOP_3D_PROTOCOL *This
-);
+/**
+ * Resets the command buffer head/cursor, preparing for new commands.
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_CMD_BEGIN)(
+  IN GOP_3D_PROTOCOL      *This
+  );
 
-// Present frame
-typedef EFI_STATUS (EFIAPI *GOP_3D_PRESENT_FRAME)(
-  IN GOP_3D_PROTOCOL *This
-);
+/**
+ * Finalizes the recording phase (adds debug markers/padding if needed).
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_CMD_END)(
+  IN GOP_3D_PROTOCOL      *This
+  );
+
+/**
+ * Generic Bind function signature used for VBO, IBO, UBO, and Shaders.
+ * Binds a VRAM address to a specific pipeline slot.
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_BIND_RESOURCE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             GpuAddress
+  );
+
+/**
+ * Allocates VRAM and transfers data from Host to Device.
+ * @param Type        The type of buffer (Vertex, Index, Uniform, Shader).
+ * @param HostData    Pointer to the source data in System Memory.
+ * @param Size        Size in bytes to allocate and copy.
+ * @param GpuAddress  [OUT] The resulting VRAM address of the uploaded buffer.
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_TRANSFER_BUFFER)(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  GOP_3D_BUFFER_TYPE  Type,
+  IN  VOID                *HostData,
+  IN  UINT32              Size,
+  OUT VRAMADDR            *GpuAddress
+  );
+
+/**
+ * Issues a draw call.
+ * @param Topology    Primitive type (Points, Lines, Triangles).
+ * @param VertexCount Number of vertices (or indices if IBO is bound) to draw.
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_DRAW)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN GOP_3D_TOPOLOGY      Topology,
+  IN UINT32               VertexCount
+  );
+
+/**
+ * Clears the framebuffer.
+ * @param Color       32-bit color value (0xAARRGGBB).
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_CLEAR_FRAME)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               Color
+  );
+
+/**
+ * Submits the recorded command buffer to the GPU (updates RING_HEAD).
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_SUBMIT_CMD)(
+  IN GOP_3D_PROTOCOL      *This
+  );
+
+/**
+ * Swaps buffers or flushes execution (Present).
+ */
+typedef 
+EFI_STATUS 
+(EFIAPI *GOP_3D_PRESENT)(
+  IN GOP_3D_PROTOCOL      *This
+  );
+
 
 /* -------------------------- Protocol structure -------------------------- */
 
 struct GOP_3D_PROTOCOL {
-  // Command buffer and pipeline preperation functions
-  GOP_3D_SET_CMD_BUFF           SetCmdBuffer;
-  GOP_3D_SET_GPU_MODE           SetGpuMode;
+  GOP_3D_INIT               GpuInit;
+  GOP_3D_DESTROY            GpuDestroy;
   
-  // Data transfer functions
-  GOP_3D_TRANSFER_DATA_BUFFER   TransferDataBuffer;
-  GOP_3D_TRANSFER_SHADER_BUFFER TransferShaderBuffer;
+  GOP_3D_SET_MODE           GpuSetMode;
 
-  // Draw calls 
-  GOP_3D_DRAW_FRAME             DrawFrame;
-  GOP_3D_PRESENT_FRAME          PresentFrame;
+  GOP_3D_CMD_BEGIN          GpuCmdBegin;
+  GOP_3D_CMD_END            GpuCmdEnd;
+
+  GOP_3D_BIND_RESOURCE      GpuBindUBO;
+  GOP_3D_BIND_RESOURCE      GpuBindVBO;
+  GOP_3D_BIND_RESOURCE      GpuBindIBO;
+  GOP_3D_BIND_RESOURCE      GpuBindFragShader;
+  GOP_3D_BIND_RESOURCE      GpuBindVertShader;
+
+  GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer; // Fixed typo "Tansfer" -> "Transfer"
+
+  GOP_3D_DRAW               GpuDraw;
+  GOP_3D_CLEAR_FRAME        GpuClearFrame;
+
+  GOP_3D_SUBMIT_CMD         GpuSubmitCmd;
+  GOP_3D_PRESENT            GpuPresent;
 };
 
-/* ------------------------------------------------------------------------ */
+/* ----------------------------------------------------------------------- */
 
 extern EFI_GUID gGop3dProtocolGuid;
 

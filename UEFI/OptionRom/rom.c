@@ -88,12 +88,12 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     IN EFI_DEVICE_PATH_PROTOCOL     *RemainingDevicePath
     ) {
   EFI_STATUS Status;
-  MY_GPU_PRIVATE_DATA *Private;
+  GPU_CONTEXT *Private;
   EFI_TPL OldTpl = gBS->RaiseTPL (TPL_CALLBACK);
 
   DEBUG ((EFI_D_INFO, "UEFI GPU Driver start\n"));
 
-  Private = AllocateZeroPool(sizeof(MY_GPU_PRIVATE_DATA));
+  Private = AllocateZeroPool(sizeof(GPU_CONTEXT));
   if (Private == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
