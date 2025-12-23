@@ -41,7 +41,7 @@ VOID SetStatusPage(
  * Memory Allocation Functions
  * ------------------------------------------------------------------------- */
 
-EFI_STATUS EFIAPI GpuInitMemoryAllocator(
+EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
     IN EFI_PCI_IO_PROTOCOL *PciIo, 
     IN UINT32 VRAMsize, 
     IN VRAMADDR baseAddr)
@@ -300,6 +300,118 @@ EFI_STATUS EFIAPI GpuVramSet(
     }
 
     return EFI_SUCCESS;
+}
+
+/* -------------------------------------------------------------------------
+ * MMIO Register Access Functions
+ * ------------------------------------------------------------------------- */
+
+// --- 32-bit Registers ---
+
+EFI_STATUS EFIAPI GpuMmioWrite32(IN UINT32 Offset, IN UINT32 Value)
+{
+    if (gpuMemAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    return gpuMemAllocator.PciIo->Mem.Write(
+        gpuMemAllocator.PciIo,
+        EfiPciIoWidthUint32,
+        gpuMemAllocator.MmioBarIndex,
+        Offset,
+        1,
+        &Value
+    );
+}
+
+UINT32 EFIAPI GpuMmioRead32(IN UINT32 Offset)
+{
+    UINT32 Value = 0;
+    
+    if (gpuMemAllocator.PciIo != NULL) {
+        gpuMemAllocator.PciIo->Mem.Read(
+            gpuMemAllocator.PciIo,
+            EfiPciIoWidthUint32,
+            gpuMemAllocator.MmioBarIndex,
+            Offset,
+            1,
+            &Value
+        );
+    }
+    
+    return Value;
+}
+
+// --- 16-bit Registers ---
+
+EFI_STATUS EFIAPI GpuMmioWrite16(IN UINT32 Offset, IN UINT16 Value)
+{
+    if (gpuMemAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    return gpuMemAllocator.PciIo->Mem.Write(
+        gpuMemAllocator.PciIo,
+        EfiPciIoWidthUint16,
+        gpuMemAllocator.MmioBarIndex,
+        Offset,
+        1,
+        &Value
+    );
+}
+
+UINT16 EFIAPI GpuMmioRead16(IN UINT32 Offset)
+{
+    UINT16 Value = 0;
+
+    if (gpuMemAllocator.PciIo != NULL) {
+        gpuMemAllocator.PciIo->Mem.Read(
+            gpuMemAllocator.PciIo,
+            EfiPciIoWidthUint16,
+            gpuMemAllocator.MmioBarIndex,
+            Offset,
+            1,
+            &Value
+        );
+    }
+
+    return Value;
+}
+
+// --- 8-bit Registers ---
+
+EFI_STATUS EFIAPI GpuMmioWrite8(IN UINT32 Offset, IN UINT8 Value)
+{
+    if (gpuMemAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    return gpuMemAllocator.PciIo->Mem.Write(
+        gpuMemAllocator.PciIo,
+        EfiPciIoWidthUint8,
+        gpuMemAllocator.MmioBarIndex,
+        Offset,
+        1,
+        &Value
+    );
+}
+
+UINT8 EFIAPI GpuMmioRead8(IN UINT32 Offset)
+{
+    UINT8 Value = 0;
+
+    if (gpuMemAllocator.PciIo != NULL) {
+        gpuMemAllocator.PciIo->Mem.Read(
+            gpuMemAllocator.PciIo,
+            EfiPciIoWidthUint8,
+            gpuMemAllocator.MmioBarIndex,
+            Offset,
+            1,
+            &Value
+        );
+    }
+
+    return Value;
 }
 
 /* -------------------------------------------------------------------------

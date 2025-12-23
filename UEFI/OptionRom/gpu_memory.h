@@ -24,7 +24,9 @@ struct GpuMemoryAllocator {
     VRAMADDR baseAddr;
     
     // PCI IO vars
-    EFI_PCI_IO_PROTOCOL *PciIo; 
+    EFI_PCI_IO_PROTOCOL *PciIo;
+
+    UINT8  MmioBarIndex;
     UINT8  VramBarIndex;
 };
 
@@ -35,7 +37,7 @@ extern struct GpuMemoryAllocator gpuMemAllocator;
 /*---------------- Memory Management Macros & Declarations ----------------*/
 
 // Initalizes gpuMemAllocator and maps out vram buffer
-EFI_STATUS EFIAPI GpuInitMemoryAllocator(IN EFI_PCI_IO_PROTOCOL *PciIo, IN UINT32 VRAMsize, IN VRAMADDR baseAddr);
+EFI_STATUS EFIAPI GpuMemoryAllocatorInit(IN EFI_PCI_IO_PROTOCOL *PciIo, IN UINT32 VRAMsize, IN VRAMADDR baseAddr);
 
 #ifdef MEM_DEBUG
     // DEBUG VERSION: Passes 'Tag' to implementation
@@ -67,6 +69,23 @@ EFI_STATUS EFIAPI GpuVramRead(IN VOID* destAddr, IN VRAMADDR sourcePtr, IN UINT3
 
 // Clears/Sets given memory area with specified value 
 EFI_STATUS EFIAPI GpuVramSet(IN VRAMADDR DestAddr, IN UINT8 Value, IN UINT32 Size);
+
+
+/*---------------- MMIO Register Access Functions ----------------*/
+// These functions operate on the MMIO BAR (MmioBarIndex)
+// They read/write single values, not buffers.
+
+// --- 32-bit Registers (Most Common) ---
+EFI_STATUS EFIAPI GpuMmioWrite32(IN UINT32 Offset, IN UINT32 Value);
+UINT32     EFIAPI GpuMmioRead32(IN UINT32 Offset);
+
+// --- 16-bit Registers ---
+EFI_STATUS EFIAPI GpuMmioWrite16(IN UINT32 Offset, IN UINT16 Value);
+UINT16     EFIAPI GpuMmioRead16(IN UINT32 Offset);
+
+// --- 8-bit Registers ---
+EFI_STATUS EFIAPI GpuMmioWrite8(IN UINT32 Offset, IN UINT8 Value);
+UINT8      EFIAPI GpuMmioRead8(IN UINT32 Offset);
 
 
 /*---------------- Debug Functions ----------------*/

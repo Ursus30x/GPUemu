@@ -70,6 +70,7 @@ EFI_STATUS EFIAPI GpuRingBufferAddCmd(
 VRAMADDR EFIAPI GpuReadRingTail();
 
 // Blocks CPU until 'bytesNeeded' is available in the VRAM Ring Buffer.
+// Uses cachedTail first, then polls MMIO if necessary.
 EFI_STATUS EFIAPI GpuRingBufferWaitSpace(IN UINT32 bytesNeeded);
 
 // Returns TRUE if Ring Head == Ring Tail (GPU has finished all commands).
