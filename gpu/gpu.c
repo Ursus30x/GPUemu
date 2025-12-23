@@ -15,23 +15,7 @@ static void vga_update_display(void *opaque);
 
 type_init(pci_gpu_register_types)
 
-    // static uint64_t lower_n_bytes(uint64_t data, unsigned nbytes)
-    // {
-    // 	uint64_t result;
-
-    // 	if (nbytes < 8) {
-    // 		uint64_t bitcount = ((uint64_t)nbytes)<<3;
-    // 		uint64_t mask = (1ULL << bitcount)-1;
-
-    // 		result = data & mask;
-    // 	} else {
-    // 		result = data;
-    // 	}
-
-    // 	return result;
-    // }
-
-static void simple_3d_mode(GpuState *gpu)
+static void wireframe_3d_mode(GpuState *gpu)
 {
 
     if (gpu->gpu_mode == GPU_MODE_3D)
@@ -117,12 +101,11 @@ static void execute_command(GpuState *gpu, Command *cmd)
         }
         break;
     case CMD_DRAW_PRIMITIVE:
-        DEBUG_PRINT("[CMD] Draw primitive\n");
-        if(cmd->payload.draw.type == PRIMITIVE_TYPE_LINES){
-            DEBUG_PRINT("[CMD] Draw LINES\n");
-            simple_3d_mode(gpu);
-        }
-        
+        if(cmd->payload.draw.type == PRIMITIVE_TYPE_LINES)
+            wireframe_3d_mode(gpu);
+        else if(cmd->payload.draw.type == PRIMITIVE_TYPE_TRIANGLES)
+            triangles_3d_mode(gpu);
+        //printf("[CMD] Draw primitive\n");
         break;
     case CMD_NOOP:
         DEBUG_PRINT("[CMD] NOP\n");

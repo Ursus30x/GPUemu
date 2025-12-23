@@ -351,7 +351,7 @@ float edge_func(Vec3 a, Vec3 b, Vec3 c)
     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
 }
 
-void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, uint32_t color, GpuState *gpu)
+void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
 {
     uint32_t width = gpu->width;
     uint32_t height =  gpu->height;
@@ -393,10 +393,13 @@ void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, uint32_t color, GpuState *gpu)
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
                 //float z_inv = w0 * s[0].z + w1 * s[1].z + w2 * s[2].z;
                 float z = w0 * (1.0f/s[0].z) + w1 * (1.0f/s[1].z) + w2 * (1.0f/s[2].z);
-
+                
                 if (z < Z_BUFFER(gpu)[y * width + x]) {
                     Z_BUFFER(gpu)[y * width + x] = z;
-                    put_pixel(gpu, x,y,color);
+                    uint8_t r = (uint8_t)(w0 * GET_R(color.a_col) + w1 * GET_R(color.b_col) + w2 * GET_R(color.c_col));
+                    uint8_t g = (uint8_t)(w0 * GET_G(color.a_col) + w1 * GET_G(color.b_col) + w2 * GET_G(color.c_col));
+                    uint8_t b = (uint8_t)(w0 * GET_B(color.a_col) + w1 * GET_B(color.b_col) + w2 * GET_B(color.c_col));
+                    put_pixel(gpu, x,y, RGB_TO_UINT(r,g,b));
                 }
             }
         }
@@ -410,7 +413,6 @@ void gpu_render_triangles(void *opaque)
         return;
     }
     gpu->gpu_mode = GPU_MODE_IDLE;
-    //uint32_t vertex_size = gpu->vbo_config.size;
     uint32_t triangle_size =  gpu->edge_config.size;
 
         
@@ -434,13 +436,15 @@ void gpu_render_triangles(void *opaque)
             v[2].z = vertices[indices[i].c].z;
             v[2].w = 1.0f;
 
+            Col3 color = {vertices[indices[i].a].rgba, vertices[indices[i].b].rgba, vertices[indices[i].c].rgba};
+
             for(int j=0; j<3; j++) 
             {
                 gpu->v_pos.right = v[j];
                 exec_shader(gpu, gpu->vs_code_addr);     
                 v[j] = gpu->v_out.right;
             }
-            draw_triangle(v[0], v[1], v[2], indices[i].color, gpu);
+            draw_triangle(v[0], v[1], v[2], color, gpu);
     }
     
 
