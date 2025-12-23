@@ -13,19 +13,10 @@ struct GpuRingBuffer {
     VRAMADDR ringHead;          // WRITE Pointer: Offset where CPU writes next
     VRAMADDR ringTail;          // READ Pointer: Last known GPU position
     
-    // WARNING: Stale value. Use GpuReadRingTail() to update.
-    VRAMADDR cachedTail;        
-
     // --- System RAM Staging Batch ---
     UINT8    *cmdBatchBufferPtr; // System RAM buffer for batching
     UINT32   cmdBatchBufferSize; // Total capacity of the batch
     UINT32   cmdBatchCursor;     // Current write position 
-
-    // --- Hardware Access Configuration ---
-    // Offsets for the registers we need to read/write during Flush/Sync
-    UINT32   MmioBarIndex;      
-    UINT32   MmioHeadOffset;    
-    UINT32   MmioTailOffset;    
 };
 
 extern struct GpuRingBuffer gpuRingBuffer;
@@ -34,10 +25,8 @@ extern struct GpuRingBuffer gpuRingBuffer;
 
 /**
  * Initializes the ring buffer structure and allocates system memory for the batch.
- * Note: PciIo is removed; implementation must use global memory helpers.
  */
 EFI_STATUS EFIAPI GpuRingBufferInit(
-    IN VRAMADDR RingBaseAddr,
     IN UINT32   RingSize
 );
 
