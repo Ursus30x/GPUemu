@@ -30,7 +30,7 @@
 #define EDGES_TABLE(s)     ((Edge*)     (gpu->vram_ptr + gpu->edge_config.addr))
 #define TRIANGLES_TABLE(s) ((Triangle*) (gpu->vram_ptr + gpu->edge_config.addr))
 #define SHADER_PROGRAM(s)  ((void*)     GPU_VRAM_SHADER_SEGMENT(s))
-#define Z_BUFFER(s)        ((float*)     (s->zbuffer))
+#define Z_BUFFER(s)        ((float*)     (s->vram_ptr + s->zbuffer_addr))
 
 #define REG_GPU_MODE(s)             (s->cmd[REG_GPU_MODE_ADDR])
 #define REG_EXEC_VERTEX_SHADER(s)   (s->cmd[REG_EXEC_VERTEX_SHADER_ADDR])
@@ -72,13 +72,12 @@ typedef struct GpuState {
     uint32_t height;              // 0x1C
     uint32_t framebuffer_vram_offset; // 0x20
     uint32_t gpu_time;            // 0x24 
- 
+    uint32_t zbuffer_addr;            // 0x28
+
     GenericBufferConfig vbo_config;
     GenericBufferConfig edge_config;
     GenericBufferConfig uinform_config;
 
-    float zbuffer[0x50000];
-    
     Mat4 regs[REG_MAT_SIZE];        
     Preg pRegs[REG_P_GEN_SIZE];
                      

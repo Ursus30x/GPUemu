@@ -204,6 +204,9 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case REG_GPU_TIME_ADDR:
         fprintf(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
         return;
+    case REG_ZBUFFER_ADDR:
+         target_reg = &s->zbuffer_addr;
+        return;
     default:
         fprintf(stderr, "GPU MMIO WRITE: Unhandled base offset 0x%" PRIx64 " (val: 0x%lx, size: %u)\n", base_addr, val, size);
         return;
@@ -238,32 +241,35 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
 
     switch (base_addr)
     {
-    case 0x00:
+    case REG_GPU_MODE_ADDR:
         reg_val = s->gpu_mode;
         break;
-    case 0x04:
+    case REG_RING_BUFFER_HEAD:
         reg_val = s->ring_buffer_head;
         break;
-    case 0x08:
+    case REG_RING_BUFFER_TAIL:
         reg_val = s->ring_buffer_tail;
         break;
-    case 0x10:
+    case REG_VERTEX_SHADER_ADDR:
         reg_val = s->vs_code_addr;
         break;
-    case 0x14:
+    case REG_FRAGMENT_SHADER_ADDR:
         reg_val = s->fs_code_addr;
         break;
-    case 0x18:
+    case REG_FB_WIDTH_ADDR:
         reg_val = s->width;
         break;
-    case 0x1C:
+    case REG_FB_HEIGHT_ADDR:
         reg_val = s->height;
         break;
-    case 0x20:
+    case REG_FRAMEBUFFER_ADDR:
         reg_val = s->framebuffer_vram_offset;
         break;
-    case 0x24:
+    case REG_GPU_TIME_ADDR:
         reg_val = s->gpu_time;
+        break;
+    case REG_ZBUFFER_ADDR:
+        reg_val = s->zbuffer_addr;
         break;
     default:
         fprintf(stderr, "GPU MMIO READ: Unhandled base offset 0x%" PRIx64 "\n", base_addr);
