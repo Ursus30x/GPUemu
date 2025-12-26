@@ -279,52 +279,6 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
 
   gBS->RestoreTPL(OldTpl); 
 
-
-  // TODO DELTE THIS LATER 
-  // VRAM alloc test
-  DEBUG ((EFI_D_INFO, "------------- VRAM ALLOCATION TEST ------------- \n\n"));
-
-  VRAMADDR ptr1, ptr2, ptr3;
-  
-  DEBUG ((EFI_D_INFO, "Allocating mem for ptr 1\n"));
-  ptr1 = GpuAllocateMem(200*sizeof(UINT32),"ptr1");
-  DEBUG ((EFI_D_INFO, "AllocateMem returned address %x\n\n", ptr1));
-
-  // GpuDebugPrintAllocatorStats();
-  // GpuDebugDumpMemoryMap();
-
-  DEBUG ((EFI_D_INFO, "Allocating mem for ptr 2\n"));
-  ptr2 = GpuAllocateMem(200*sizeof(UINT32),NULL);
-  DEBUG ((EFI_D_INFO, "AllocateMem returned address %x\n\n", ptr2));
-
-
-
-  // GpuDebugPrintAllocatorStats();
-  // GpuDebugDumpMemoryMap();
-
-  DEBUG ((EFI_D_INFO, "Allocating mem for ptr 3\n"));
-  ptr3 = GpuAllocateMem(200*sizeof(UINT32),NULL);
-  DEBUG ((EFI_D_INFO, "AllocateMem returned address %x\n\n", ptr3));
-
-  // GpuDebugPrintAllocatorStats();
-  // GpuDebugDumpMemoryMap();
-
-  DEBUG ((EFI_D_INFO, "Freeing ptr2\n"));
-
-  GpuFreeMem(ptr2);
-
-  GpuDebugPrintAllocatorStats();
-  GpuDebugDumpMemoryMap();
-
-  DEBUG ((EFI_D_INFO, "Allocating ptr2 again\n"));
-
-  ptr2 = GpuAllocateMem(200*sizeof(UINT32),"realloced ptr2");
-
-
-  GpuDebugPrintAllocatorStats();
-  GpuDebugDumpMemoryMap();
-
-
   DEBUG ((EFI_D_INFO, "Driver installation done, status=%d\n", Status));
   return Status;
 }

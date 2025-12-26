@@ -14,6 +14,10 @@ EFI_STATUS EFIAPI GpuRingBufferInit(
     gpuRingBuffer.bufferStartAddr = GpuAllocateMem(RingSize, "RINGBUFFER");
     if (gpuRingBuffer.bufferStartAddr == 0) return EFI_OUT_OF_RESOURCES;
     
+    GpuDebugPrintAllocatorStats();
+    GpuDebugDumpMemoryMap();
+
+
     gpuRingBuffer.bufferEndAddr = gpuRingBuffer.bufferStartAddr + RingSize;
 
     // Reset pointers
@@ -21,9 +25,11 @@ EFI_STATUS EFIAPI GpuRingBufferInit(
     gpuRingBuffer.ringTail = gpuRingBuffer.bufferStartAddr;
 
     // Initialize HW registers
-    GpuMmioWrite32(REG_RING_BUFFER_HEAD, gpuRingBuffer.ringHead);
+    GpuMmioWrite32(REG_GPU_MODE_ADDR, 0); // Disable Command Processor
     GpuMmioWrite32(REG_RING_BUFFER_TAIL, gpuRingBuffer.ringTail);
-
+    GpuMmioWrite32(REG_RING_BUFFER_HEAD, gpuRingBuffer.ringHead);
+    GpuMmioWrite32(REG_GPU_MODE_ADDR, 1); // Re-enable
+    
     // Allocate Host Staging Buffer
     gpuRingBuffer.cmdBatchBufferPtr = AllocatePool(RingSize); 
     if (gpuRingBuffer.cmdBatchBufferPtr == NULL) {

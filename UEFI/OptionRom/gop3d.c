@@ -81,7 +81,8 @@ EFI_STATUS EFIAPI GpuCmdEnd(
 EFI_STATUS EFIAPI GpuBindResourceGeneric(
   IN StateID StateId,
   IN VRAMADDR Address,
-  IN UINT32 Size
+  IN UINT32 Size,
+  IN DataType ElementType
   )
 {
     Command cmd;
@@ -90,8 +91,8 @@ EFI_STATUS EFIAPI GpuBindResourceGeneric(
     
     GenericBufferConfig conf;
     conf.addr = Address;
-    conf.size = Size;
-    conf.element_type = D_TYPE_FLOAT;
+    conf.size = Size;  
+    conf.element_type = ElementType;
 
     cmd.payload.state.value.buffer_config = conf;
 
@@ -100,49 +101,54 @@ EFI_STATUS EFIAPI GpuBindResourceGeneric(
 
 EFI_STATUS EFIAPI GpuBindVBO(
   IN GOP_3D_PROTOCOL *This,
-  IN VRAMADDR GpuAddress
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size             
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_VBO_CONFIG, GpuAddress, 0); 
+    return GpuBindResourceGeneric(STATE_ID_VBO_CONFIG, GpuAddress, Size,D_TYPE_VEC3); 
 }
 
 EFI_STATUS EFIAPI GpuBindIBO(
   IN GOP_3D_PROTOCOL *This,
-  IN VRAMADDR GpuAddress
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size             
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_EDGE_CONFIG, GpuAddress, 0);
+    return GpuBindResourceGeneric(STATE_ID_EDGE_CONFIG, GpuAddress, Size, D_TYPE_VEC2);
 }
 
 EFI_STATUS EFIAPI GpuBindUBO(
   IN GOP_3D_PROTOCOL *This,
-  IN VRAMADDR GpuAddress
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size           
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_UNIFORM_CONFIG, GpuAddress, 0);
+    return GpuBindResourceGeneric(STATE_ID_UNIFORM_CONFIG, GpuAddress, Size, D_TYPE_MAT4);
 }
 
 EFI_STATUS EFIAPI GpuBindVertShader(
   IN GOP_3D_PROTOCOL *This,
-  IN VRAMADDR GpuAddress
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size              
   )
 {
     Command cmd;
     cmd.opcode = CMD_SET_STATE;
-    cmd.payload.state.state_id = STATE_ID_SHADER_PTRS;
+    cmd.payload.state.state_id = STATE_ID_VERTEX_SHADER_PTR;
     cmd.payload.state.value.shader_ptrs.vs_addr = GpuAddress;
-    
+
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
 EFI_STATUS EFIAPI GpuBindFragShader(
   IN GOP_3D_PROTOCOL *This,
-  IN VRAMADDR GpuAddress
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size
   )
 {
     Command cmd;
     cmd.opcode = CMD_SET_STATE;
-    cmd.payload.state.state_id = STATE_ID_SHADER_PTRS;
+    cmd.payload.state.state_id = STATE_ID_FRAGMENT_SHADER_PTR;
     cmd.payload.state.value.shader_ptrs.fs_addr = GpuAddress;
     
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
@@ -228,6 +234,9 @@ EFI_STATUS EFIAPI GpuSubmitCmd(
   IN GOP_3D_PROTOCOL *This
   )
 {
+    DEBUG((DEBUG_INFO, "Mem Dump after command submition\n"));
+    GpuDebugDumpMemoryMap();
+
     return GpuRingBufferFlush();
 }
 
