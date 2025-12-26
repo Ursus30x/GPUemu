@@ -19,7 +19,6 @@ typedef struct {
     uint32_t addr;          
     uint32_t size;             
     DataType element_type;     
-    
 } GenericBufferConfig;
 
 
@@ -67,7 +66,8 @@ typedef enum {
     STATE_ID_VBO_CONFIG = 1,
     STATE_ID_EDGE_CONFIG,   
     STATE_ID_UNIFORM_CONFIG,
-    STATE_ID_SHADER_PTRS,    
+    STATE_ID_VERTEX_SHADER_PTR,    
+    STATE_ID_FRAGMENT_SHADER_PTR
 } StateID;
 
 
