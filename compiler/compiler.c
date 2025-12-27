@@ -42,7 +42,13 @@ static const TokenDef token_defs[] = {
     { TOKEN_LDUV,  INSTR_LDU,   OP_TYPE_VEC4,   1, FORMAT_D_A },
     { TOKEN_LDUI,  INSTR_LDU,   OP_TYPE_U32,    1, FORMAT_D_A },
     { TOKEN_LDUF,  INSTR_LDU,   OP_TYPE_F32,    1, FORMAT_D_A },
-    { TOKEN_JMP,   INSTR_JMP,   OP_TYPE_U32,    1, FORMAT_JMP }
+    { TOKEN_JMP,   INSTR_JMP,   OP_TYPE_U32,    1, FORMAT_JMP },
+    { TOKEN_AND,   INSTR_AND,   OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_OR,    INSTR_OR,    OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_NOT,   INSTR_NOT,   OP_TYPE_U32,    1, FORMAT_D_A },
+    { TOKEN_XOR,   INSTR_XOR,   OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_PCMPI, INSTR_PCMP,  OP_TYPE_U32,    2, FORMAT_PCMP },
+    { TOKEN_PCMPF, INSTR_PCMP,  OP_TYPE_F32,    2, FORMAT_PCMP }
 };
 
 static const size_t num_token_defs = sizeof(token_defs) / sizeof(token_defs[0]);
@@ -384,10 +390,9 @@ void add_label(Assembler *as, const char* name, uint32_t address)
 
 uint32_t get_label_address(Assembler *as, const char* name) 
 {
-    for (size_t i = 0; i < as->label_count; i++)
+    for (size_t i = 0; i < as->label_count; i++) 
     {
-        if (strcmp(as->labels[i].name, name) == 0) 
-            return as->labels[i].address;
+        if (strcmp(as->labels[i].name, name) == 0) return as->labels[i].address;
     }
     report_error(as, "Undefined label reference");
     return 0;
@@ -403,9 +408,7 @@ uint8_t parse_reg(Assembler *as, const char* tok, uint8_t opType, int force_scal
             if (strcmp(tok, TOKEN_REG_M_IN) == 0) return REG_M_IN;
             return (uint8_t)atoi(tok + 1);
         }
-    } 
-    else 
-    {
+    } else {
         if (strcmp(tok, TOKEN_REG_PX) == 0) return REG_PX;
         if (strcmp(tok, TOKEN_REG_PY) == 0) return REG_PY;
         if (strcmp(tok, TOKEN_REG_PR) == 0) return REG_PR;
@@ -443,18 +446,20 @@ arg_data parse_arg(Assembler *as, const char* tok, const TokenDef *def, int pass
     arg.val.u32 = parse_reg(as, tok, def->opType, 1);
     return arg;
 }
-void print_instr_debug(const char *tok, const Instr* instr)
+
+void print_instr_debug(const char *tok, const Instr* instr) 
 {
-   printf("[DEBUG] %-10s | Opcode: %u, CFlag: %u, Dest: %u, Arg0Type: %u, Arg1Type: %u, Arg2Type: %u, Arg0: 0x%08x, Arg1: 0x%08x, Arg2: 0x%08x\n", 
-          tok, instr->opcode, instr->cFlag, instr->dest, instr->arg0Type, instr->arg1Type, instr->arg2Type, instr->arg0.u32, instr->arg1.u32, instr->arg2.u32);
+    printf("[DEBUG] %-10s | Opcode: %u, CFlag: %u, Dest: %u, Arg0: 0x%08x, Arg1: 0x%08x\n", 
+           tok, instr->opcode, instr->cFlag, instr->dest, instr->arg0.u32, instr->arg1.u32);
 }
-void process_instruction(Assembler *as, int pass)
+
+void process_instruction(Assembler *as, int pass) 
 {
     const char* head = consume(as);
     if (!head) return;
 
     size_t len = strlen(head);
-    if (head[len - 1] == ':')
+    if (head[len - 1] == ':') 
     {
         if (pass == 1) 
         {
@@ -470,7 +475,7 @@ void process_instruction(Assembler *as, int pass)
     const char* op_str = is_cond ? head + 1 : head;
 
     const TokenDef *def = NULL;
-    for (size_t i = 0; i < num_token_defs; i++)
+    for (size_t i = 0; i < num_token_defs; i++) 
     {
         if (strcmp(op_str, token_defs[i].token) == 0) 
         {
@@ -488,13 +493,15 @@ void process_instruction(Assembler *as, int pass)
         instr.opType = def->opType;
         instr.cFlag  = is_cond ? C_FLAG_ENABLE : C_FLAG_DISABLE;
 
-        if (def->format == FORMAT_CMP) 
+        if (def->format == FORMAT_CMP || def->format == FORMAT_PCMP) 
         {
-            instr.cFlag = parse_cflag_val(as, consume(as));
+             instr.cFlag = parse_cflag_val(as, consume(as));
         }
 
-        if (def->format != FORMAT_NONE && def->format != FORMAT_CMP && def->format != FORMAT_A && def->format != FORMAT_JMP) 
-        {
+        // Handle destination register
+        if (def->format != FORMAT_NONE && def->format != FORMAT_CMP && 
+            def->format != FORMAT_A && def->format != FORMAT_JMP) 
+            {
             instr.dest = parse_reg(as, consume(as), def->opType, 0);
         }
 
@@ -515,11 +522,11 @@ void process_instruction(Assembler *as, int pass)
             fprintf(as->output, "0x%lX, ", raw[i]);
         }
         if (as->verbose) print_instr_debug(head, &instr);
-    }
-    else 
-    {
-        if (def->format == FORMAT_CMP) consume(as); // consume condition
-        if (def->format != FORMAT_NONE && def->format != FORMAT_CMP && def->format != FORMAT_A && def->format != FORMAT_JMP) consume(as); // consume dest
+    } else {
+        // Pass 1: skip appropriate amount of tokens to keep PC in sync
+        if (def->format == FORMAT_CMP || def->format == FORMAT_PCMP) consume(as); // condition
+        if (def->format != FORMAT_NONE && def->format != FORMAT_CMP && 
+            def->format != FORMAT_A && def->format != FORMAT_JMP) consume(as); // dest
         for (int i = 0; i < def->argc; i++) consume(as);
     }
 
