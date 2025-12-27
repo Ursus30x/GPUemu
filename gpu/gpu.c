@@ -3,7 +3,7 @@
 #include "gpu.h"
 #include "math3d.h"
 #include "renderer.h"
-
+#include "debug_gpu.h"
 DECLARE_INSTANCE_CHECKER(GpuState, GPU, TYPE_PCI_GPU_DEVICE);
 
 static void pci_gpu_register_types(void);
@@ -45,17 +45,17 @@ static void simple_3d_mode(GpuState *gpu)
 
 static void gpu_print_mmio(GpuState *s)
 {
-    printf("\n--- GPU MMIO Register Snapshot ---\n");
-    printf("0x00 [GPU_MODE]:         0x%08x\n", s->gpu_mode);
-    printf("0x04 [RING_HEAD]:        0x%08x\n", s->ring_buffer_head);
-    printf("0x08 [RING_TAIL]:        0x%08x\n", s->ring_buffer_tail);
-    printf("0x10 [VS_CODE_PTR]:      0x%08x\n", s->vs_code_addr);
-    printf("0x14 [FS_CODE_PTR]:      0x%08x\n", s->fs_code_addr);
-    printf("0x18 [WIDTH]:            %u\n", s->width);
-    printf("0x1C [HEIGHT]:           %u\n", s->height);
-    printf("0x20 [FB_ADDR]:          0x%08x\n", s->framebuffer_vram_offset);
-    printf("0x24 [GPU_TIME]:         %u\n", s->gpu_time);
-    printf("----------------------------------\n");
+    DEBUG_PRINT("\n--- GPU MMIO Register Snapshot ---\n");
+    DEBUG_PRINT("0x00 [GPU_MODE]:         0x%08x\n", s->gpu_mode);
+    DEBUG_PRINT("0x04 [RING_HEAD]:        0x%08x\n", s->ring_buffer_head);
+    DEBUG_PRINT("0x08 [RING_TAIL]:        0x%08x\n", s->ring_buffer_tail);
+    DEBUG_PRINT("0x10 [VS_CODE_PTR]:      0x%08x\n", s->vs_code_addr);
+    DEBUG_PRINT("0x14 [FS_CODE_PTR]:      0x%08x\n", s->fs_code_addr);
+    DEBUG_PRINT("0x18 [WIDTH]:            %u\n", s->width);
+    DEBUG_PRINT("0x1C [HEIGHT]:           %u\n", s->height);
+    DEBUG_PRINT("0x20 [FB_ADDR]:          0x%08x\n", s->framebuffer_vram_offset);
+    DEBUG_PRINT("0x24 [GPU_TIME]:         %u\n", s->gpu_time);
+    DEBUG_PRINT("----------------------------------\n");
 }
 
 static void update_32bit_register(uint32_t *target_ptr, hwaddr offset_in_word, uint64_t val, unsigned size)
@@ -73,32 +73,32 @@ static void execute_command(GpuState *gpu, Command *cmd)
     switch (cmd->opcode)
     {
     case CMD_CLEAR_FRAMEBUFFER:
-        printf("[CMD] Clear FB %x \n", (gpu->width * gpu->height));
+        DEBUG_PRINT("[CMD] Clear FB %x \n", (gpu->width * gpu->height));
         for (uint32_t i = 0; i < (gpu->width * gpu->height); i++)
             FB(gpu)[i] = 0xff000000;
         break;
     case CMD_SET_STATE:
-        printf("[CMD] Set state\n");
+        DEBUG_PRINT("[CMD] Set state\n");
         switch (cmd->payload.state.state_id)
         {
         case STATE_ID_EDGE_CONFIG:
-            printf("[CMD] Edge config\n");
+            DEBUG_PRINT("[CMD] Edge config\n");
             gpu->edge_config = cmd->payload.state.value.buffer_config;
             break;
         case STATE_ID_VBO_CONFIG:
-            printf("[CMD] VBO config\n");
+            DEBUG_PRINT("[CMD] VBO config\n");
             gpu->vbo_config = cmd->payload.state.value.buffer_config;
             break;
         case STATE_ID_UNIFORM_CONFIG:
-            printf("[CMD] UBO config\n");
+            DEBUG_PRINT("[CMD] UBO config\n");
             gpu->uinform_config = cmd->payload.state.value.buffer_config;
             break;
         case STATE_ID_VERTEX_SHADER_PTR:
-            printf("[CMD] Vertex shader config\n");
+            DEBUG_PRINT("[CMD] Vertex shader config\n");
             gpu->vs_code_addr = cmd->payload.state.value.shader_ptrs.vs_addr;
             break;
         case STATE_ID_FRAGMENT_SHADER_PTR:
-            printf("[CMD] Fragment shader config\n");
+            DEBUG_PRINT("[CMD] Fragment shader config\n");
             gpu->fs_code_addr = cmd->payload.state.value.shader_ptrs.fs_addr;
             break;
         default:
@@ -106,15 +106,15 @@ static void execute_command(GpuState *gpu, Command *cmd)
         }
         break;
     case CMD_DRAW_PRIMITIVE:
-        printf("[CMD] Draw primitive\n");
+        DEBUG_PRINT("[CMD] Draw primitive\n");
         if(cmd->payload.draw.type == PRIMITIVE_TYPE_LINES){
-            printf("[CMD] Draw LINES\n");
+            DEBUG_PRINT("[CMD] Draw LINES\n");
             simple_3d_mode(gpu);
         }
         
         break;
     case CMD_NOOP:
-        printf("[CMD] NOP\n");
+        DEBUG_PRINT("[CMD] NOP\n");
     default:
         break;
     }
@@ -127,11 +127,11 @@ static void process_ring_buffer(GpuState *s)
 
     if (head == tail)
     {
-        printf("[GPU CMD PROC] Ring Buffer is empty (head == tail: 0x%x)\n", head);
+        DEBUG_PRINT("[GPU CMD PROC] Ring Buffer is empty (head == tail: 0x%x)\n", head);
         return;
     }
 
-    printf("[GPU CMD PROC] Processing buffer: Head=0x%x, Tail=0x%x, Size=%lu\n",
+    DEBUG_PRINT("[GPU CMD PROC] Processing buffer: Head=0x%x, Tail=0x%x, Size=%lu\n",
            head, tail, (long)sizeof(Command));
 
     while (s->ring_buffer_tail != head)
@@ -140,11 +140,11 @@ static void process_ring_buffer(GpuState *s)
         uint8_t *cmd_ptr = s->vram_ptr + s->ring_buffer_tail;
         Command *cmd = (Command *)cmd_ptr;
 
-        printf("DEBUG: sizeof(Command) = %lu\n", sizeof(Command));
-        printf("DEBUG: sizeof(SetStatePayload) = %lu\n", sizeof(SetStatePayload));
-        printf("DEBUG: sizeof(GenericBufferConfig) = %lu\n", sizeof(GenericBufferConfig));
+        DEBUG_PRINT("DEBUG: sizeof(Command) = %lu\n", sizeof(Command));
+        DEBUG_PRINT("DEBUG: sizeof(SetStatePayload) = %lu\n", sizeof(SetStatePayload));
+        DEBUG_PRINT("DEBUG: sizeof(GenericBufferConfig) = %lu\n", sizeof(GenericBufferConfig));
 
-        printf("[GPU CMD PROC] Executing command at VRAM Offset 0x%x (Opcode: 0x%x)\n",
+        DEBUG_PRINT("[GPU CMD PROC] Executing command at VRAM Offset 0x%x (Opcode: 0x%x)\n",
                s->ring_buffer_tail, cmd->opcode);
 
         execute_command(s, cmd);
@@ -153,11 +153,11 @@ static void process_ring_buffer(GpuState *s)
 
         if (s->ring_buffer_tail == 0 && head != 0)
         {
-            printf("[GPU CMD PROC] Ring Buffer wrapped around.\n");
+            DEBUG_PRINT("[GPU CMD PROC] Ring Buffer wrapped around.\n");
         }
     }
 
-    printf("[GPU CMD PROC] Finished processing. New Tail=0x%x. GPU Mode: 0x%x\n", s->ring_buffer_tail, s->gpu_mode);
+    DEBUG_PRINT("[GPU CMD PROC] Finished processing. New Tail=0x%x. GPU Mode: 0x%x\n", s->ring_buffer_tail, s->gpu_mode);
 }
 
 static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
@@ -198,7 +198,7 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         target_reg = &s->framebuffer_vram_offset;
         break;
     case 0x24:
-        fprintf(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
+        DEBUG_PRINT(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
         return;
     default:
         fprintf(stderr, "GPU MMIO WRITE: Unhandled base offset 0x%" PRIx64 " (val: 0x%lx, size: %u)\n", base_addr, val, size);
@@ -215,10 +215,10 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
 
         update_32bit_register(target_reg, offset_in_word, val, size);
         gpu_print_mmio(s);
-        printf("GPU MMIO WRITE: 0x%lx written to 0x%" PRIx64 " (size %u). New reg value: 0x%x\n", val, addr, size, *target_reg);
+        DEBUG_PRINT("GPU MMIO WRITE: 0x%lx written to 0x%" PRIx64 " (size %u). New reg value: 0x%x\n", val, addr, size, *target_reg);
         if (trigger_command_processor)
         {
-            printf("\n[GPU TRIGGER] Detected write to RING_HEAD (0x04). Launching command processor...\n");
+            DEBUG_PRINT("\n[GPU TRIGGER] Detected write to RING_HEAD (0x04). Launching command processor...\n");
             process_ring_buffer(s);
         }
     }
@@ -268,7 +268,7 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
 
     uint64_t result = (reg_val >> (offset_in_word * 8)) & ((1ULL << (size * 8)) - 1);
 
-    printf("GPU MMIO READ: 0x%" PRIx64 " returned from offset 0x%" PRIx64 " (size %u)\n", result, addr, size);
+    DEBUG_PRINT("GPU MMIO READ: 0x%" PRIx64 " returned from offset 0x%" PRIx64 " (size %u)\n", result, addr, size);
     return result;
 }
 
@@ -302,11 +302,11 @@ static void gpu_instance_init(Object *obj)
 }
 static void vga_invalidate_display(void *opaque)
 {
-    printf("invalidated display\n");
+    DEBUG_PRINT("invalidated display\n");
 }
 static void vga_update_text(void *opaque, console_ch_t *chardata)
 {
-    printf("updated text\n");
+    DEBUG_PRINT("updated text\n");
 }
 
 static void vga_update_display(void *opaque)
@@ -403,7 +403,7 @@ static void gpu_class_init(ObjectClass *class, const void *data)
 /* Realize GPU device */
 static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 {
-    printf("pci_gpu_realize\n");
+    DEBUG_PRINT("pci_gpu_realize\n");
 
     GpuState *gpu = GPU(pdev);
     /* BAR0: cmd registers */
@@ -427,7 +427,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->ring_buffer_tail = 0;
     
 
-    // printf("[INIT] Ring Buffer starts at VRAM offset 0x%x\n", 0);
+    // DEBUG_PRINT("[INIT] Ring Buffer starts at VRAM offset 0x%x\n", 0);
 
 
 

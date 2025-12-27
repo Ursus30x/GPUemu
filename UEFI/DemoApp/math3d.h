@@ -10,7 +10,7 @@
 
 // --- Definitions ---
 // Matches GPU layout. defined here, DO NOT redefine in app.c
-typedef struct { double x, y, z; UINT32 color; } Vec3; 
+typedef struct { float x, y, z; UINT32 color; } Vec3; 
 typedef struct { UINT32 v1, v2; } Edge; 
 
 typedef struct {

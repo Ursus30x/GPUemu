@@ -232,7 +232,8 @@ EFI_STATUS EFIAPI TestGop() {
 
         mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(Mat4)); 
         mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount); 
-
+        // mGOP3D->GpuBindUBO(mGOP3D, hMVP2, sizeof(Mat4)); 
+        // mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount); 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
     }

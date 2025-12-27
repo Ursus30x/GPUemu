@@ -85,11 +85,12 @@ EFI_STATUS
  * Generic Bind function signature used for VBO, IBO, UBO, and Shaders.
  * Binds a VRAM address to a specific pipeline slot.
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_BIND_RESOURCE)(
-  IN GOP_3D_PROTOCOL      *This,
-  IN VRAMADDR             GpuAddress
+  GOP_3D_PROTOCOL *This,
+  VRAMADDR         Addr,
+  UINT32           Size
   );
 
 /**
