@@ -90,7 +90,8 @@ typedef enum {
     INSTR_SIN,    
     INSTR_COS,    
     INSTR_CAST,  
-    INSTR_LDU
+    INSTR_LDU,
+    INSTR_JMP
 } InstrOpcode;
 
 
