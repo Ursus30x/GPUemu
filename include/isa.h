@@ -92,9 +92,6 @@ typedef enum {
     INSTR_SIN,    
     INSTR_COS,    
     INSTR_CAST,  
-<<<<<<< HEAD
-    INSTR_LDU
-=======
     INSTR_LDU,
     INSTR_JMP,
     INSTR_AND,
@@ -120,7 +117,6 @@ typedef enum {
     INSTR_VEC3,
     INSTR_TAN,
     INSTR_ATAN
->>>>>>> 9b768a5 ([Compiler] New ISA instr)
 } InstrOpcode;
 
 

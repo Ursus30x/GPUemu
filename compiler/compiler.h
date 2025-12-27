@@ -57,6 +57,7 @@
 #define TOKEN_XOR   "xor"
 #define TOKEN_PCMPI   "pcmpi"
 #define TOKEN_PCMPF   "pcmpf"
+<<<<<<< HEAD
 #define TOKEN_NORMV3   "normv3"
 
 #define TOKEN_MINI   "mini"
@@ -84,6 +85,8 @@
 #define TOKEN_VEC3 "vec3"
 #define TOKEN_TAN "tan"
 #define TOKEN_ATAN "atan"
+=======
+>>>>>>> b96ead3 ([Compiler] Logic and pcmp instructions)
 
 
 #define TOKEN_REG_M 'm'
@@ -104,6 +107,17 @@
 #define TOKEN_C_FLAG_LTE    "lte"
 #define TOKEN_C_FLAG_GTE    "gte"
 
+typedef enum {
+    FORMAT_NONE,    // Instruction with no args (exit)
+    FORMAT_D,       // Destination only (ident, fsan, mvp)
+    FORMAT_A,       // Argument only (print)
+    FORMAT_D_A,     // Dest + 1 Arg (mov, rotx, abs, sqrt, cast, ldu)
+    FORMAT_D_A_B,   // Dest + 2 Args (mul, add, sub, div, mod)
+    FORMAT_D_A_B_C, // Dest + 3 Args (trans, col, blend, lerp)
+    FORMAT_CMP,     // Special: Opcode + Cflag + 2 Args (cmp)
+    FORMAT_PCMP,     // Special: Opcode + Cflag + Dest + 2 Args (cmp)
+    FORMAT_JMP      // Opcode + 1 Arg (Address/Label)
+} InstFormat;
 
 typedef struct {
     const char* token;
@@ -181,13 +195,26 @@ typedef struct
     FI32 val;
 } arg_data;
 
+typedef struct {
+    char* name;
+    uint32_t address;
+} Label;
 
-arg_data parse_arg(Str10 tok, op_def op);
-uint8_t parse_reg(Str10 tok, uint8_t opType, uint8_t force_scalar);
-uint8_t parse_Cflag(Str10 tok);
-void parseInstr(const Instr* instr);
-void printInstr(const Instr* instr);
-op_def new_instr(Str10 tok);
+typedef struct {
+    Vector *tokens;
+    size_t cursor;
+    FILE *output;
+    int has_error;
+    int verbose;
+
+    Label* labels;
+    size_t label_count;
+    size_t label_capacity;
+    uint32_t current_pc;
+
+
+} Assembler;
+
 int tokenize_file(const char *filename, Vector *v);
 int process_tokens(Vector *tokens);
 #endif

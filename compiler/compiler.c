@@ -3,84 +3,51 @@
 #include <ctype.h>
 
 static const TokenDef token_defs[] = {
-    { TOKEN_MOVM,   INSTR_MOV,   OP_TYPE_MATRIX, 1, FORMAT_D_A },
-    { TOKEN_MOV,    INSTR_MOV,   OP_TYPE_U32,    1, FORMAT_D_A },
-    { TOKEN_ROTX,   INSTR_ROTX,  OP_TYPE_MATRIX, 1, FORMAT_D_A },
-    { TOKEN_ROTY,   INSTR_ROTY,  OP_TYPE_MATRIX, 1, FORMAT_D_A },
-    { TOKEN_IDENT,  INSTR_IDENT, OP_TYPE_MATRIX, 0, FORMAT_D },
-    { TOKEN_TRANS,  INSTR_TRANS, OP_TYPE_MATRIX, 3, FORMAT_D_A_B_C },
-    { TOKEN_MVP,    INSTR_MVP,   OP_TYPE_MATRIX, 0, FORMAT_D },
-    { TOKEN_EXIT,   INSTR_EXIT,  OP_TYPE_U32,    0, FORMAT_NONE },
-    { TOKEN_CMPI,   INSTR_CMP,   OP_TYPE_U32,    2, FORMAT_CMP },
-    { TOKEN_CMPF,   INSTR_CMP,   OP_TYPE_F32,    2, FORMAT_CMP },
-    { TOKEN_MULM,   INSTR_MUL,   OP_TYPE_MATRIX, 2, FORMAT_D_A_B },
-    { TOKEN_MULV,   INSTR_MUL,   OP_TYPE_VEC4,   2, FORMAT_D_A_B },
-    { TOKEN_MULV3,  INSTR_MUL,   OP_TYPE_VEC3,   2, FORMAT_D_A_B },
-    { TOKEN_MULI,   INSTR_MUL,   OP_TYPE_U32,    2, FORMAT_D_A_B },
-    { TOKEN_MULF,   INSTR_MUL,   OP_TYPE_F32,    2, FORMAT_D_A_B },
-    { TOKEN_ADDI,   INSTR_ADD,   OP_TYPE_U32,    2, FORMAT_D_A_B },
-    { TOKEN_ADDF,   INSTR_ADD,   OP_TYPE_F32,    2, FORMAT_D_A_B },
-    { TOKEN_ADDV,   INSTR_ADD,   OP_TYPE_VEC4,   2, FORMAT_D_A_B },
-    { TOKEN_ADDV3,  INSTR_ADD,   OP_TYPE_VEC3,   2, FORMAT_D_A_B },
-    { TOKEN_SUBI,   INSTR_SUB,   OP_TYPE_U32,    2, FORMAT_D_A_B },
-    { TOKEN_SUBF,   INSTR_SUB,   OP_TYPE_F32,    2, FORMAT_D_A_B },
-    { TOKEN_SUBV,   INSTR_SUB,   OP_TYPE_VEC4,   2, FORMAT_D_A_B },
-    { TOKEN_SUBV3,  INSTR_SUB,   OP_TYPE_VEC3,   2, FORMAT_D_A_B },
-    { TOKEN_DIVI,   INSTR_DIV,   OP_TYPE_U32,    2, FORMAT_D_A_B },
-    { TOKEN_DIVF,   INSTR_DIV,   OP_TYPE_F32,    2, FORMAT_D_A_B },
-    { TOKEN_MULV,   INSTR_MUL,   OP_TYPE_VEC4,   2, FORMAT_D_A_B },
-    { TOKEN_MULV3,  INSTR_MUL,   OP_TYPE_VEC3,   2, FORMAT_D_A_B },
-    { TOKEN_MOD,    INSTR_MOD,   OP_TYPE_U32,    2, FORMAT_D_A_B },
-    { TOKEN_COL,    INSTR_COL,   OP_TYPE_U32,    3, FORMAT_D_A_B_C },
-    { TOKEN_FSAN,   INSTR_FSAN,  OP_TYPE_F32,    0, FORMAT_D },
-    { TOKEN_BLENDI, INSTR_BLEND, OP_TYPE_U32,    3, FORMAT_D_A_B_C },
-    { TOKEN_BLENDF, INSTR_BLEND, OP_TYPE_F32,    3, FORMAT_D_A_B_C },
-    { TOKEN_LERPI,  INSTR_LERP,  OP_TYPE_U32,    3, FORMAT_D_A_B_C },
-    { TOKEN_LERPF,  INSTR_LERP,  OP_TYPE_F32,    3, FORMAT_D_A_B_C },
-    { TOKEN_ABSI,   INSTR_ABS,   OP_TYPE_U32,    1, FORMAT_D_A },
-    { TOKEN_ABSF,   INSTR_ABS,   OP_TYPE_F32,    1, FORMAT_D_A },
-    { TOKEN_SQRT,   INSTR_SQRT,  OP_TYPE_F32,    1, FORMAT_D_A },
-    { TOKEN_SIN,    INSTR_SIN,   OP_TYPE_F32,    1, FORMAT_D_A },
-    { TOKEN_COS,    INSTR_COS,   OP_TYPE_F32,    1, FORMAT_D_A },
-    { TOKEN_CASTI,  INSTR_CAST,  OP_TYPE_U32,    1, FORMAT_D_A },
-    { TOKEN_CASTF,  INSTR_CAST,  OP_TYPE_F32,    1, FORMAT_D_A },
-    { TOKEN_LDUM,   INSTR_LDU,   OP_TYPE_MATRIX, 1, FORMAT_D_A },
-    { TOKEN_LDUV,   INSTR_LDU,   OP_TYPE_VEC4,   1, FORMAT_D_A },
-    { TOKEN_LDUI,   INSTR_LDU,   OP_TYPE_U32,    1, FORMAT_D_A },
-    { TOKEN_LDUF,   INSTR_LDU,   OP_TYPE_F32,    1, FORMAT_D_A },
-    { TOKEN_JMP,    INSTR_JMP,   OP_TYPE_U32,    1, FORMAT_JMP },
-    { TOKEN_AND,    INSTR_AND,   OP_TYPE_U32,    2, FORMAT_D_A_B },
-    { TOKEN_OR,     INSTR_OR,    OP_TYPE_U32,    2, FORMAT_D_A_B },
-    { TOKEN_NOT,    INSTR_NOT,   OP_TYPE_U32,    1, FORMAT_D_A },
-    { TOKEN_XOR,    INSTR_XOR,   OP_TYPE_U32,    2, FORMAT_D_A_B },
-    { TOKEN_PCMPI,  INSTR_PCMP,  OP_TYPE_U32,    2, FORMAT_PCMP },
-    { TOKEN_PCMPF,  INSTR_PCMP,  OP_TYPE_F32,    2, FORMAT_PCMP },
-    { TOKEN_NORMV3, INSTR_NORM,  OP_TYPE_VEC4,   1, FORMAT_D_A },
-    { TOKEN_MINI,   INSTR_MIN,   OP_TYPE_U32,    2, FORMAT_D_A_B  },
-    { TOKEN_MAXI,   INSTR_MAX,   OP_TYPE_U32,    2, FORMAT_D_A_B  },
-    { TOKEN_MINF,   INSTR_MIN,   OP_TYPE_F32,    2, FORMAT_D_A_B  },
-    { TOKEN_MAXF,   INSTR_MAX,   OP_TYPE_F32,    2, FORMAT_D_A_B  },
-    { TOKEN_CLAMPI, INSTR_CLAMP, OP_TYPE_U32,    3, FORMAT_D_A_B_C},
-    { TOKEN_CLAMPF, INSTR_CLAMP, OP_TYPE_F32,    3, FORMAT_D_A_B_C},
-    { TOKEN_NEGI,   INSTR_NEG,   OP_TYPE_U32,    1, FORMAT_D_A    },
-    { TOKEN_NEGF,   INSTR_NEG,   OP_TYPE_F32,    1, FORMAT_D_A    },
-    { TOKEN_RECIPF, INSTR_RECIP, OP_TYPE_F32,    1, FORMAT_D_A    },
-    { TOKEN_RECIPI, INSTR_RECIP, OP_TYPE_U32,    1, FORMAT_D_A    },
-    { TOKEN_RSQRTF, INSTR_RSQRT, OP_TYPE_F32,    1, FORMAT_D_A    },
-    { TOKEN_DOTV3,  INSTR_DOT,   OP_TYPE_VEC3,   2, FORMAT_D_A_B  },
-    { TOKEN_CROSSV3,INSTR_CROSS, OP_TYPE_VEC3,   2, FORMAT_D_A_B  },
-    { TOKEN_LENV3,  INSTR_LEN,   OP_TYPE_VEC3,   1, FORMAT_D_A    },
-    { TOKEN_FMAF,   INSTR_FMA,   OP_TYPE_F32,    3, FORMAT_D_A_B_C},
-    { TOKEN_FMAI,   INSTR_FMA,   OP_TYPE_U32,    3, FORMAT_D_A_B_C},
-    { TOKEN_MADI,   INSTR_MAD,   OP_TYPE_U32,    3, FORMAT_D_A_B_C},
-    { TOKEN_MADF,   INSTR_MAD,   OP_TYPE_F32,    3, FORMAT_D_A_B_C},
-    { TOKEN_SATF,   INSTR_SAT,   OP_TYPE_F32,    1, FORMAT_D_A    },
-    { TOKEN_SIGNF,  INSTR_SIGN,  OP_TYPE_F32,    1, FORMAT_D_A    },
-    { TOKEN_SIGNI,  INSTR_SIGN,  OP_TYPE_U32,    1, FORMAT_D_A    },
-    { TOKEN_SIGNV3, INSTR_SIGN,  OP_TYPE_VEC3,   1, FORMAT_D_A    },
-    { TOKEN_VEC3,   INSTR_VEC3,  OP_TYPE_U32,    1, FORMAT_D_A_B_C}, // to do in pregs out m reg
-    { TOKEN_TAN,    INSTR_TAN,   OP_TYPE_F32,    1, FORMAT_D_A    },
-    { TOKEN_ATAN,   INSTR_ATAN,  OP_TYPE_F32,    2, FORMAT_D_A_B  }
+    { TOKEN_MOVM,  INSTR_MOV,   OP_TYPE_MATRIX, 1, FORMAT_D_A },
+    { TOKEN_MOV,   INSTR_MOV,   OP_TYPE_U32,    1, FORMAT_D_A },
+    { TOKEN_ROTX,  INSTR_ROTX,  OP_TYPE_MATRIX, 1, FORMAT_D_A },
+    { TOKEN_ROTY,  INSTR_ROTY,  OP_TYPE_MATRIX, 1, FORMAT_D_A },
+    { TOKEN_IDENT, INSTR_IDENT, OP_TYPE_MATRIX, 0, FORMAT_D },
+    { TOKEN_TRANS, INSTR_TRANS, OP_TYPE_MATRIX, 3, FORMAT_D_A_B_C },
+    { TOKEN_MVP,   INSTR_MVP,   OP_TYPE_MATRIX, 0, FORMAT_D },
+    { TOKEN_EXIT,  INSTR_EXIT,  OP_TYPE_U32,    0, FORMAT_NONE },
+    { TOKEN_CMPI,  INSTR_CMP,   OP_TYPE_U32,    2, FORMAT_CMP },
+    { TOKEN_CMPF,  INSTR_CMP,   OP_TYPE_F32,    2, FORMAT_CMP },
+    { TOKEN_MULM,  INSTR_MUL,   OP_TYPE_MATRIX, 2, FORMAT_D_A_B },
+    { TOKEN_MULV,  INSTR_MUL,   OP_TYPE_VEC4,   2, FORMAT_D_A_B },
+    { TOKEN_MULI,  INSTR_MUL,   OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_MULF,  INSTR_MUL,   OP_TYPE_F32,    2, FORMAT_D_A_B },
+    { TOKEN_ADDI,  INSTR_ADD,   OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_ADDF,  INSTR_ADD,   OP_TYPE_F32,    2, FORMAT_D_A_B },
+    { TOKEN_SUBI,  INSTR_SUB,   OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_SUBF,  INSTR_SUB,   OP_TYPE_F32,    2, FORMAT_D_A_B },
+    { TOKEN_DIVI,  INSTR_DIV,   OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_DIVF,  INSTR_DIV,   OP_TYPE_F32,    2, FORMAT_D_A_B },
+    { TOKEN_MOD,   INSTR_MOD,   OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_COL,   INSTR_COL,   OP_TYPE_U32,    3, FORMAT_D_A_B_C },
+    { TOKEN_FSAN,  INSTR_FSAN,  OP_TYPE_F32,    0, FORMAT_D },
+    { TOKEN_BLENDI,INSTR_BLEND, OP_TYPE_U32,    3, FORMAT_D_A_B_C },
+    { TOKEN_BLENDF,INSTR_BLEND, OP_TYPE_F32,    3, FORMAT_D_A_B_C },
+    { TOKEN_LERPI, INSTR_LERP,  OP_TYPE_U32,    3, FORMAT_D_A_B_C },
+    { TOKEN_LERPF, INSTR_LERP,  OP_TYPE_F32,    3, FORMAT_D_A_B_C },
+    { TOKEN_ABSI,  INSTR_ABS,   OP_TYPE_U32,    1, FORMAT_D_A },
+    { TOKEN_ABSF,  INSTR_ABS,   OP_TYPE_F32,    1, FORMAT_D_A },
+    { TOKEN_SQRT,  INSTR_SQRT,  OP_TYPE_F32,    1, FORMAT_D_A },
+    { TOKEN_SIN,   INSTR_SIN,   OP_TYPE_F32,    1, FORMAT_D_A },
+    { TOKEN_COS,   INSTR_COS,   OP_TYPE_F32,    1, FORMAT_D_A },
+    { TOKEN_CASTI, INSTR_CAST,  OP_TYPE_U32,    1, FORMAT_D_A },
+    { TOKEN_CASTF, INSTR_CAST,  OP_TYPE_F32,    1, FORMAT_D_A },
+    { TOKEN_LDUM,  INSTR_LDU,   OP_TYPE_MATRIX, 1, FORMAT_D_A },
+    { TOKEN_LDUV,  INSTR_LDU,   OP_TYPE_VEC4,   1, FORMAT_D_A },
+    { TOKEN_LDUI,  INSTR_LDU,   OP_TYPE_U32,    1, FORMAT_D_A },
+    { TOKEN_LDUF,  INSTR_LDU,   OP_TYPE_F32,    1, FORMAT_D_A },
+    { TOKEN_JMP,   INSTR_JMP,   OP_TYPE_U32,    1, FORMAT_JMP },
+    { TOKEN_AND,   INSTR_AND,   OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_OR,    INSTR_OR,    OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_NOT,   INSTR_NOT,   OP_TYPE_U32,    1, FORMAT_D_A },
+    { TOKEN_XOR,   INSTR_XOR,   OP_TYPE_U32,    2, FORMAT_D_A_B },
+    { TOKEN_PCMPI, INSTR_PCMP,  OP_TYPE_U32,    2, FORMAT_PCMP },
+    { TOKEN_PCMPF, INSTR_PCMP,  OP_TYPE_F32,    2, FORMAT_PCMP }
 };
 
 static const size_t num_token_defs = sizeof(token_defs) / sizeof(token_defs[0]);
@@ -127,8 +94,40 @@ int tokenize_file(const char *filename, Vector *v)
 
 op_def new_instr(Str10 tok)
 {
+<<<<<<< HEAD
     op_def def;
     if(tok[0] == TOKEN_C_FLAG_ENABLE)
+=======
+    const char* t = peek(as);
+    if (t) as->cursor++;
+    return t;
+}
+
+void report_error(Assembler *as, const char* msg) 
+{
+    as->has_error = 1;
+    const char* t = peek(as);
+    fprintf(stderr, "\n[ERROR] Token %zu [%s]: %s\n", as->cursor, t ? t : "EOF", msg);
+    exit(EXIT_FAILURE);
+}
+
+uint8_t parse_cflag_val(Assembler *as, const char* tok) 
+{
+    if (!tok) report_error(as, "Missing conditional flag");
+    if (strcmp(tok, TOKEN_C_FLAG_EQ) == 0) return C_FLAG_EQ;
+    if (strcmp(tok, TOKEN_C_FLAG_NEQ) == 0) return C_FLAG_NEQ;
+    if (strcmp(tok, TOKEN_C_FLAG_LT) == 0) return C_FLAG_LT;
+    if (strcmp(tok, TOKEN_C_FLAG_GT) == 0) return C_FLAG_GT;
+    if (strcmp(tok, TOKEN_C_FLAG_LTE) == 0) return C_FLAG_LTE;
+    if (strcmp(tok, TOKEN_C_FLAG_GTE) == 0) return C_FLAG_GTE;
+    report_error(as, "Invalid conditional flag");
+    return 0;
+}
+
+void add_label(Assembler *as, const char* name, uint32_t address) 
+{
+    if (as->label_count >= as->label_capacity) 
+>>>>>>> b96ead3 ([Compiler] Logic and pcmp instructions)
     {
         def.isCflag = 1;
         memmove(tok, tok + 1, strlen(tok)); 
@@ -275,10 +274,24 @@ void parseInstr(const Instr* instr)
         fprintf(out, "0x%lX, ", instrBin[i]);
     }
 
+<<<<<<< HEAD
 }
 
 uint8_t parse_Cflag(Str10 tok)
 {
+=======
+        if (def->format == FORMAT_CMP || def->format == FORMAT_PCMP) 
+        {
+             instr.cFlag = parse_cflag_val(as, consume(as));
+        }
+
+        // Handle destination register
+        if (def->format != FORMAT_NONE && def->format != FORMAT_CMP && 
+            def->format != FORMAT_A && def->format != FORMAT_JMP) 
+            {
+            instr.dest = parse_reg(as, consume(as), def->opType, 0);
+        }
+>>>>>>> b96ead3 ([Compiler] Logic and pcmp instructions)
 
     for (int i = 0; i < 6; i++) {
         if (strcmp(tok, cflag_defs[i].token) == 0) {
@@ -299,6 +312,7 @@ uint8_t parse_reg(Str10 tok, uint8_t opType, uint8_t force_scalar)
             printf("Use matrix reg %s\n", tok);
             exit(EXIT_FAILURE);
         }
+<<<<<<< HEAD
         if(strcmp(tok, TOKEN_REG_M_IN) == 0)
         {
             return REG_M_IN;
@@ -338,6 +352,15 @@ uint8_t parse_reg(Str10 tok, uint8_t opType, uint8_t force_scalar)
             }
             return num;
         }
+=======
+        if (as->verbose) print_instr_debug(head, &instr);
+    } else {
+        // Pass 1: skip appropriate amount of tokens to keep PC in sync
+        if (def->format == FORMAT_CMP || def->format == FORMAT_PCMP) consume(as); // condition
+        if (def->format != FORMAT_NONE && def->format != FORMAT_CMP && 
+            def->format != FORMAT_A && def->format != FORMAT_JMP) consume(as); // dest
+        for (int i = 0; i < def->argc; i++) consume(as);
+>>>>>>> b96ead3 ([Compiler] Logic and pcmp instructions)
     }
     printf("Unknown reg %s\n", tok);
     return 0;
