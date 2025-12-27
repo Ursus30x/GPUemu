@@ -57,36 +57,6 @@
 #define TOKEN_XOR   "xor"
 #define TOKEN_PCMPI   "pcmpi"
 #define TOKEN_PCMPF   "pcmpf"
-<<<<<<< HEAD
-#define TOKEN_NORMV3   "normv3"
-
-#define TOKEN_MINI   "mini"
-#define TOKEN_MINF   "minf"
-#define TOKEN_MAXI   "maxi"
-#define TOKEN_MAXF   "maxf"
-#define TOKEN_CLAMPI   "clampi"
-#define TOKEN_CLAMPF   "clampf"
-#define TOKEN_NEGI   "negi"
-#define TOKEN_NEGF   "negf"
-#define TOKEN_RECIPI  "recipi"
-#define TOKEN_RECIPF "recipf"
-#define TOKEN_RSQRTF "rsqrtf"
-#define TOKEN_DOTV3  "dotv3"
-#define TOKEN_CROSSV3 "crossv3"
-#define TOKEN_LENV3  "lenv3"
-#define TOKEN_FMAF   "fmaf"
-#define TOKEN_FMAI   "fmai"
-#define TOKEN_MADI   "madi"
-#define TOKEN_MADF   "madf"
-#define TOKEN_SATF   "satf"
-#define TOKEN_SIGNI  "signi"
-#define TOKEN_SIGNF  "signf"
-#define TOKEN_SIGNV3  "signv3"
-#define TOKEN_VEC3 "vec3"
-#define TOKEN_TAN "tan"
-#define TOKEN_ATAN "atan"
-=======
->>>>>>> b96ead3 ([Compiler] Logic and pcmp instructions)
 
 
 #define TOKEN_REG_M 'm'
