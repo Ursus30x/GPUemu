@@ -91,7 +91,12 @@ typedef enum {
     INSTR_COS,    
     INSTR_CAST,  
     INSTR_LDU,
-    INSTR_JMP
+    INSTR_JMP,
+    INSTR_AND,
+    INSTR_OR,
+    INSTR_XOR,
+    INSTR_NOT,
+    INSTR_PCMP
 } InstrOpcode;
 
 
