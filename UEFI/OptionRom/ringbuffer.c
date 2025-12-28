@@ -26,8 +26,15 @@ EFI_STATUS EFIAPI GpuRingBufferInit(
 
     // Initialize HW registers
     GpuMmioWrite32(REG_GPU_MODE_ADDR, 0); // Disable Command Processor
-    GpuMmioWrite32(REG_RING_BUFFER_TAIL, gpuRingBuffer.ringTail);
-    GpuMmioWrite32(REG_RING_BUFFER_HEAD, gpuRingBuffer.ringHead);
+
+    // Set boundries or ring buffer
+    GpuMmioWrite32(REG_RING_BUFFER_START_ADDR,gpuRingBuffer.bufferStartAddr);
+    GpuMmioWrite32(REG_RING_BUFFER_END_ADDR, gpuRingBuffer.bufferEndAddr);
+
+    // Init tail and head
+    GpuMmioWrite32(REG_RING_BUFFER_TAIL_ADDR, gpuRingBuffer.ringTail);
+    GpuMmioWrite32(REG_RING_BUFFER_HEAD_ADDR, gpuRingBuffer.ringHead);
+
     GpuMmioWrite32(REG_GPU_MODE_ADDR, 1); // Re-enable
     
     // Allocate Host Staging Buffer
@@ -57,7 +64,7 @@ EFI_STATUS EFIAPI GpuRingBufferDestroy()
 
 VRAMADDR EFIAPI GpuReadRingTail()
 {
-    VRAMADDR hwTail = GpuMmioRead32(REG_RING_BUFFER_TAIL);
+    VRAMADDR hwTail = GpuMmioRead32(REG_RING_BUFFER_TAIL_ADDR);
     gpuRingBuffer.ringTail = hwTail;
     return hwTail;
 }
@@ -111,19 +118,28 @@ EFI_STATUS EFIAPI GpuRingBufferFlush()
 
     UINT32 spaceAtEnd = gpuRingBuffer.bufferEndAddr - gpuRingBuffer.ringHead;
 
-    if (bytesToWrite <= spaceAtEnd) {
-        // Linear write
-        GpuVramWrite(gpuRingBuffer.ringHead, gpuRingBuffer.cmdBatchBufferPtr, bytesToWrite);
-        gpuRingBuffer.ringHead += bytesToWrite;
-    } else {
-        // Wrap-around write
-        GpuVramWrite(gpuRingBuffer.ringHead, gpuRingBuffer.cmdBatchBufferPtr, spaceAtEnd);
+    // Fix: Prevent split commands by padding and wrapping manually
+    if (bytesToWrite > spaceAtEnd) {
         
-        UINT32 remainder = bytesToWrite - spaceAtEnd;
-        GpuVramWrite(gpuRingBuffer.bufferStartAddr, gpuRingBuffer.cmdBatchBufferPtr + spaceAtEnd, remainder);
+        // Fill the "dead space" at the end with NOPs (0x00)
+        if (spaceAtEnd > 0) {
+            VOID *Nops = AllocateZeroPool(spaceAtEnd); 
+            if (Nops) {
+                GpuVramWrite(gpuRingBuffer.ringHead, Nops, spaceAtEnd);
+                FreePool(Nops);
+            }
+        }
+
+        // Wrap Head to Start
+        gpuRingBuffer.ringHead = gpuRingBuffer.bufferStartAddr;
         
-        gpuRingBuffer.ringHead = gpuRingBuffer.bufferStartAddr + remainder;
+        // Re-Wait for space at the START.
+        Status = GpuRingBufferWaitSpace(bytesToWrite);
+        if (EFI_ERROR(Status)) return Status;
     }
+
+    GpuVramWrite(gpuRingBuffer.ringHead, gpuRingBuffer.cmdBatchBufferPtr, bytesToWrite);
+    gpuRingBuffer.ringHead += bytesToWrite;
 
     // Wrap logic for perfect alignment
     if (gpuRingBuffer.ringHead == gpuRingBuffer.bufferEndAddr) {
@@ -131,12 +147,11 @@ EFI_STATUS EFIAPI GpuRingBufferFlush()
     }
 
     // Kick GPU
-    GpuMmioWrite32(REG_RING_BUFFER_HEAD, gpuRingBuffer.ringHead);
+    GpuMmioWrite32(REG_RING_BUFFER_HEAD_ADDR, gpuRingBuffer.ringHead);
 
     gpuRingBuffer.cmdBatchCursor = 0;
     return EFI_SUCCESS;
 }
-
 EFI_STATUS EFIAPI GpuRingBufferClearCmdBuffer()
 {
     gpuRingBuffer.cmdBatchCursor = 0;

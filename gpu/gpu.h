@@ -44,6 +44,12 @@
 #define REG_EXEC_FRAGMENT_SHADER(s) (s->cmd[REG_EXEC_FRAGMENT_SHADER_ADDR])
 
 
+#define REG_RB_HEAD(s)       (*(uint32_t*)&s->cmd[REG_RING_BUFFER_HEAD])
+#define REG_RB_TAIL(s)       (*(uint32_t*)&s->cmd[REG_RING_BUFFER_TAIL])
+#define REG_RB_START(s)      (*(uint32_t*)&s->cmd[REG_RING_BUFFER_START])
+#define REG_RB_END(s)        (*(uint32_t*)&s->cmd[REG_RING_BUFFER_END])
+
+
 
 typedef struct GpuState {
     
@@ -56,15 +62,17 @@ typedef struct GpuState {
     uint8_t *vram_ptr;            
 
 
-    uint32_t gpu_mode;            // 0x00
-    uint32_t ring_buffer_head;    // 0x04
-    uint32_t ring_buffer_tail;    // 0x08
-    uint32_t vs_code_addr;        // 0x10
-    uint32_t fs_code_addr;        // 0x14
-    uint32_t width;               // 0x18
-    uint32_t height;              // 0x1C
-    uint32_t framebuffer_vram_offset; // 0x20
-    uint32_t gpu_time;            // 0x24 
+    uint32_t gpu_mode;
+    uint32_t ring_buffer_head;
+    uint32_t ring_buffer_tail;
+    uint32_t ring_buffer_start;
+    uint32_t ring_buffer_end;
+    uint32_t vs_code_addr;
+    uint32_t fs_code_addr;
+    uint32_t width;
+    uint32_t height;
+    uint32_t framebuffer_vram_offset;
+    uint32_t gpu_time;
 
     GenericBufferConfig vbo_config;
     GenericBufferConfig edge_config;

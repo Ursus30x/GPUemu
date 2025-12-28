@@ -119,45 +119,49 @@ static void execute_command(GpuState *gpu, Command *cmd)
         break;
     }
 }
+
 static void process_ring_buffer(GpuState *s)
 {
+    // 1. Read Dynamic Configuration directly from State
+    uint32_t rb_start = s->ring_buffer_start;
+    uint32_t rb_end   = s->ring_buffer_end;
+    uint32_t head     = s->ring_buffer_head; 
 
-    uint32_t head = s->ring_buffer_head;
-    uint32_t tail = s->ring_buffer_tail;
-
-    if (head == tail)
-    {
-        DEBUG_PRINT("[GPU CMD PROC] Ring Buffer is empty (head == tail: 0x%x)\n", head);
+    // 2. Safety: Driver hasn't initialized registers yet
+    if (rb_start == 0 || rb_end <= rb_start) {
         return;
     }
 
-    DEBUG_PRINT("[GPU CMD PROC] Processing buffer: Head=0x%x, Tail=0x%x, Size=%lu\n",
-           head, tail, (long)sizeof(Command));
+    // 3. Dynamic Bounds Check (Anti-Segfault)
+    // If tail is outside valid range (e.g. after driver restart), reset it.
+    if (s->ring_buffer_tail < rb_start || s->ring_buffer_tail >= rb_end) {
+        DEBUG_PRINT("[GPU ERROR] Tail (0x%x) out of bounds [0x%x - 0x%x]. Resetting to Start.\n", 
+            s->ring_buffer_tail, rb_start, rb_end);
+        s->ring_buffer_tail = rb_start;
+    }
 
+    // 4. Idle Check
+    if (head == s->ring_buffer_tail) {
+        return;
+    }
+
+    // 5. Processing Loop
     while (s->ring_buffer_tail != head)
     {
-
         uint8_t *cmd_ptr = s->vram_ptr + s->ring_buffer_tail;
         Command *cmd = (Command *)cmd_ptr;
 
-        DEBUG_PRINT("DEBUG: sizeof(Command) = %lu\n", sizeof(Command));
-        DEBUG_PRINT("DEBUG: sizeof(SetStatePayload) = %lu\n", sizeof(SetStatePayload));
-        DEBUG_PRINT("DEBUG: sizeof(GenericBufferConfig) = %lu\n", sizeof(GenericBufferConfig));
-
-        DEBUG_PRINT("[GPU CMD PROC] Executing command at VRAM Offset 0x%x (Opcode: 0x%x)\n",
-               s->ring_buffer_tail, cmd->opcode);
-
         execute_command(s, cmd);
 
-        s->ring_buffer_tail = (s->ring_buffer_tail + sizeof(Command));
+        s->ring_buffer_tail += sizeof(Command);
 
-        if (s->ring_buffer_tail == 0 && head != 0)
-        {
-            DEBUG_PRINT("[GPU CMD PROC] Ring Buffer wrapped around.\n");
+        // --- DYNAMIC WRAP LOGIC ---
+        // Wrap exactly at the configured End address
+        if (s->ring_buffer_tail >= rb_end) {
+            DEBUG_PRINT("[GPU CMD] Buffer End Reached. Wrapping to 0x%x\n", rb_start);
+            s->ring_buffer_tail = rb_start;
         }
     }
-
-    DEBUG_PRINT("[GPU CMD PROC] Finished processing. New Tail=0x%x. GPU Mode: 0x%x\n", s->ring_buffer_tail, s->gpu_mode);
 }
 
 static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
@@ -172,33 +176,39 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
 
     switch (base_addr)
     {
-    case 0x00:
+    case REG_GPU_MODE_ADDR:
         target_reg = &s->gpu_mode;
         break;
-    case 0x04:
+    case REG_RING_BUFFER_HEAD_ADDR:
         target_reg = &s->ring_buffer_head;
         if(s->gpu_mode != GPU_MODE_GOP) trigger_command_processor = 1;
         break;
-    case 0x08:
+    case REG_RING_BUFFER_TAIL_ADDR:
         target_reg = &s->ring_buffer_tail;
         break;
-    case 0x10:
+    case REG_RING_BUFFER_START_ADDR:
+        target_reg = &s->ring_buffer_start;
+        break;
+    case REG_RING_BUFFER_END_ADDR: 
+        target_reg = &s->ring_buffer_end;
+        break;
+    case REG_VERTEX_SHADER_ADDR:
         target_reg = &s->vs_code_addr;
         break;
-    case 0x14:
+    case REG_FRAGMENT_SHADER_ADDR:
         target_reg = &s->fs_code_addr;
         break;
-    case 0x18:
+    case REG_FB_WIDTH_ADDR:
         target_reg = &s->width;
         break;
-    case 0x1C:
+    case REG_FB_HEIGHT_ADDR:
         target_reg = &s->height;
         break;
-    case 0x20:
+    case REG_FRAMEBUFFER_ADDR:
         target_reg = &s->framebuffer_vram_offset;
         break;
-    case 0x24:
-        DEBUG_PRINT(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
+    case REG_GPU_TIME_ADDR:
+        fprintf(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
         return;
     default:
         fprintf(stderr, "GPU MMIO WRITE: Unhandled base offset 0x%" PRIx64 " (val: 0x%lx, size: %u)\n", base_addr, val, size);
