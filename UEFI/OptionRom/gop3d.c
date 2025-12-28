@@ -176,6 +176,8 @@ EFI_STATUS EFIAPI GpuTransferBuffer(
     else if (Type == Gop3dBufferTypeUniform) Tag = "UBO";
     else if (Type == Gop3dBufferTypeShaderCode) Tag = "SHADER";
 
+    (VOID)Tag; // Suppress "unused variable" error if debug is disabled
+    
     // Allocate VRAM
     VRAMADDR Addr = GpuAllocateMem(Size, Tag);
     if (Addr == 0) {
@@ -289,9 +291,10 @@ EFI_STATUS EFIAPI GpuSubmitCmd(
   IN GOP_3D_PROTOCOL *This
   )
 {
+#ifdef MEM_DEBUG
     DEBUG((DEBUG_INFO, "Mem Dump after command submition\n"));
     GpuDebugDumpMemoryMap();
-
+#endif
     return GpuRingBufferFlush();
 }
 

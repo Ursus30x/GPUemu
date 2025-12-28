@@ -13,10 +13,6 @@ EFI_STATUS EFIAPI GpuRingBufferInit(
     // Allocate VRAM
     gpuRingBuffer.bufferStartAddr = GpuAllocateMem(RingSize, "RINGBUFFER");
     if (gpuRingBuffer.bufferStartAddr == 0) return EFI_OUT_OF_RESOURCES;
-    
-    GpuDebugPrintAllocatorStats();
-    GpuDebugDumpMemoryMap();
-
 
     gpuRingBuffer.bufferEndAddr = gpuRingBuffer.bufferStartAddr + RingSize;
 

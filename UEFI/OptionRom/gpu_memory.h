@@ -6,7 +6,7 @@
 
 #define PAGE_SIZE 64
 #define GPU_NO_MEM 0xFFFFFFFF
-#define MEM_DEBUG
+//#define MEM_DEBUG
 
 
 struct GpuMemoryAllocator {

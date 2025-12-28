@@ -188,8 +188,6 @@ EFI_STATUS EFIAPI TestGop() {
     Print(L"Animating... Press Key to Exit.\n");
 
     while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
-        DEBUG((DEBUG_INFO, "Start of the new frame\n"));
-
         angle += 0.05f; 
 
         Mat4 ry, rx, scale, trans, proj;

@@ -165,10 +165,6 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     Private->MainFrameBufferHeight * Private->MainFrameBufferWidth * sizeof(UINT32),
     0x000000, "FRAMEBUFFER");
 
-  GpuDebugPrintAllocatorStats();
-  GpuDebugDumpMemoryMap();
-
-
   Private->VRAMBaseAddr = Resources->AddrRangeMin;
   FreePool(Resources);
 
