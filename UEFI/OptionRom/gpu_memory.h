@@ -5,6 +5,7 @@
 #define GPUMEMORY_H
 
 #define PAGE_SIZE 64
+#define GPU_NO_MEM 0xFFFFFFFF
 #define MEM_DEBUG
 
 
@@ -14,7 +15,7 @@ struct GpuMemoryAllocator {
     UINT32 totalMemSize;
 
     BOOLEAN *pageStatus;
-    UINT32  *allocationSizes;
+    UINT32  *pageAllocationSizes;
 
 #ifdef MEM_DEBUG
     // Only present in DEBUG builds to store tag strings
@@ -54,6 +55,9 @@ EFI_STATUS EFIAPI GpuMemoryAllocatorInit(IN EFI_PCI_IO_PROTOCOL *PciIo, IN UINT3
     VRAMADDR GpuAllocateMemImpl(IN UINT32 bytesToAlloc);
     BOOLEAN  GpuAllocateMemAtImpl(IN UINT32 bytesToAlloc, IN VRAMADDR addr);
 #endif
+
+// Gives size of allocated buffer
+UINT32 GpuGetAllocatedSize(IN VRAMADDR addr);
 
 // Frees a block of memory at given address
 BOOLEAN GpuFreeMem(IN VRAMADDR addr);

@@ -177,7 +177,7 @@ EFI_STATUS EFIAPI TestGop() {
     mGOP3D->GpuSetMode(mGOP3D, 1); 
 
     VRAMADDR hVBO, hIBO, hVS, hFS;
-    VRAMADDR hMVP1, hMVP2; 
+    VRAMADDR hMVP1 = 0, hMVP2 = 0; 
 
     mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, cube_vertices, sizeof(cube_vertices), &hVBO);
     mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  cube_edges,    sizeof(cube_edges),    &hIBO);
@@ -188,7 +188,8 @@ EFI_STATUS EFIAPI TestGop() {
     Print(L"Animating... Press Key to Exit.\n");
 
     while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
-        
+        DEBUG((DEBUG_INFO, "Start of the new frame\n"));
+
         angle += 0.05f; 
 
         Mat4 ry, rx, scale, trans, proj;
@@ -218,9 +219,15 @@ EFI_STATUS EFIAPI TestGop() {
         Mat4_Mul(&proj, &model2, &mvp2);
 
         // This now leaks since we dont update/free memory
-        mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
-        mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
-
+        if(hMVP1 == 0 || hMVP2 == 0){
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
+        }
+        else{
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
+        }
+        
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000); 
@@ -236,6 +243,8 @@ EFI_STATUS EFIAPI TestGop() {
         // mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount); 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
+
+        
     }
 
     mGOP3D->GpuSetMode(mGOP3D, 0); 

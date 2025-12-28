@@ -193,6 +193,61 @@ EFI_STATUS EFIAPI GpuTransferBuffer(
     return EFI_SUCCESS;
 }
 
+EFI_STATUS EFIAPI GpuUpdateBuffer(
+  IN     GOP_3D_PROTOCOL     *This,
+  IN     GOP_3D_BUFFER_TYPE  Type,
+  IN     VOID                *HostData,
+  IN     UINT32              Size,
+  IN OUT VRAMADDR            *GpuAddress
+)
+{
+    if (HostData == NULL || Size == 0 || GpuAddress == NULL) {
+        return EFI_INVALID_PARAMETER;
+    }
+
+    VRAMADDR OldAddr = *GpuAddress;
+    UINT32 OldSize = GpuGetAllocatedSize(OldAddr);
+
+    // If existing buffer is large enough, just overwrite it
+    if (OldSize >= Size) {
+        return GpuVramWrite(OldAddr, HostData, Size);
+    }
+
+    // If updated size is bigger, try to allocate new buffer first
+    VRAMADDR NewAddr = 0;
+    EFI_STATUS Status = GpuTransferBuffer(This, Type, HostData, Size, &NewAddr);
+
+    if (EFI_ERROR(Status) || NewAddr == 0) {
+        return EFI_OUT_OF_RESOURCES;
+    }
+
+    // TODO: Implement proper realloc mechanizm in memory allocator
+    if (OldAddr != 0) {
+        GpuFreeMem(OldAddr);
+    }
+
+    *GpuAddress = NewAddr;
+
+    return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI GpuFreeBuffer(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  VRAMADDR            *GpuAddress
+)
+{
+    if (GpuAddress == NULL) {
+      return EFI_INVALID_PARAMETER;
+    }
+
+    if (*GpuAddress != 0) {
+        GpuFreeMem(*GpuAddress);
+        *GpuAddress = 0;
+    }
+
+    return EFI_SUCCESS;
+}
+
 /* -------------------------------------------------------------------------
  * Drawing & Execution
  * ------------------------------------------------------------------------- */
@@ -274,6 +329,9 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuBindFragShader = GpuBindFragShader;
   
   Private->Gop3dProtocol.GpuTransferBuffer = GpuTransferBuffer;
+  Private->Gop3dProtocol.GpuUpdateBuffer   = GpuUpdateBuffer;
+  Private->Gop3dProtocol.GpuFreeBuffer     = GpuFreeBuffer;
+
   Private->Gop3dProtocol.GpuClearFrame     = GpuClearFrame;
   Private->Gop3dProtocol.GpuDraw           = GpuDraw;
   

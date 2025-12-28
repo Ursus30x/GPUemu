@@ -111,6 +111,34 @@ EFI_STATUS
   );
 
 /**
+ * Reallocates VRAM and transfers new data from Host to Device.
+ * @param Type        The type of buffer (Vertex, Index, Uniform, Shader).
+ * @param HostData    Pointer to the source data in System Memory.
+ * @param Size        Size in bytes to allocate and copy.
+ * @param GpuAddress  [OUT] The resulting VRAM address of the uploaded buffer.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_UPDATE_BUFFER)(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  GOP_3D_BUFFER_TYPE  Type,
+  IN  VOID                *HostData,
+  IN  UINT32              Size,
+  OUT VRAMADDR            *GpuAddress
+  );
+
+/**
+ * Frees VRAM allocated resource.
+ * @param GpuAddress  Adress under which resource is located.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_FREE_BUFFER)(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN VRAMADDR            *GpuAddress
+  );
+
+/**
  * Issues a draw call.
  * @param Topology    Primitive type (Points, Lines, Triangles).
  * @param VertexCount Number of vertices (or indices if IBO is bound) to draw.
@@ -170,7 +198,9 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_BIND_RESOURCE      GpuBindFragShader;
   GOP_3D_BIND_RESOURCE      GpuBindVertShader;
 
-  GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer; // Fixed typo "Tansfer" -> "Transfer"
+  GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer; 
+  GOP_3D_UPDATE_BUFFER      GpuUpdateBuffer;
+  GOP_3D_FREE_BUFFER        GpuFreeBuffer;
 
   GOP_3D_DRAW               GpuDraw;
   GOP_3D_CLEAR_FRAME        GpuClearFrame;
