@@ -5,6 +5,15 @@ set -e  # Exit immediately if any command fails
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+if [ -z "$1" ]; then
+    BUILD_TYPE="DEBUG"
+else
+    BUILD_TYPE="$1"
+fi
+
+# Clear provided parameters
+shift
+
 cd "$CWD/edk2"
 
 echo "=== Setting up EDK2 environment ==="
@@ -14,11 +23,9 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-export EDK2_TOOLCHAIN=GCC5
-
 echo ""
 echo "=== Building OptionRom ==="
-build -a X64 -t GCC5 -p OvmfPkg/OvmfPkgX64.dsc -m OptionRom/Rom.inf
+build -p OvmfPkg/OvmfPkgX64.dsc -m OptionRom/Rom.inf -b "$BUILD_TYPE"
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to build OptionRom"
     exit 1
@@ -26,7 +33,7 @@ fi
 
 echo ""
 echo "=== Building DemoApp ==="
-build -a X64 -t GCC5 -p OvmfPkg/OvmfPkgX64.dsc -m DemoApp/DemoApp.inf
+build -p OvmfPkg/OvmfPkgX64.dsc -m DemoApp/DemoApp.inf -b "$BUILD_TYPE"
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to build DemoApp"
     exit 1
@@ -34,7 +41,7 @@ fi
 
 echo ""
 echo "=== Building FrameBenchmark ==="
-build -a X64 -t GCC5 -p OvmfPkg/OvmfPkgX64.dsc -m FrameBenchmark/FrameBenchmark.inf
+build -p OvmfPkg/OvmfPkgX64.dsc -m FrameBenchmark/FrameBenchmark.inf -b "$BUILD_TYPE"
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to build FrameBenchmark"
     exit 1
@@ -42,7 +49,10 @@ fi
 
 echo ""
 echo "=== Creating Option ROM image ==="
-./BaseTools/Source/C/bin/EfiRom -f 0x6969 -i 0x2137 -o ./Build/OptionRom.rom -e ./Build/OvmfX64/DEBUG_GCC5/X64/OptionRom.efi
+
+# FIX: Use ${BUILD_TYPE}_GCC5 to correctly expand the directory name
+./BaseTools/Source/C/bin/EfiRom -f 0x6969 -i 0x2137 -o ./Build/OptionRom.rom -e "./Build/OvmfX64/${BUILD_TYPE}_GCC5/X64/OptionRom.efi"
+
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to create Option ROM image"
     exit 1

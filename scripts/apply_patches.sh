@@ -36,10 +36,6 @@ ln -sf "$CWD/include/vram.h" "$CWD/qemu/hw/misc/vram.h"
 # Apply config patches
 git apply "$CWD/gpu/qemu.patch"
 
-# Configure build 
-./configure --target-list="x86_64-softmmu" --enable-debug \
- --extra-cflags="-Wno-error=redundant-decls" --enable-gtk
-
 ################################################
 ################# EDK2 PATCHES #################
 ################################################
@@ -80,7 +76,6 @@ ln -sf "$CWD/include/vram.h"                        "$CWD/edk2/OptionRom/vram.h"
 ln -sf "$CWD/UEFI/target.txt"                       "$CWD/edk2/Conf/target.txt"
 
 # Apply dsc patches
-echo "applying patches"
 git apply "$CWD/UEFI/OvmfPkg.patch"
 
 ################################################
