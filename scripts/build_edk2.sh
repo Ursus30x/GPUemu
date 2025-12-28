@@ -33,6 +33,14 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
+echo "=== Building FrameBenchmark ==="
+build -a X64 -t GCC5 -p OvmfPkg/OvmfPkgX64.dsc -m FrameBenchmark/FrameBenchmark.inf
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to build FrameBenchmark"
+    exit 1
+fi
+
+echo ""
 echo "=== Creating Option ROM image ==="
 ./BaseTools/Source/C/bin/EfiRom -f 0x6969 -i 0x2137 -o ./Build/OptionRom.rom -e ./Build/OvmfX64/DEBUG_GCC5/X64/OptionRom.efi
 if [ $? -ne 0 ]; then

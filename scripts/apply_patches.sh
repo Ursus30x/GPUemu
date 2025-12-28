@@ -62,6 +62,7 @@ make -C BaseTools
 # Remove old driver symlinks/files for driver implementation
 rm -f "$CWD/edk2/OptionRom"
 rm -f "$CWD/edk2/DemoApp"
+rm -f "$CWD/edk2/FrameBenchmark" 
 rm -f "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
 rm -f "$CWD/edk2/OptionRom/isa.h"
 rm -f "$CWD/edk2/OptionRom/gpu_hw.h"
@@ -71,6 +72,7 @@ rm -f "$CWD/edk2/Conf/target.txt"
 # Symlink driver implementation to EDK2
 ln -sf "$CWD/UEFI/OptionRom"                        "$CWD/edk2/OptionRom"
 ln -sf "$CWD/UEFI/DemoApp"                          "$CWD/edk2/DemoApp"
+ln -sf "$CWD/UEFI/FrameBenchmark"                   "$CWD/edk2/FrameBenchmark"
 ln -sf "$CWD/UEFI/OvmfPkg/Include/Protocol/Gop3D.h" "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
 ln -sf "$CWD/include/isa.h"                         "$CWD/edk2/OptionRom/isa.h"
 ln -sf "$CWD/include/gpu_hw.h"                      "$CWD/edk2/OptionRom/gpu_hw.h"
@@ -78,6 +80,7 @@ ln -sf "$CWD/include/vram.h"                        "$CWD/edk2/OptionRom/vram.h"
 ln -sf "$CWD/UEFI/target.txt"                       "$CWD/edk2/Conf/target.txt"
 
 # Apply dsc patches
+echo "applying patches"
 git apply "$CWD/UEFI/OvmfPkg.patch"
 
 ################################################
