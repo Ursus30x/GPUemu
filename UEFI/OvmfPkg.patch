@@ -1,26 +1,29 @@
 diff --git a/OvmfPkg/OvmfPkg.dec b/OvmfPkg/OvmfPkg.dec
-index 9cf13d3fb2..0344599498 100644
+index 9cf13d3fb2..735dfd2792 100644
 --- a/OvmfPkg/OvmfPkg.dec
 +++ b/OvmfPkg/OvmfPkg.dec
-@@ -212,6 +212,7 @@
+@@ -212,6 +212,8 @@
    gQemuAcpiTableNotifyProtocolGuid      = {0x928939b2, 0x4235, 0x462f, {0x95, 0x80, 0xf6, 0xa2, 0xb2, 0xc2, 0x1a, 0x4f}}
    gEfiMpInitLibMpDepProtocolGuid        = {0xbb00a5ca, 0x8ce,  0x462f, {0xa5, 0x37, 0x43, 0xc7, 0x4a, 0x82, 0x5c, 0xa4}}
    gEfiMpInitLibUpDepProtocolGuid        = {0xa9e7cef1, 0x5682, 0x42cc, {0xb1, 0x23, 0x99, 0x30, 0x97, 0x3f, 0x4a, 0x9f}}
 +  gGop3dProtocolGuid                    = {0x12345678, 0x1234, 0x5678, {0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0}}
++
  
  [PcdsFixedAtBuild]
    gUefiOvmfPkgTokenSpaceGuid.PcdOvmfPeiMemFvBase|0x0|UINT32|0
 diff --git a/OvmfPkg/OvmfPkgX64.dsc b/OvmfPkg/OvmfPkgX64.dsc
-index 9180e88645..5e5e8bf7c6 100644
+index 9180e88645..7ab59eae9e 100644
 --- a/OvmfPkg/OvmfPkgX64.dsc
 +++ b/OvmfPkg/OvmfPkgX64.dsc
-@@ -771,7 +771,8 @@
+@@ -771,7 +771,10 @@
  ################################################################################
  [Components]
    OvmfPkg/ResetVector/ResetVector.inf
 -
 +  OptionRom/Rom.inf
 +  DemoApp/DemoApp.inf
++  FrameBenchmark/FrameBenchmark.inf
++  
    #
    # SEC Phase modules
    #
