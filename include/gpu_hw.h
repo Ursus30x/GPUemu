@@ -13,14 +13,16 @@
 
 /* MMIO Register Offsets */
 #define REG_GPU_MODE_ADDR              0x0
-#define REG_RING_BUFFER_HEAD           0x4
-#define REG_RING_BUFFER_TAIL           0x8
-#define REG_VERTEX_SHADER_ADDR         0x10
-#define REG_FRAGMENT_SHADER_ADDR       0x14
-#define REG_FB_WIDTH_ADDR              0x18
-#define REG_FB_HEIGHT_ADDR             0x1c
-#define REG_FRAMEBUFFER_ADDR           0x20
-#define REG_GPU_TIME_ADDR              0x24
+#define REG_RING_BUFFER_HEAD_ADDR      0x4
+#define REG_RING_BUFFER_TAIL_ADDR      0x8
+#define REG_RING_BUFFER_START_ADDR     0xC
+#define REG_RING_BUFFER_END_ADDR       0x10
+#define REG_VERTEX_SHADER_ADDR         0x14
+#define REG_FRAGMENT_SHADER_ADDR       0x18
+#define REG_FB_WIDTH_ADDR              0x1c
+#define REG_FB_HEIGHT_ADDR             0x20
+#define REG_FRAMEBUFFER_ADDR           0x24
+#define REG_GPU_TIME_ADDR              0x28
 
 typedef enum {
     GPU_MODE_GOP,

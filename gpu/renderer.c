@@ -1,9 +1,11 @@
 #include "renderer.h"
 #include "math3d.h"
 #include "math.h"
+#include "debug_gpu.h"
 
-#define DEDUG_MAT
-#define PRINT_V4(v) printf("[%f, %f, %f, %f]\n", v.x, v.y, v.z, v.w);
+#define PRINT_V4(v) DEBUG_PRINT("[%f, %f, %f, %f]\n", v.x, v.y, v.z, v.w);
+
+
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
     if(1) // TO DO TRIGGER FRAGMENT
@@ -326,7 +328,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 gpu->pRegs[instr.dest].u32 = *(uint32_t *)ptr;
                 break;
             case OP_TYPE_F32:
-                gpu->pRegs[instr.dest].u32 = *(float *)ptr;
+                gpu->pRegs[instr.dest].f32 = *(float *)ptr;
             break;
 
             default:
@@ -344,20 +346,29 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
 }
 
-
 void gpu_render_frame(void *opaque)
 {
     GpuState *gpu = opaque;
     if(gpu->gpu_mode == GPU_MODE_IDLE)//REG_EXEC_VERTEX_SHADER(gpu) == 1
     {
+        DEBUG_PRINT("[Render Frame] GPU IS IDLE\n");
         return;
     }
     gpu->gpu_mode = GPU_MODE_IDLE;
+
+    debug_dump_edges(opaque);
+    debug_dump_vertices(opaque);
+    debug_dump_ubo(opaque);
+
     uint32_t width = gpu->width;
     uint32_t height =  gpu->height;
     uint32_t vertex_size = gpu->vbo_config.size;
     uint32_t edges_size =  gpu->edge_config.size;
-
+    DEBUG_PRINT("[GPU State] Width: %u, Height: %u, Vertex Size: %u, Edge Size: %u\n", 
+       gpu->width, 
+       gpu->height, 
+       gpu->vbo_config.size, 
+       gpu->edge_config.size);
         
     Vec3 *vertices = VERTEX_TABLE(gpu);
     Edge *edges = EDGES_TABLE(gpu);
@@ -376,11 +387,22 @@ void gpu_render_frame(void *opaque)
         px[i] = (int)((ndc_x*0.5f + 0.5f) * width);
         py[i] = (int)((-ndc_y*0.5f + 0.5f) * height);
     }
+    DEBUG_PRINT("[Render Frame] Drawing lines\n");
+
+    DEBUG_PRINT("[GPU State] px: %p, py: %p, vert: %p,\n", 
+       (void*)px, 
+       (void*)py, 
+       (void*)vertices
+        );
+        
     for(uint32_t i=0;i<edges_size;i++)
     {
         Edge e = edges[i];
+        DEBUG_PRINT("[GPU State] px[e.a]: %u, py[e.a]: %u, px[e.b]: %u, py[e.b]: %u, e.a: %u, e.b %u\n", 
+            px[e.a], py[e.a], px[e.b], py[e.b], e.a, e.b);
         draw_line(gpu, px[e.a], py[e.a], px[e.b], py[e.b],  vertices[e.a].rgba, vertices[e.b].rgba);
     }
+    
     free(px);
     free(py);
     gpu->gpu_mode = GPU_MODE_3D;
