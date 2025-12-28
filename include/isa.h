@@ -96,7 +96,25 @@ typedef enum {
     INSTR_OR,
     INSTR_XOR,
     INSTR_NOT,
-    INSTR_PCMP
+    INSTR_PCMP,
+    //ADD INSTRUCTIONS
+    INSTR_NORM, 
+    INSTR_MIN,
+    INSTR_MAX,
+    INSTR_CLAMP,   // min(max(x,a),b)
+    INSTR_NEG,     // -x
+    INSTR_RECIP,   // 1/x (szybsze niż DIV)
+    INSTR_RSQRT,   // 1/sqrt(x)
+    INSTR_DOT,     // dot(v1, v2)
+    INSTR_CROSS,   // cross(v1, v2)
+    INSTR_LEN,     // length(v)
+    INSTR_FMA,     // fused multiply-add (a*b + c)
+    INSTR_MAD,     // multiply-add
+    INSTR_SAT,     // saturate [0,1]
+    INSTR_SIGN,    // sign(x)
+    INSTR_VEC3,
+    INSTR_TAN,
+    INSTR_ATAN
 } InstrOpcode;
 
 
@@ -111,6 +129,7 @@ typedef enum {
     OP_TYPE_F32,
     OP_TYPE_MATRIX,
     OP_TYPE_VEC4,
+    OP_TYPE_VEC3,
 } OpType;
 
 typedef union {
