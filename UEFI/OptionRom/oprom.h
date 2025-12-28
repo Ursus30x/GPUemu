@@ -32,18 +32,17 @@ typedef struct {
   EFI_GRAPHICS_OUTPUT_MODE_INFORMATION Info;
 
   GOP_3D_PROTOCOL           Gop3dProtocol;
-  GPU_MODE                  CurrentMode;
-} MY_GPU_PRIVATE_DATA;
+} GPU_CONTEXT;
 
 // Macro for accessing from GOP protocol
-#define MY_GPU_PRIVATE_DATA_FROM_THIS(a) BASE_CR(a, MY_GPU_PRIVATE_DATA, Gop)
+#define MY_GPU_PRIVATE_DATA_FROM_THIS(a) BASE_CR(a, GPU_CONTEXT, Gop)
 
 // Macro for accessing from GOP3D protocol
-#define MY_GPU_PRIVATE_DATA_FROM_GOP3D(a) BASE_CR(a, MY_GPU_PRIVATE_DATA, Gop3dProtocol)
+#define MY_GPU_PRIVATE_DATA_FROM_GOP3D(a) BASE_CR(a, GPU_CONTEXT, Gop3dProtocol)
 
 // Setup functions
-EFI_STATUS EFIAPI GopSetup(IN OUT MY_GPU_PRIVATE_DATA *Private);
-EFI_STATUS EFIAPI Gop3DSetup(IN OUT MY_GPU_PRIVATE_DATA *Private);
+EFI_STATUS EFIAPI GopSetup(IN OUT GPU_CONTEXT *Private);
+EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private);
 
 EFI_STATUS EFIAPI DoBusMasterWrite (
   IN EFI_PCI_IO_PROTOCOL  *PciIo,

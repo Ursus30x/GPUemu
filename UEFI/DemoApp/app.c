@@ -14,13 +14,14 @@
 #include <Library/UefiBootServicesTableLib.h> // gBS
 #include <Library/DevicePathLib.h>
 
+#include "math3d.h"
+#include "fps_counter.h"
+
 #define WAIT_FOR_KEYPRESS() Status = gBS->WaitForEvent(1, &gST->ConIn->WaitForKey, NULL); \
     if (!EFI_ERROR(Status)) { \
         Status = gST->ConIn->ReadKeyStroke(gST->ConIn, &Key); \
     }
 
-typedef struct { double x, y, z; UINT32 rgba; } Vec3;
-typedef struct { UINT32 a, b; } Edge;
 
 STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL *mGraphicsOutput = NULL;
 STATIC GOP_3D_PROTOCOL              *mGOP3D          = NULL;
@@ -139,7 +140,113 @@ VOID DrawTestPattern() {
     DrawRect(Width - BorderWidth, 0, BorderWidth, Height, &Color); // Right
 }
 
-EFI_STATUS EFIAPI TestGop() {
+VOID Test3D(){
+    EFI_INPUT_KEY Key;
+
+    // --- Data Definitions ---
+    UINT64 bin_vertex_shader[]   = { 0x80000916, 0x0, 0xC5010901, 0x8, 0x80010906, 0x0, 0x907, 0x0 };
+    UINT64 bin_fragment_shader[] = { 0xFF000A0900, 0x0, 0xB0900, 0x0, 0xC0900, 0x0, 0x801000408, 0x12C, 0x64000C0800, 0x0, 0xA0800, 0x0, 0x907, 0x0 };
+
+    Vec3 cube_vertices[] = {
+        { -1.0f, -1.0f, -1.0f, 0xFFFF0000 }, {  1.0f, -1.0f, -1.0f, 0xFF00FF00 },
+        {  1.0f,  1.0f, -1.0f, 0xFF0000FF }, { -1.0f,  1.0f, -1.0f, 0xFFFFFF00 }, 
+        { -1.0f, -1.0f,  1.0f, 0xFFFF00FF }, {  1.0f, -1.0f,  1.0f, 0xFF00FFFF },
+        {  1.0f,  1.0f,  1.0f, 0xFFFFFFFF }, { -1.0f,  1.0f,  1.0f, 0xFF808080 }  
+    };
+    
+    Edge cube_edges[] = { 
+        {0,1}, {1,2}, {2,3}, {3,0}, {4,5}, {5,6}, {6,7}, {7,4}, 
+        {0,4}, {1,5}, {2,6}, {3,7}, {5,3} 
+    };
+    
+    UINT32 IndexCount = (sizeof(cube_edges) / sizeof(Edge)) * 2; 
+
+    // --- Static Asset Transfer ---
+    mGOP3D->GpuSetMode(mGOP3D, 1); 
+
+    VRAMADDR hVBO, hIBO, hVS, hFS;
+    VRAMADDR hMVP1 = 0, hMVP2 = 0; 
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, cube_vertices, sizeof(cube_vertices), &hVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  cube_edges,    sizeof(cube_edges),    &hIBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+
+    float angle = 0.0f;
+    Print(L"Animating... Press Key to Exit.\n");
+
+    // --- START BENCHMARK ---
+    FpsCounterStart(); 
+
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        angle += 0.05f; 
+
+        Mat4 ry, rx, scale, trans, proj;
+        Mat4 model1, mvp1;
+        
+        Mat4_RotateY(angle, &ry);
+        Mat4_RotateX(0.2f, &rx);
+        Mat4_Scale(0.5f, &scale);
+        Mat4_Translate(0.0f, 0.0f, 5.0f, &trans);
+        Mat4_Perspective(PI/3.0f, 640.0f/480.0f, 1.0f, 10.0f, &proj);
+
+        Mat4_Mul(&ry, &rx, &model1);
+        Mat4_Mul(&scale, &model1, &model1); 
+        Mat4_Mul(&trans, &model1, &model1);
+        Mat4_Mul(&proj, &model1, &mvp1);
+
+        // --- Object 2 Math ---
+        Mat4 ry2, rx2, scale2, trans2, model2, mvp2;
+        Mat4_RotateY(angle * 2.0f, &ry2);
+        Mat4_RotateX(0.0f, &rx2);
+        Mat4_Scale(0.25f, &scale2);
+        Mat4_Translate(0.0f, 1.0f, 5.0f, &trans2);
+
+        Mat4_Mul(&ry2, &rx2, &model2);
+        Mat4_Mul(&scale2, &model2, &model2);
+        Mat4_Mul(&trans2, &model2, &model2);
+        Mat4_Mul(&proj, &model2, &mvp2);
+
+        if(hMVP1 == 0 || hMVP2 == 0){
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
+        }
+        else{
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
+        }
+        
+        // --- RENDER ---
+        mGOP3D->GpuCmdBegin(mGOP3D);
+        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000); 
+        
+        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 8);
+        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 13);
+
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(Mat4)); 
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount); 
+
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP2, sizeof(Mat4)); 
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount); 
+        
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);        
+
+        // --- TICK ---
+        FpsCounterTick();
+    }
+
+    // --- STOP & SHOW STATS ---
+    FpsCounterStop();
+
+    mGOP3D->GpuSetMode(mGOP3D, 0); 
+
+    FpsCounterShowStats();
+}
+
+EFI_STATUS EFIAPI Test() {
     EFI_STATUS Status;
     EFI_INPUT_KEY Key;
 
@@ -173,7 +280,6 @@ EFI_STATUS EFIAPI TestGop() {
     
     WAIT_FOR_KEYPRESS()
 
-    // Draw the test pattern
     DrawTestPattern();
 
     WAIT_FOR_KEYPRESS()
@@ -186,95 +292,11 @@ EFI_STATUS EFIAPI TestGop() {
     
     WAIT_FOR_KEYPRESS()
 
-    mGOP3D->SetGpuMode(mGOP3D,1);
+    Test3D();
 
-    WAIT_FOR_KEYPRESS()
-
-    Vec3 cube_vertices[] = {
-        { -1, -1, -1, 0xFFFF0000 },
-        {  1, -1, -1, 0xFF00FF00 },
-        {  1,  1, -1, 0xFF0000FF },
-        { -1,  1, -1, 0xFFFFFF00 }, 
-        { -1, -1,  1, 0xFFFF00FF },
-        {  1, -1,  1, 0xFF00FFFF },
-        {  1,  1,  1, 0xFFFFFFFF }, 
-        { -1,  1,  1, 0xFF808080 }  
-    };
-    Edge cube_edges[] = {
-    {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7},{5,3}
-    };
-
-    mGOP3D->TransferDataBuffer(mGOP3D,VERTEX_BUFFER,cube_vertices,sizeof(cube_vertices));
-    mGOP3D->TransferDataBuffer(mGOP3D,EDGE_BUFFER,cube_edges,sizeof(cube_edges));
-
-    WAIT_FOR_KEYPRESS()
-
-    Vec3 piramid_vertices[] = {
-        {  1,  0, 1, 0xFF00FF00 }, 
-        {  1,  0,-1, 0xFF0000FF }, 
-        { -1,  0,-1, 0xFFFF00FF },
-        { -1,  0, 1, 0xFFFFFFFF },
-        {  0, -2.5, 0, 0xFFFF0000 }
-    };
-
-    Edge piramid_edges[] = {
-        {0,1},{1,2},{2,3},{3,0},
-        {0,4},{1,4},{2,4},{3,4}
-    };
-
-    mGOP3D->TransferDataBuffer(mGOP3D,VERTEX_BUFFER,piramid_vertices,sizeof(piramid_vertices));
-    mGOP3D->TransferDataBuffer(mGOP3D,EDGE_BUFFER,piramid_edges,sizeof(piramid_edges));
-
-
-    WAIT_FOR_KEYPRESS()
-
-    Vec3 star_vertices[] = {
-        {  0.000,  2.000,  0.000, 0xFFFFFF00 },  // 0: top point
-        {  0.500,  0.500,  0.000, 0xFFFFFFFF },  // 1
-        {  2.000,  0.500,  0.000, 0xFFFF0000 },  // 2: right point
-        {  0.700, -0.300,  0.000, 0xFFFFFFFF },  // 3
-        {  1.200, -1.500,  0.000, 0xFF00FF00 },  // 4: bottom-right
-        {  0.000, -0.700,  0.000, 0xFFFFFFFF },  // 5: center
-        { -1.200, -1.500,  0.000, 0xFF0000FF },  // 6: bottom-left
-        { -0.700, -0.300,  0.000, 0xFFFFFFFF },  // 7
-        { -2.000,  0.500,  0.000, 0xFFFF00FF },  // 8: left point
-        { -0.500,  0.500,  0.000, 0xFFFFFFFF }   // 9
-    };
-
-    Edge star_edges[] = {
-        {0,1}, {1,2}, {2,3}, {3,4}, {4,5},
-        {5,6}, {6,7}, {7,8}, {8,9}, {9,0}
-    };
-
-    mGOP3D->TransferDataBuffer(mGOP3D,VERTEX_BUFFER,star_vertices,sizeof(star_vertices));
-    mGOP3D->TransferDataBuffer(mGOP3D,EDGE_BUFFER,star_edges,sizeof(star_edges));
-
-    WAIT_FOR_KEYPRESS()
-
-    mGOP3D->SetGpuMode(mGOP3D,0);
-
-    DEBUG((EFI_D_INFO, "TestGop end\n"));
+    DEBUG((EFI_D_INFO, "Test end\n"));
     return EFI_SUCCESS;
 }
-
-/*==========================================================================*/
-/*                                  3D TEST                                 */
-/*==========================================================================*/
-
-// STATIC EFI_PCI_IO_PROTOCOL *PciIo = NULL;
-
-// EFI_STATUS EFIAPI Test3D(){
-//     EFI_STATUS Status;
-
-//     Status = gBS->OpenProtocol(
-//         DeviceHandle,                           // Handle to open protocol on
-//         &gEfiPciIoProtocolGuid,                // Protocol GUID
-//         (VOID **)PciIo,                        // Interface pointer
-//         AgentHandle,                            // Agent handle (your driver/app)
-//         NULL,                                   // Controller handle (NULL for apps)
-//         EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL   // Open mode
-//     );
-// }
 
 
 /*==========================================================================*/
@@ -288,7 +310,7 @@ EFI_STATUS EFIAPI DemoAppEntry(
         
     EFI_STATUS Status;
 
-    Status = TestGop();
+    Status = Test();
 
     ASSERT_EFI_ERROR(Status);
     

@@ -3,12 +3,12 @@
 
 #include <stdint.h>
 
-typedef struct { double x, y, z; uint32_t rgba; } Vec3;
+typedef struct { float x, y, z; uint32_t rgba; } Vec3;
 typedef struct { uint32_t a, b; } Edge;
-typedef struct { double x, y, z, w; } Vec4;
+typedef struct { float x, y, z, w; } Vec4;
 typedef union {
-    double m[4][4]; 
-    double elements[16];
+    float m[4][4]; 
+    float elements[16];
     Vec4 rows[4]; 
     struct {
         Vec4 right;

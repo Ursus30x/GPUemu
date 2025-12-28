@@ -41,7 +41,7 @@ VOID SetStatusPage(
  * Memory Allocation Functions
  * ------------------------------------------------------------------------- */
 
-EFI_STATUS EFIAPI GpuInitMemoryAllocator(
+EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
     IN EFI_PCI_IO_PROTOCOL *PciIo, 
     IN UINT32 VRAMsize, 
     IN VRAMADDR baseAddr)
@@ -52,16 +52,16 @@ EFI_STATUS EFIAPI GpuInitMemoryAllocator(
 
     // Allocate allocation tracker arrays and zero them out
     gpuMemAllocator.pageStatus      = AllocateZeroPool(gpuMemAllocator.pageCount * sizeof(BOOLEAN));
-    gpuMemAllocator.allocationSizes = AllocateZeroPool(gpuMemAllocator.pageCount * sizeof(UINT32));
+    gpuMemAllocator.pageAllocationSizes = AllocateZeroPool(gpuMemAllocator.pageCount * sizeof(UINT32));
 
     // Allocate tags array only in DEBUG mode
 #ifdef MEM_DEBUG
     gpuMemAllocator.allocationTags  = AllocateZeroPool(gpuMemAllocator.pageCount * sizeof(CHAR8*));
-    if (!gpuMemAllocator.pageStatus || !gpuMemAllocator.allocationSizes || !gpuMemAllocator.allocationTags) {
+    if (!gpuMemAllocator.pageStatus || !gpuMemAllocator.pageAllocationSizes || !gpuMemAllocator.allocationTags) {
         return EFI_OUT_OF_RESOURCES; 
     }
 #else
-    if (!gpuMemAllocator.pageStatus || !gpuMemAllocator.allocationSizes) {
+    if (!gpuMemAllocator.pageStatus || !gpuMemAllocator.pageAllocationSizes) {
         return EFI_OUT_OF_RESOURCES; 
     }
 #endif
@@ -90,7 +90,7 @@ VRAMADDR GpuAllocateMemImpl(IN UINT32 bytesToAlloc)
             if (CanAlloc(pageCounter, pagesToAlloc)) {
                 
                 SetStatusPage(pageCounter, pageCounter + pagesToAlloc, TRUE);
-                gpuMemAllocator.allocationSizes[pageCounter] = pagesToAlloc;
+                gpuMemAllocator.pageAllocationSizes[pageCounter] = pagesToAlloc;
 
 #ifdef MEM_DEBUG
                 // Store the tag pointer (assumed to be a string literal or persistent)
@@ -99,15 +99,15 @@ VRAMADDR GpuAllocateMemImpl(IN UINT32 bytesToAlloc)
                 return pageCounter * PAGE_SIZE;
             }
         }
-        else if (gpuMemAllocator.allocationSizes[pageCounter] != 0) {
-            pageCounter += gpuMemAllocator.allocationSizes[pageCounter];
+        else if (gpuMemAllocator.pageAllocationSizes[pageCounter] != 0) {
+            pageCounter += gpuMemAllocator.pageAllocationSizes[pageCounter];
             continue;
         }
 
         pageCounter++;
     }
 
-    return 0xFFFFFFFF; // Error Code
+    return GPU_NO_MEM; // Error Code
 }
 
 #ifdef MEM_DEBUG
@@ -123,7 +123,7 @@ BOOLEAN GpuAllocateMemAtImpl(IN UINT32 bytesToAlloc, IN VRAMADDR addr)
 
     if (CanAlloc(page, pagesToAlloc)) {
         SetStatusPage(page, page + pagesToAlloc, TRUE);
-        gpuMemAllocator.allocationSizes[page] = pagesToAlloc;
+        gpuMemAllocator.pageAllocationSizes[page] = pagesToAlloc;
 
 #ifdef MEM_DEBUG
         gpuMemAllocator.allocationTags[page] = Tag;
@@ -132,6 +132,13 @@ BOOLEAN GpuAllocateMemAtImpl(IN UINT32 bytesToAlloc, IN VRAMADDR addr)
     }
     
     return FALSE;
+}
+
+UINT32 GpuGetAllocatedSize(IN VRAMADDR addr)
+{    
+    UINT32 page = addr / PAGE_SIZE;
+
+    return gpuMemAllocator.pageAllocationSizes[page] * PAGE_SIZE;
 }
 
 BOOLEAN GpuFreeMem(IN VRAMADDR addr)
@@ -143,12 +150,12 @@ BOOLEAN GpuFreeMem(IN VRAMADDR addr)
     // Safety check for bounds
     if (page >= gpuMemAllocator.pageCount) return FALSE;
 
-    if (gpuMemAllocator.allocationSizes[page] == 0) {
+    if (gpuMemAllocator.pageAllocationSizes[page] == 0) {
         return FALSE;
     }
 
-    SetStatusPage(page, page + gpuMemAllocator.allocationSizes[page], FALSE);
-    gpuMemAllocator.allocationSizes[page] = 0;
+    SetStatusPage(page, page + gpuMemAllocator.pageAllocationSizes[page], FALSE);
+    gpuMemAllocator.pageAllocationSizes[page] = 0;
 
 #ifdef MEM_DEBUG
     gpuMemAllocator.allocationTags[page] = NULL;
@@ -303,6 +310,118 @@ EFI_STATUS EFIAPI GpuVramSet(
 }
 
 /* -------------------------------------------------------------------------
+ * MMIO Register Access Functions
+ * ------------------------------------------------------------------------- */
+
+// --- 32-bit Registers ---
+
+EFI_STATUS EFIAPI GpuMmioWrite32(IN UINT32 Offset, IN UINT32 Value)
+{
+    if (gpuMemAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    return gpuMemAllocator.PciIo->Mem.Write(
+        gpuMemAllocator.PciIo,
+        EfiPciIoWidthUint32,
+        gpuMemAllocator.MmioBarIndex,
+        Offset,
+        1,
+        &Value
+    );
+}
+
+UINT32 EFIAPI GpuMmioRead32(IN UINT32 Offset)
+{
+    UINT32 Value = 0;
+    
+    if (gpuMemAllocator.PciIo != NULL) {
+        gpuMemAllocator.PciIo->Mem.Read(
+            gpuMemAllocator.PciIo,
+            EfiPciIoWidthUint32,
+            gpuMemAllocator.MmioBarIndex,
+            Offset,
+            1,
+            &Value
+        );
+    }
+    
+    return Value;
+}
+
+// --- 16-bit Registers ---
+
+EFI_STATUS EFIAPI GpuMmioWrite16(IN UINT32 Offset, IN UINT16 Value)
+{
+    if (gpuMemAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    return gpuMemAllocator.PciIo->Mem.Write(
+        gpuMemAllocator.PciIo,
+        EfiPciIoWidthUint16,
+        gpuMemAllocator.MmioBarIndex,
+        Offset,
+        1,
+        &Value
+    );
+}
+
+UINT16 EFIAPI GpuMmioRead16(IN UINT32 Offset)
+{
+    UINT16 Value = 0;
+
+    if (gpuMemAllocator.PciIo != NULL) {
+        gpuMemAllocator.PciIo->Mem.Read(
+            gpuMemAllocator.PciIo,
+            EfiPciIoWidthUint16,
+            gpuMemAllocator.MmioBarIndex,
+            Offset,
+            1,
+            &Value
+        );
+    }
+
+    return Value;
+}
+
+// --- 8-bit Registers ---
+
+EFI_STATUS EFIAPI GpuMmioWrite8(IN UINT32 Offset, IN UINT8 Value)
+{
+    if (gpuMemAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    return gpuMemAllocator.PciIo->Mem.Write(
+        gpuMemAllocator.PciIo,
+        EfiPciIoWidthUint8,
+        gpuMemAllocator.MmioBarIndex,
+        Offset,
+        1,
+        &Value
+    );
+}
+
+UINT8 EFIAPI GpuMmioRead8(IN UINT32 Offset)
+{
+    UINT8 Value = 0;
+
+    if (gpuMemAllocator.PciIo != NULL) {
+        gpuMemAllocator.PciIo->Mem.Read(
+            gpuMemAllocator.PciIo,
+            EfiPciIoWidthUint8,
+            gpuMemAllocator.MmioBarIndex,
+            Offset,
+            1,
+            &Value
+        );
+    }
+
+    return Value;
+}
+
+/* -------------------------------------------------------------------------
  * Debug Functions
  * ------------------------------------------------------------------------- */
 
@@ -359,7 +478,7 @@ VOID EFIAPI GpuDebugDumpMemoryMap(VOID)
         }
         // Condition 2: We are inside a USED block, but we hit a new Allocation Header
         else if (currentStatus == TRUE && i < gpuMemAllocator.pageCount) {
-            if (gpuMemAllocator.allocationSizes[i] > 0) {
+            if (gpuMemAllocator.pageAllocationSizes[i] > 0) {
                 splitBlock = TRUE;
             }
         }
@@ -395,7 +514,7 @@ VOID EFIAPI GpuDebugDumpMemoryMap(VOID)
             ));
 
             if (currentStatus == TRUE) {
-                UINT32 recordedSize = gpuMemAllocator.allocationSizes[startPage];
+                UINT32 recordedSize = gpuMemAllocator.pageAllocationSizes[startPage];
                 if (recordedSize != count) {
                     DEBUG ((EFI_D_INFO, "    -> WARNING: Header says %d pages, but found %d contiguous pages!\n", recordedSize, count));
                 }

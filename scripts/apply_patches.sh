@@ -24,6 +24,7 @@ git clean -qfdx
 # Symlink gpu implementation to QEMU hardware
 ln -sf "$CWD/gpu/gpu.c" "$CWD/qemu/hw/misc/gpu.c"
 ln -sf "$CWD/gpu/gpu.h" "$CWD/qemu/hw/misc/gpu.h"
+ln -sf "$CWD/gpu/debug_gpu.h" "$CWD/qemu/hw/misc/debug_gpu.h"
 ln -sf "$CWD/gpu/renderer.c" "$CWD/qemu/hw/misc/renderer.c"
 ln -sf "$CWD/gpu/renderer.h" "$CWD/qemu/hw/misc/renderer.h"
 ln -sf "$CWD/gpu/math3d.c" "$CWD/qemu/hw/misc/math3d.c"
@@ -31,6 +32,7 @@ ln -sf "$CWD/gpu/math3d.h" "$CWD/qemu/hw/misc/math3d.h"
 ln -sf "$CWD/include/isa.h" "$CWD/qemu/hw/misc/isa.h"
 ln -sf "$CWD/include/gpu_hw.h" "$CWD/qemu/hw/misc/gpu_hw.h"
 ln -sf "$CWD/include/vram.h" "$CWD/qemu/hw/misc/vram.h"
+
 # Apply config patches
 git apply "$CWD/gpu/qemu.patch"
 

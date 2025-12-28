@@ -2,7 +2,7 @@
 #include "oprom.h"
 #include <Protocol/GraphicsOutput.h>
 #include <Library/UefiBootServicesTableLib.h> // gBS
-#define MY_GPU_PRIVATE_DATA_FROM_THIS(a) BASE_CR(a, MY_GPU_PRIVATE_DATA, Gop)
+#define MY_GPU_PRIVATE_DATA_FROM_THIS(a) BASE_CR(a, GPU_CONTEXT, Gop)
 
 EFI_STATUS EFIAPI MyGpuBlt(
     IN  EFI_GRAPHICS_OUTPUT_PROTOCOL       *This,
@@ -17,7 +17,7 @@ EFI_STATUS EFIAPI MyGpuBlt(
     IN  UINTN                              Delta
     ) 
 {
-    MY_GPU_PRIVATE_DATA *Private = MY_GPU_PRIVATE_DATA_FROM_THIS(This);
+    GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_THIS(This);
     // Performs a simple FrameBufferBlt form FrameBufferBltLib
     return FrameBufferBlt(
             Private->FrameBufferBltConfigure,
@@ -37,7 +37,7 @@ EFI_STATUS EFIAPI MyGpuSetMode(
     IN EFI_GRAPHICS_OUTPUT_PROTOCOL *This,
     IN UINT32 ModeNumber
     ) {
-  MY_GPU_PRIVATE_DATA        *Private;
+  GPU_CONTEXT        *Private;
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL  Black;
   EFI_STATUS Status;
 
@@ -79,14 +79,14 @@ EFI_STATUS EFIAPI MyGpuSetMode(
   return EFI_SUCCESS;
 }
 
-//#define MY_GPU_PRIVATE_DATA_FROM_THIS(a) CR(a, MY_GPU_PRIVATE_DATA, Gop, SIGNATURE_32('g','o','p','d'))
+//#define MY_GPU_PRIVATE_DATA_FROM_THIS(a) CR(a, GPU_CONTEXT, Gop, SIGNATURE_32('g','o','p','d'))
 EFI_STATUS EFIAPI MyGpuQueryMode(
     IN EFI_GRAPHICS_OUTPUT_PROTOCOL *This,
     IN UINT32 ModeNumber,
     OUT UINTN *SizeOfInfo,
     OUT EFI_GRAPHICS_OUTPUT_MODE_INFORMATION **Info
     ) {
-  MY_GPU_PRIVATE_DATA *Private = MY_GPU_PRIVATE_DATA_FROM_THIS(This);
+  GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_THIS(This);
 
 
   if (ModeNumber >= This->Mode->MaxMode) {
@@ -103,7 +103,7 @@ EFI_STATUS EFIAPI MyGpuQueryMode(
   return EFI_SUCCESS;
 }
 
-EFI_STATUS EFIAPI GopSetup(IN OUT MY_GPU_PRIVATE_DATA *Private) {
+EFI_STATUS EFIAPI GopSetup(IN OUT GPU_CONTEXT *Private) {
   EFI_STATUS Status;
 
   // Initialize the GOP protocol
