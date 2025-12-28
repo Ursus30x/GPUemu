@@ -10,3 +10,5 @@ UEFI/OptionRom/vram.h
 compiler/isa.h
 compiler/gpu_hw.h
 compiler/vram.h
+
+.last_build_type

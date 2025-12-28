@@ -22,7 +22,7 @@ typedef union {
 
 #define REG_MAT_SIZE   8
 #define REG_P_SIZE     13
-#define REG_P_GEN_SIZE 8
+#define REG_P_GEN_SIZE 13
 
 
 typedef enum {
