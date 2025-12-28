@@ -1,0 +1,31 @@
+[Defines]
+  INF_VERSION    = 0x00010005
+  BASE_NAME      = FrameBenchmark
+  FILE_GUID      = a42921d7-84d5-494b-acce-853c4d8dd3b7
+  MODULE_TYPE    = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = FrameBenchmarkEntry
+
+[Sources]
+  app.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  OvmfPkg/OvmfPkg.dec
+
+[LibraryClasses]
+  DebugLib
+  PciLib
+  PrintLib
+  DevicePathLib
+  UefiApplicationEntryPoint
+  UefiLib
+  FrameBufferBltLib
+  TimerLib
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid                # PROTOCOL BY_START
+  gEfiDevicePathProtocolGuid                    # PROTOCOL BY_START
+  gEfiPciIoProtocolGuid                         # PROTOCOL TO_START
+  gGop3dProtocolGuid 
