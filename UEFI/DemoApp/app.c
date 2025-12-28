@@ -15,6 +15,7 @@
 #include <Library/DevicePathLib.h>
 
 #include "math3d.h"
+#include "fps_counter.h"
 
 #define WAIT_FOR_KEYPRESS() Status = gBS->WaitForEvent(1, &gST->ConIn->WaitForKey, NULL); \
     if (!EFI_ERROR(Status)) { \
@@ -138,16 +139,12 @@ VOID DrawTestPattern() {
     DrawRect(0, 0, BorderWidth, Height, &Color); // Left
     DrawRect(Width - BorderWidth, 0, BorderWidth, Height, &Color); // Right
 }
-EFI_STATUS EFIAPI TestGop() {
-    EFI_STATUS Status;
+
+VOID Test3D(){
     EFI_INPUT_KEY Key;
 
-    // --- 1. Data Definitions ---
-    // Ensure math3d.h / isa.h is included for Vec3/Edge definitions
-
-    // Vertex Shader: LDU (Load Uniform) based MVP
+    // --- Data Definitions ---
     UINT64 bin_vertex_shader[]   = { 0x80000916, 0x0, 0xC5010901, 0x8, 0x80010906, 0x0, 0x907, 0x0 };
-    // Fragment Shader: Simple Color
     UINT64 bin_fragment_shader[] = { 0xFF000A0900, 0x0, 0xB0900, 0x0, 0xC0900, 0x0, 0x801000408, 0x12C, 0x64000C0800, 0x0, 0xA0800, 0x0, 0x907, 0x0 };
 
     Vec3 cube_vertices[] = {
@@ -164,16 +161,7 @@ EFI_STATUS EFIAPI TestGop() {
     
     UINT32 IndexCount = (sizeof(cube_edges) / sizeof(Edge)) * 2; 
 
-    DEBUG((EFI_D_INFO, "TestGop start\n"));
-
-    // --- 2. Locate Protocols ---
-    Status = gBS->LocateProtocol(&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&mGraphicsOutput);
-    Status = gBS->LocateProtocol(&gGop3dProtocolGuid, NULL, (VOID **)&mGOP3D);
-    if (EFI_ERROR(Status)) return Status;
-
-    Print(L"GOP3D Located. Press Key to Start Animation...\n");
-    
-    // --- 3. Static Asset Transfer ---
+    // --- Static Asset Transfer ---
     mGOP3D->GpuSetMode(mGOP3D, 1); 
 
     VRAMADDR hVBO, hIBO, hVS, hFS;
@@ -186,6 +174,9 @@ EFI_STATUS EFIAPI TestGop() {
 
     float angle = 0.0f;
     Print(L"Animating... Press Key to Exit.\n");
+
+    // --- START BENCHMARK ---
+    FpsCounterStart(); 
 
     while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
         angle += 0.05f; 
@@ -216,7 +207,6 @@ EFI_STATUS EFIAPI TestGop() {
         Mat4_Mul(&trans2, &model2, &model2);
         Mat4_Mul(&proj, &model2, &mvp2);
 
-        // This now leaks since we dont update/free memory
         if(hMVP1 == 0 || hMVP2 == 0){
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
@@ -237,18 +227,78 @@ EFI_STATUS EFIAPI TestGop() {
 
         mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(Mat4)); 
         mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount); 
-        // mGOP3D->GpuBindUBO(mGOP3D, hMVP2, sizeof(Mat4)); 
-        // mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount); 
-        mGOP3D->GpuCmdEnd(mGOP3D);
-        mGOP3D->GpuPresent(mGOP3D);
 
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP2, sizeof(Mat4)); 
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount); 
         
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);        
+
+        // --- TICK ---
+        FpsCounterTick();
     }
 
+    // --- STOP & SHOW STATS ---
+    FpsCounterStop();
+
     mGOP3D->GpuSetMode(mGOP3D, 0); 
-    DEBUG((EFI_D_INFO, "TestGop end\n"));
+
+    FpsCounterShowStats();
+}
+
+EFI_STATUS EFIAPI Test() {
+    EFI_STATUS Status;
+    EFI_INPUT_KEY Key;
+
+    DEBUG((EFI_D_INFO, "TestGop start\n"));
+
+    Status = gBS->LocateProtocol(
+        &gEfiGraphicsOutputProtocolGuid, 
+        NULL, 
+        (VOID **)&mGraphicsOutput
+    );
+
+    Status = gBS->LocateProtocol(
+        &gGop3dProtocolGuid, 
+        NULL, 
+        (VOID **)&mGOP3D
+    );
+
+    if (EFI_ERROR(Status)) {
+        Print(L"Failed to locate GOP: %r\n", Status);
+        return Status;
+    }
+    
+    // Print GOP information
+    Print(L"GOP Located Successfully!\n");
+    Print(L"Current Mode: %d\n", mGraphicsOutput->Mode->Mode);
+    Print(L"Resolution: %dx%d\n", 
+          mGraphicsOutput->Mode->Info->HorizontalResolution,
+          mGraphicsOutput->Mode->Info->VerticalResolution);
+    Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
+    Print(L"\nPress any key to draw test pattern.\n");
+    
+    WAIT_FOR_KEYPRESS()
+
+    DrawTestPattern();
+
+    WAIT_FOR_KEYPRESS()
+    
+    Print(L"Test pattern complete!\n");
+    
+    WAIT_FOR_KEYPRESS()
+
+    Print(L"Test 3D capabilities\n\nPress any key to test 3D\n");
+    
+    WAIT_FOR_KEYPRESS()
+
+    Test3D();
+
+    DEBUG((EFI_D_INFO, "Test end\n"));
     return EFI_SUCCESS;
 }
+
+
 /*==========================================================================*/
 /*                               MAIN APP ENTRY                             */
 /*==========================================================================*/
@@ -260,7 +310,7 @@ EFI_STATUS EFIAPI DemoAppEntry(
         
     EFI_STATUS Status;
 
-    Status = TestGop();
+    Status = Test();
 
     ASSERT_EFI_ERROR(Status);
     
