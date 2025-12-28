@@ -164,6 +164,12 @@ VOID TestFrame(){
     BenchStop(&TotalTimer);
     // TOTAL TIMER END
 
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);    
+
     // --- Show Stats ---
     Print(L"\n========================================\n");
     Print(L"         FRAME BREAKDOWN (Single)       \n");

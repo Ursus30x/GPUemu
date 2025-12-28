@@ -1,56 +1,83 @@
-#include <Uefi.h>
-#include <Library/UefiLib.h>
-#include <Library/UefiRuntimeServicesTableLib.h> // For gRT
-
 #ifndef FPS_COUNTER
 #define FPS_COUNTER
 
-// Global State for FPS Counting
-static UINT64 gFpsStartTime = 0;
-static UINT64 gFpsEndTime   = 0;
+#include <Uefi.h>
+#include <Library/UefiLib.h>
+#include <Library/DebugLib.h>
+#include <Library/TimerLib.h> 
+
 static UINT32 gFpsFrameCount = 0;
+static UINT64 gFpsTotalTicks = 0;
+static UINT64 gFpsLastTick   = 0;
+static UINT64 gFpsTimerFreq  = 0;
 
-static UINT64 GetTimeMs() {
-    EFI_TIME Time;
-    gRT->GetTime(&Time, NULL);
+// Timer properties
+static BOOLEAN gFpsTimerCountsUp = TRUE;
+static UINT64  gFpsTimerMask     = 0xFFFFFFFFFFFFFFFFULL; 
+
+
+static VOID FpsInitTimer() {
+    UINT64 StartVal = 0;
+    UINT64 EndVal   = 0;
     
-    UINT64 ms = (UINT64)Time.Second * 1000 + (UINT64)Time.Nanosecond / 1000000;
-    ms += (UINT64)Time.Minute * 60000;
-    ms += (UINT64)Time.Hour * 3600000;
-    return ms;
+    gFpsTimerFreq = GetPerformanceCounterProperties(&StartVal, &EndVal);
+    
+    if (gFpsTimerFreq == 0) gFpsTimerFreq = 1000000;
+
+    if (EndVal > StartVal) {
+        gFpsTimerCountsUp = TRUE;
+        gFpsTimerMask = EndVal; 
+    } else {
+        gFpsTimerCountsUp = FALSE;
+        gFpsTimerMask = StartVal;
+    }
 }
 
-// Reset and Start the Timer
 VOID FpsCounterStart() {
+    if (gFpsTimerFreq == 0) {
+        FpsInitTimer();
+    }
+
     gFpsFrameCount = 0;
-    gFpsStartTime = GetTimeMs();
+    gFpsTotalTicks = 0;
+    gFpsLastTick   = GetPerformanceCounter();
 }
 
-// Call this once per frame
 VOID FpsCounterTick() {
     gFpsFrameCount++;
+
+    UINT64 CurrentTick = GetPerformanceCounter();
+    UINT64 Delta = 0;
+
+    if (gFpsTimerCountsUp) {
+        Delta = (CurrentTick - gFpsLastTick) & gFpsTimerMask;
+    } else {
+        Delta = (gFpsLastTick - CurrentTick) & gFpsTimerMask;
+    }
+
+    gFpsTotalTicks += Delta;
+    gFpsLastTick    = CurrentTick;
 }
 
-// Stop the Timer
-VOID FpsCounterStop() {
-    gFpsEndTime = GetTimeMs();
-}
+VOID FpsCounterStop() {}
 
-// Print Stats
 VOID FpsCounterShowStats() {
-    UINT64 TotalTime = gFpsEndTime - gFpsStartTime;
+    UINT64 TotalTimeMs = 0;
+    if (gFpsTimerFreq > 0) {
+        TotalTimeMs = MultU64x64(gFpsTotalTicks, 1000) / gFpsTimerFreq;
+    }
+
     float AvgFps = 0.0f;
-    
-    if (TotalTime > 0) {
-        AvgFps = (float)gFpsFrameCount / ((float)TotalTime / 1000.0f);
+    if (TotalTimeMs > 0) {
+        AvgFps = (float)gFpsFrameCount / ((float)TotalTimeMs / 1000.0f);
     }
 
     Print(L"\n========================================\n");
     Print(L"           BENCHMARK RESULTS            \n");
     Print(L"========================================\n");
     Print(L" Total Frames:  %d\n", gFpsFrameCount);
-    Print(L" Total Time:    %ld ms\n", TotalTime);
-    // Integer-based float printing for UEFI
+    Print(L" Total Time:    %ld ms\n", TotalTimeMs);
+    // Integer-based float printing for UEFI safe output
     Print(L" Average FPS:   %d.%02d\n", (int)AvgFps, (int)((AvgFps - (int)AvgFps) * 100));
     Print(L"========================================\n");
 }

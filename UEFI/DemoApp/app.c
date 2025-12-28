@@ -9,10 +9,12 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/FrameBufferBltLib.h>
 #include <Library/BaseMemoryLib.h>
-#include <IndustryStandard/Acpi.h>
-#include <IndustryStandard/Pci.h>
 #include <Library/UefiBootServicesTableLib.h> // gBS
 #include <Library/DevicePathLib.h>
+#include <Library/TimerLib.h> 
+#include <IndustryStandard/Acpi.h>
+#include <IndustryStandard/Pci.h>
+
 
 #include "math3d.h"
 #include "fps_counter.h"
@@ -22,9 +24,60 @@
         Status = gST->ConIn->ReadKeyStroke(gST->ConIn, &Key); \
     }
 
-
 STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL *mGraphicsOutput = NULL;
 STATIC GOP_3D_PROTOCOL              *mGOP3D          = NULL;
+
+
+STATIC UINT64  mTimerFreq      = 0;
+STATIC UINT64  mLastTick       = 0;
+STATIC UINT64  mTotalTicks     = 0;
+STATIC UINT64  mTimerMask      = 0;
+STATIC BOOLEAN mTimerCountsUp  = TRUE;
+STATIC BOOLEAN mTimerInit      = FALSE;
+
+VOID GetTimeSeconds(OUT float *TimeOut) {
+    if (!mTimerInit) {
+        UINT64 StartVal = 0;
+        UINT64 EndVal   = 0;
+        
+        mTimerFreq = GetPerformanceCounterProperties(&StartVal, &EndVal);
+        
+        // Safety Fallback
+        if (mTimerFreq == 0) mTimerFreq = 1000000;
+
+        // Determine Direction and Mask
+        if (EndVal > StartVal) {
+            mTimerCountsUp = TRUE;
+            mTimerMask = EndVal; 
+        } else {
+            mTimerCountsUp = FALSE;
+            mTimerMask = StartVal;
+        }
+
+        mLastTick = GetPerformanceCounter();
+        mTimerInit = TRUE;
+    }
+
+    UINT64 CurrentTick = GetPerformanceCounter();
+    UINT64 Delta = 0;
+
+    if (mTimerCountsUp) {
+        // Handle UP counter wrap (Current < Last)
+        // Using bitwise & with Mask handles the overflow math automatically
+        // IF the counter is a power-of-two size (standard).
+        Delta = (CurrentTick - mLastTick) & mTimerMask;
+    } else {
+        // Handle DOWN counter wrap
+        Delta = (mLastTick - CurrentTick) & mTimerMask;
+    }
+
+    // Accumulate the small delta
+    mTotalTicks += Delta;
+    mLastTick    = CurrentTick;
+
+    // Convert Total Ticks to Seconds
+    *TimeOut = (float)mTotalTicks / (float)mTimerFreq;
+}
 
 /*==========================================================================*/
 /*                                  GOP TEST                                */
@@ -177,9 +230,22 @@ VOID Test3D(){
 
     // --- START BENCHMARK ---
     FpsCounterStart(); 
+    
+    // Reset timer base for this run
+    mTimerInit = FALSE; 
 
     while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
-        angle += 0.05f; 
+        float time;
+
+        GetTimeSeconds(&time); 
+
+        INT32 Seconds = (INT32)time;
+        INT32 Millis  = (INT32)((time - Seconds) * 1000); // 3 decimal places
+
+        DEBUG((EFI_D_INFO, "Time: %d.%03d s\n", Seconds, Millis));
+
+        float rotation_period = 2.0; 
+        angle = (2.0 * PI * time) / rotation_period;
 
         Mat4 ry, rx, scale, trans, proj;
         Mat4 model1, mvp1;
@@ -240,6 +306,13 @@ VOID Test3D(){
 
     // --- STOP & SHOW STATS ---
     FpsCounterStop();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);    
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP2);
 
     mGOP3D->GpuSetMode(mGOP3D, 0); 
 
