@@ -166,6 +166,10 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     0x000000, "FRAMEBUFFER");
 
   Private->VRAMBaseAddr = Resources->AddrRangeMin;
+
+
+  VRAMADDR zbuffer = GpuAllocateMem(Private->MainFrameBufferHeight * Private->MainFrameBufferWidth * sizeof(UINT32), "ZBUFFER");
+  GpuMmioWrite32(REG_ZBUFFER_ADDR, zbuffer);
   FreePool(Resources);
 
   //
@@ -181,7 +185,8 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     DEBUG ((EFI_D_ERROR, "Failed to get ParentDevicePath\n"));
     return Status;
   }
-
+    
+    
   // what even is this ACPI & why is it required? installing the proto fails otherwise
   ACPI_ADR_DEVICE_PATH      AcpiDeviceNode;
   ZeroMem (&AcpiDeviceNode, sizeof (ACPI_ADR_DEVICE_PATH));
