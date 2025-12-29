@@ -23,6 +23,7 @@
 #define REG_FB_HEIGHT_ADDR             0x20
 #define REG_FRAMEBUFFER_ADDR           0x24
 #define REG_GPU_TIME_ADDR              0x28
+#define REG_ZBUFFER_ADDR               0x2C
 
 typedef enum {
     GPU_MODE_GOP,

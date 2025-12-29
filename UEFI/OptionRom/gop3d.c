@@ -25,7 +25,7 @@ EFI_STATUS EFIAPI GpuInit(
 {
     // Reset Ring Buffer to clean state
     GpuRingBufferClearCmdBuffer();
-    
+
     DEBUG((EFI_D_INFO, "GOP3D: Initialized.\n"));
     return EFI_SUCCESS;
 }
@@ -279,7 +279,6 @@ EFI_STATUS EFIAPI GpuDraw(
     } else if (Topology == Gop3dTopologyPoints) {
         primType = PRIMITIVE_TYPE_POINTS;
     }
-
     Command cmd;
     cmd.opcode = CMD_DRAW_PRIMITIVE;
     cmd.payload.draw.type = primType;

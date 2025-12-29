@@ -319,6 +319,114 @@ VOID Test3D(){
     FpsCounterShowStats();
 }
 
+
+VOID Test3DTriangles(){
+    EFI_INPUT_KEY Key;
+
+    // --- Data Definitions ---
+    UINT64 bin_vertex_shader[]   = { 0x80000916, 0x0, 0xC5010901, 0x8, 0x80010906, 0x0, 0x907, 0x0 };
+    UINT64 bin_fragment_shader[] =  { 0x907, 0x0 };
+
+    Vec3 vertices[] = {
+        {-0.5, -0.5,  0.5, 0xFF0000}, { 0.5, -0.5,  0.5, 0xFF0000}, { 0.5,  0.5,  0.5, 0xFF0000}, {-0.5,  0.5,  0.5, 0x0000FF},
+        {-0.5, -0.5, -0.5,0x0000FF}, { 0.5, -0.5, -0.5, 0x0000FF}, { 0.5,  0.5, -0.5,  0x00FFFF}, {-0.5,  0.5, -0.5,  0x00FFFF}
+    };
+    Triangle indices[] = {
+        {0, 1, 2}, {0, 2, 3}, {1, 5, 6}, {1, 6, 2},
+        {5, 4, 7}, {5, 7, 6}, {4, 0, 3}, {4, 3, 7},
+        {3, 2, 6}, {3, 6, 7}, {4, 5, 1}, {4, 1, 0}
+    };
+    
+    UINT32 IndexCount = (sizeof(indices) / sizeof(Triangle)) * 2; 
+
+    // --- Static Asset Transfer ---
+    mGOP3D->GpuSetMode(mGOP3D, 1); 
+
+    VRAMADDR hVBO, hIBO, hVS, hFS;
+    VRAMADDR hMVP1 = 0; 
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+
+    float angle = 0.0f;
+    Print(L"Animating... Press Key to Exit.\n");
+
+    // --- START BENCHMARK ---
+    FpsCounterStart(); 
+    
+    // Reset timer base for this run
+    mTimerInit = FALSE; 
+
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        float time;
+
+        GetTimeSeconds(&time); 
+
+        INT32 Seconds = (INT32)time;
+        INT32 Millis  = (INT32)((time - Seconds) * 1000); // 3 decimal places
+
+        DEBUG((EFI_D_INFO, "Time: %d.%03d s\n", Seconds, Millis));
+
+        float rotation_period = 2.0; 
+        angle = (2.0 * PI * time) / rotation_period;
+
+        Mat4 ry, rx, trans, proj;
+        Mat4 model1, mvp1;
+        
+        Mat4_RotateY(angle, &ry);
+        Mat4_RotateX(0.2f, &rx);
+        Mat4_Translate(0.0f, 0.0f, 5.0f, &trans);
+        Mat4_Perspective(PI/3.0f, 640.0f/480.0f, 1.0f, 10.0f, &proj);
+
+        Mat4_Mul(&ry, &rx, &model1);
+        Mat4_Mul(&trans, &model1, &model1);
+        Mat4_Mul(&proj, &model1, &mvp1);
+
+   
+
+        if(hMVP1 == 0){
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+        }
+        else{
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+        }
+        
+        // --- RENDER ---
+        mGOP3D->GpuCmdBegin(mGOP3D);
+        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000); 
+        
+        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 8);
+        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 12);
+
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(Mat4)); 
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount); 
+
+        
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);        
+
+        // --- TICK ---
+        FpsCounterTick();
+    }
+
+    // --- STOP & SHOW STATS ---
+    FpsCounterStop();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);    
+
+    mGOP3D->GpuSetMode(mGOP3D, 0); 
+
+    FpsCounterShowStats();
+}
+
 EFI_STATUS EFIAPI Test() {
     EFI_STATUS Status;
     EFI_INPUT_KEY Key;
@@ -365,7 +473,7 @@ EFI_STATUS EFIAPI Test() {
     
     WAIT_FOR_KEYPRESS()
 
-    Test3D();
+    Test3DTriangles();
 
     DEBUG((EFI_D_INFO, "Test end\n"));
     return EFI_SUCCESS;

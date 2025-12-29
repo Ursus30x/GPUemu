@@ -4,6 +4,7 @@
 #include "math3d.h"
 #include "renderer.h"
 #include "debug_gpu.h"
+
 DECLARE_INSTANCE_CHECKER(GpuState, GPU, TYPE_PCI_GPU_DEVICE);
 
 static void pci_gpu_register_types(void);
@@ -15,34 +16,26 @@ static void vga_update_display(void *opaque);
 
 type_init(pci_gpu_register_types)
 
-    // static uint64_t lower_n_bytes(uint64_t data, unsigned nbytes)
-    // {
-    // 	uint64_t result;
-
-    // 	if (nbytes < 8) {
-    // 		uint64_t bitcount = ((uint64_t)nbytes)<<3;
-    // 		uint64_t mask = (1ULL << bitcount)-1;
-
-    // 		result = data & mask;
-    // 	} else {
-    // 		result = data;
-    // 	}
-
-    // 	return result;
-    // }
-
-static void simple_3d_mode(GpuState *gpu)
+static void wireframe_3d_mode(GpuState *gpu)
 {
 
     if (gpu->gpu_mode == GPU_MODE_3D)
     {
-        //exec_shader(gpu, gpu->vs_code_addr);
-        gpu_render_frame(gpu);
+        gpu_render_wireframe(gpu);
         vga_update_display(gpu);
         graphic_hw_update(gpu->con);
     }
 }
+static void triangles_3d_mode(GpuState *gpu)
+{
 
+    if (gpu->gpu_mode == GPU_MODE_3D)
+    {
+        gpu_render_triangles(gpu);
+        vga_update_display(gpu);
+        graphic_hw_update(gpu->con);
+    }
+}
 static void gpu_print_mmio(GpuState *s)
 {
     DEBUG_PRINT("\n--- GPU MMIO Register Snapshot ---\n");
@@ -55,6 +48,8 @@ static void gpu_print_mmio(GpuState *s)
     DEBUG_PRINT("0x1C [HEIGHT]:           %u\n", s->height);
     DEBUG_PRINT("0x20 [FB_ADDR]:          0x%08x\n", s->framebuffer_vram_offset);
     DEBUG_PRINT("0x24 [GPU_TIME]:         %u\n", s->gpu_time);
+    DEBUG_PRINT("0x2C [ZBUFFER]:          0x%08x\n", s->zbuffer_addr);
+
     DEBUG_PRINT("----------------------------------\n");
 }
 
@@ -75,7 +70,10 @@ static void execute_command(GpuState *gpu, Command *cmd)
     case CMD_CLEAR_FRAMEBUFFER:
         DEBUG_PRINT("[CMD] Clear FB %x \n", (gpu->width * gpu->height));
         for (uint32_t i = 0; i < (gpu->width * gpu->height); i++)
+        {
             FB(gpu)[i] = 0xff000000;
+            Z_BUFFER(gpu)[i] = FLT_MAX;
+        }
         break;
     case CMD_SET_STATE:
         DEBUG_PRINT("[CMD] Set state\n");
@@ -106,12 +104,11 @@ static void execute_command(GpuState *gpu, Command *cmd)
         }
         break;
     case CMD_DRAW_PRIMITIVE:
-        DEBUG_PRINT("[CMD] Draw primitive\n");
-        if(cmd->payload.draw.type == PRIMITIVE_TYPE_LINES){
-            DEBUG_PRINT("[CMD] Draw LINES\n");
-            simple_3d_mode(gpu);
-        }
-        
+        if(cmd->payload.draw.type == PRIMITIVE_TYPE_LINES)
+            wireframe_3d_mode(gpu);
+        else if(cmd->payload.draw.type == PRIMITIVE_TYPE_TRIANGLES)
+            triangles_3d_mode(gpu);
+        //printf("[CMD] Draw primitive\n");
         break;
     case CMD_NOOP:
         DEBUG_PRINT("[CMD] NOP\n");
@@ -207,9 +204,13 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case REG_FRAMEBUFFER_ADDR:
         target_reg = &s->framebuffer_vram_offset;
         break;
+    case REG_ZBUFFER_ADDR:
+         target_reg = &s->zbuffer_addr;
+        break;
     case REG_GPU_TIME_ADDR:
         fprintf(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
         return;
+
     default:
         fprintf(stderr, "GPU MMIO WRITE: Unhandled base offset 0x%" PRIx64 " (val: 0x%lx, size: %u)\n", base_addr, val, size);
         return;
@@ -244,32 +245,35 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
 
     switch (base_addr)
     {
-    case 0x00:
+    case REG_GPU_MODE_ADDR:
         reg_val = s->gpu_mode;
         break;
-    case 0x04:
+    case REG_RING_BUFFER_HEAD_ADDR:
         reg_val = s->ring_buffer_head;
         break;
-    case 0x08:
+    case REG_RING_BUFFER_TAIL_ADDR:
         reg_val = s->ring_buffer_tail;
         break;
-    case 0x10:
+    case REG_VERTEX_SHADER_ADDR:
         reg_val = s->vs_code_addr;
         break;
-    case 0x14:
+    case REG_FRAGMENT_SHADER_ADDR:
         reg_val = s->fs_code_addr;
         break;
-    case 0x18:
+    case REG_FB_WIDTH_ADDR:
         reg_val = s->width;
         break;
-    case 0x1C:
+    case REG_FB_HEIGHT_ADDR:
         reg_val = s->height;
         break;
-    case 0x20:
+    case REG_FRAMEBUFFER_ADDR:
         reg_val = s->framebuffer_vram_offset;
         break;
-    case 0x24:
+    case REG_GPU_TIME_ADDR:
         reg_val = s->gpu_time;
+        break;
+    case REG_ZBUFFER_ADDR:
+        reg_val = s->zbuffer_addr;
         break;
     default:
         fprintf(stderr, "GPU MMIO READ: Unhandled base offset 0x%" PRIx64 "\n", base_addr);
@@ -349,67 +353,6 @@ static void gpu_class_init(ObjectClass *class, const void *data)
     k->class_id = PCI_CLASS_DISPLAY_OTHER;
 }
 
-// static float angle = 0;
-
-// static void timer_callback(void *opaque)
-// {
-
-//     GpuState *gpu = opaque;
-//     angle += 0.02f;
-//     Mat4  mvp1, mvp2;
-//     {
-//         Mat4  ry        = mat4_rotate_y(angle);
-//         Mat4  rx        = mat4_rotate_x(0.2);
-//         Mat4  scale     = mat4_scale_uniform(0.5);
-//         Mat4  model     = mat4_mul(&ry,&rx);
-//         model           = mat4_mul(&scale,&model);
-//         Mat4  translate = mat4_translate(0, 0, 5);
-//         model           = mat4_mul(&translate, &model);
-
-//         Mat4  proj      = mat4_perspective(PI/3, (float)640/480, 1.0f, 10.0f);
-//         mvp1 = mat4_mul(&proj, &model);
-//     }
-//     memcpy(gpu->vram_ptr + 0x19b000, &mvp1, sizeof(mvp1));
-
-//     {
-//         Mat4  ry        = mat4_rotate_y(angle*2);
-//         Mat4  rx        = mat4_rotate_x(0);
-//         Mat4  scale     = mat4_scale_uniform(0.25);
-//         Mat4  model     = mat4_mul(&ry,&rx);
-//         model           = mat4_mul(&scale,&model);
-//         Mat4  translate = mat4_translate(0, 1, 5);
-//         model           = mat4_mul(&translate, &model);
-
-//         Mat4  proj      = mat4_perspective(PI/3, (float)640/480, 1.0f, 10.0f);
-//         mvp2 = mat4_mul(&proj, &model);
-//     }
-//     memcpy(gpu->vram_ptr + 0x21b000, &mvp2, sizeof(mvp2));
-
-//     uint32_t offset = 0x14b000;
-//     uint8_t *ring_buffer_base = gpu->vram_ptr + offset;
-
-//     GenericBufferConfig vbo_conf  = {.element_type = D_TYPE_VEC3, .size = 8, .addr = 0x15b000};
-//     GenericBufferConfig edge_conf = {.element_type = D_TYPE_VEC2, .size = 13, .addr = 0x16b000};
-//     GenericBufferConfig uniform   = {.element_type = D_TYPE_MAT4, .size = sizeof(Mat4), .addr = 0x19b000};
-//     GenericBufferConfig uniform2   = {.element_type = D_TYPE_MAT4, .size = sizeof(Mat4), .addr = 0x21b000};
-
-//     CMD_BEGIN();
-//     CMD_CLEAR_FB(ring_buffer_base);
-//     CMD_SET_VBO(ring_buffer_base, vbo_conf);
-//     CMD_SET_EDGE(ring_buffer_base, edge_conf);
-//     CMD_SET_UBO(ring_buffer_base, uniform);
-//     CMD_SET_SHADERS(ring_buffer_base, 0x18b000, 0x19c000);
-//     CMD_DRAW_WIREFRAME(ring_buffer_base);
-//     CMD_SET_UBO(ring_buffer_base, uniform2);
-//     CMD_DRAW_WIREFRAME(ring_buffer_base);
-//     CMD_DBG_END(offset);
-
-//     gpu->gpu_mode = GPU_MODE_3D;
-//     process_ring_buffer(gpu);
-//     timer_mod(gpu->timer,
-//               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 10000000ULL);
-// }
-
 /* Realize GPU device */
 static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 {
@@ -433,40 +376,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->width = 640;
     gpu->gpu_mode = GPU_MODE_GOP;
     gpu->framebuffer_vram_offset = 0x0000000;
-    gpu->ring_buffer_head = 0;
-    gpu->ring_buffer_tail = 0;
-    
-
-    // DEBUG_PRINT("[INIT] Ring Buffer starts at VRAM offset 0x%x\n", 0);
-
-
-
-    //  Vec3 cube_vertices[] = {
-    //     { -1, -1, -1, 0xFFFF0000 },
-    //     {  1, -1, -1, 0xFF00FF00 },
-    //     {  1,  1, -1, 0xFF0000FF },
-    //     { -1,  1, -1, 0xFFFFFF00 }, 
-    //     { -1, -1,  1, 0xFFFF00FF },
-    //     {  1, -1,  1, 0xFF00FFFF },
-    //     {  1,  1,  1, 0xFFFFFFFF }, 
-    //     { -1,  1,  1, 0xFF808080 }  
-    // };
-    // memcpy(gpu->vram_ptr + 0x15b000, cube_vertices, sizeof(cube_vertices));
-    // Edge cube_edges[] = {
-    // {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7},{5,3}
-    // };
-    // memcpy(gpu->vram_ptr + 0x16b000, cube_edges, sizeof(cube_edges));
-    
-
-    // uint64_t bin_shader[] = { 0x80000916, 0x0, 0xC5010901, 0x8, 0x80010906, 0x0, 0x907, 0x0 };
-    // memcpy(gpu->vram_ptr + 0x18b000,bin_shader, sizeof(bin_shader));
-
-    // uint64_t bin_fragment_shader[] ={ 0xFF000A0900, 0x0, 0xB0900, 0x0, 0xC0900, 0x0, 0x801000408, 0x12C, 0x64000C0800, 0x0, 0xA0800, 0x0, 0x907, 0x0 };
-    // memcpy(gpu->vram_ptr + 0x19c000 , bin_fragment_shader, sizeof(bin_fragment_shader));
-  
-
-    // gpu->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, timer_callback, gpu);
-    // timer_mod(gpu->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000000ULL);
+    printf("[INIT] Ring Buffer starts at VRAM offset 0x%x\n", 0);
 }
 
 /* Uninitialize GPU device */

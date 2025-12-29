@@ -1,5 +1,4 @@
 #include "math3d.h"
-
 Mat4 mat4_mul(Mat4 *a, Mat4 *b) 
 {
     Mat4 r = {0};

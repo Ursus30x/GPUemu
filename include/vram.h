@@ -173,6 +173,17 @@ typedef struct __attribute__((packed)) {
     memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
     current_offset += cmd_size; \
 }
+
+#define CMD_DRAW_TRIANGLES(ring_buffer_base) \
+{ \
+   Command cmd1 = { \
+        .opcode = CMD_DRAW_PRIMITIVE, \
+        .payload.draw = { \
+            .type = PRIMITIVE_TYPE_TRIANGLES}}; \
+    memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
+    current_offset += cmd_size; \
+}
+
 #define CMD_SET_SHADERS(ring_buffer_base, vs, fs) \
 { \
     Command cmd1 = { \
