@@ -4,6 +4,7 @@
 #include "math3d.h"
 #include "renderer.h"
 #include "debug_gpu.h"
+
 DECLARE_INSTANCE_CHECKER(GpuState, GPU, TYPE_PCI_GPU_DEVICE);
 
 static void pci_gpu_register_types(void);
@@ -47,6 +48,8 @@ static void gpu_print_mmio(GpuState *s)
     DEBUG_PRINT("0x1C [HEIGHT]:           %u\n", s->height);
     DEBUG_PRINT("0x20 [FB_ADDR]:          0x%08x\n", s->framebuffer_vram_offset);
     DEBUG_PRINT("0x24 [GPU_TIME]:         %u\n", s->gpu_time);
+    DEBUG_PRINT("0x2C [ZBUFFER]:          0x%08x\n", s->zbuffer_addr);
+
     DEBUG_PRINT("----------------------------------\n");
 }
 
@@ -68,8 +71,8 @@ static void execute_command(GpuState *gpu, Command *cmd)
         DEBUG_PRINT("[CMD] Clear FB %x \n", (gpu->width * gpu->height));
         for (uint32_t i = 0; i < (gpu->width * gpu->height); i++)
         {
-             FB(gpu)[i] = 0xff000000;
-             Z_BUFFER(gpu)[i] = FLT_MAX;
+            FB(gpu)[i] = 0xff000000;
+            Z_BUFFER(gpu)[i] = FLT_MAX;
         }
         break;
     case CMD_SET_STATE:
@@ -201,12 +204,13 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case REG_FRAMEBUFFER_ADDR:
         target_reg = &s->framebuffer_vram_offset;
         break;
+    case REG_ZBUFFER_ADDR:
+         target_reg = &s->zbuffer_addr;
+        break;
     case REG_GPU_TIME_ADDR:
         fprintf(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
         return;
-    case REG_ZBUFFER_ADDR:
-         target_reg = &s->zbuffer_addr;
-        return;
+
     default:
         fprintf(stderr, "GPU MMIO WRITE: Unhandled base offset 0x%" PRIx64 " (val: 0x%lx, size: %u)\n", base_addr, val, size);
         return;
@@ -244,10 +248,10 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
     case REG_GPU_MODE_ADDR:
         reg_val = s->gpu_mode;
         break;
-    case REG_RING_BUFFER_HEAD:
+    case REG_RING_BUFFER_HEAD_ADDR:
         reg_val = s->ring_buffer_head;
         break;
-    case REG_RING_BUFFER_TAIL:
+    case REG_RING_BUFFER_TAIL_ADDR:
         reg_val = s->ring_buffer_tail;
         break;
     case REG_VERTEX_SHADER_ADDR:

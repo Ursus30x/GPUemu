@@ -63,9 +63,11 @@ typedef struct GpuState {
     uint8_t *vram_ptr;            
 
 
-    uint32_t gpu_mode;            // 0x00
-    uint32_t ring_buffer_head;    // 0x04
-    uint32_t ring_buffer_tail;    // 0x08
+    uint32_t gpu_mode;            
+    uint32_t ring_buffer_head;
+    uint32_t ring_buffer_tail;
+    uint32_t ring_buffer_start;
+    uint32_t ring_buffer_end;
     uint32_t vs_code_addr;        // 0x10
     uint32_t fs_code_addr;        // 0x14
     uint32_t width;               // 0x18
