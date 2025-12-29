@@ -1,30 +1,37 @@
 # GPUemu
 
+![Icon](GPUemuIcon.png)
+
 ### What is this project?
 
-This is a uni project for System Firmware (Oprogramowanie Systemowe) course, that targets to emulate a PCI device in UEFI using QEMU. It's used as a learning tool to understand how PCI devices work and learn about some quirks of creating a valid PCI devices.
+This started as a university project for the System Firmware (*Oprogramowanie Systemowe*) course, intended to emulate a simple PCI device in UEFI using QEMU. The scope eventually expanded to a full GPU emulation, covering everything from PCI communication to shader assembly code, VRAM management, and a graphics API. It is mainly used as a learning tool to understand how GPUs work from the ground up.
 
-This GPU will present 2 modes, as a GPU passthrough for VGA and a simple 3D renderer.
+Currently, the GPU consists of a simple UEFI Driver, a shader assembler, and a few UEFI benchmark apps to demonstrate functionality.
 
-This project could be expanded upon to accept GPU kernel code and implement more complex grahpics pipelines, possible features are endless and probably only held back by this being simulated on CPU.
+This project could be extended in many ways, and the final product is not yet fully defined.
 
 ## Building
 
-Since most of this project relies on modification od QEMU and EDK2 projetcs, instead of creating two diffrent forks and mixing our code with their relative sources, we've decided to write our code as patches for both QEMU and EDK2.
+Since most of this project relies on modifying QEMU and EDK2 projects, we decided to avoid creating two different forks. Instead, we write our code as patches for both QEMU and EDK2 sources.
 
 Here are the instructions:
-- Make sure that all submodules are downloaded and uptodate
 
-- Run `scripts/apply_patches.sh` - This prepares submodules, applies patches to them and symlinks directories to respective submodules.
+-   Run `scripts/apply_patches.sh`
+    -   This prepares submodules, applies patches to them, and symlinks directories to their respective submodules.
 
-- Run `scripts/build_all.sh` - Builds both QEMU and EDK2 with 
+-   Run `scripts/build_all.sh`
+    -   This builds both QEMU and EDK2. The default build type is `DEBUG`. You can use different build types by passing the name as a parameter (currently supports only `RELEASE`).
 
 ## Running
 
-To run UEFI Shell using our card run `scripts/run.sh`.
+To run the UEFI Shell using our card, run `scripts/run.sh`.
+
+This launches QEMU with our device as a video output and links the `Build` directory of EDK2 with our benchmark apps.
+
+You can enter this directory from the UEFI shell by typing `FS0:` in the UEFI shell terminal.
 
 ## Documentation
 
-```
-TODO
-```
+Architectural specifications and choices are documented in `/docs`.
+
+APIs, the Driver, and the GPU are documented via comments within the code itself.

@@ -10,6 +10,7 @@ CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
 git submodule init 
 git submodule update --recursive
 
+rm -f .last_build_type
 ################################################
 ################# QEMU PATCHES #################
 ################################################
