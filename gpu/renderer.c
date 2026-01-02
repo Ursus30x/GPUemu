@@ -439,12 +439,14 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 if(val.f32 < min.f32) gpu->pRegs[instr.dest].f32 = min.f32;
                 else if(val.f32 > max.f32) gpu->pRegs[instr.dest].f32 = max.f32;
                 else gpu->pRegs[instr.dest].f32 = val.f32;
+                DEBUG_PRINT("CLAMP F32: %f -> %f\n", val.f32, gpu->pRegs[instr.dest].f32);
             }
             else 
             {
                 if(val.u32 < min.u32) gpu->pRegs[instr.dest].u32 = min.u32;
                 else if(val.u32 > max.u32) gpu->pRegs[instr.dest].u32 = max.u32;
                 else gpu->pRegs[instr.dest].u32 = val.u32;
+                DEBUG_PRINT("CLAMP U32: %u -> %u\n", val.u32, gpu->pRegs[instr.dest].u32);
             }
             break;
         }
@@ -453,9 +455,15 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
 
             if(instr.opType == OP_TYPE_F32)
+            {
                 gpu->pRegs[instr.dest].f32 = -a.f32;
+                DEBUG_PRINT("NEG F32: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);  
+            }
             else 
+            {
                 gpu->pRegs[instr.dest].u32 = (uint32_t)(-((int32_t)a.u32));   
+                DEBUG_PRINT("NEG U32: %u -> %u\n", a.u32, gpu->pRegs[instr.dest].u32);
+            }
             break;
         }
         case INSTR_RECIP:
@@ -463,7 +471,10 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
 
             if(instr.opType == OP_TYPE_F32)
+            {
                 gpu->pRegs[instr.dest].f32 = 1.0f / a.f32;
+                DEBUG_PRINT("RECIP F32: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
+            }
             else 
                 gpu->pRegs[instr.dest].u32 = (uint32_t)(1 / (float)(a.u32));   
             break;
@@ -472,6 +483,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         {
             InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
             gpu->pRegs[instr.dest].f32 = 1.0f / sqrtf(a.f32);
+            DEBUG_PRINT("RSQRT: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
             break;
         }
         case INSTR_MIN:
@@ -480,9 +492,15 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
 
             if(instr.opType == OP_TYPE_F32)
+            {
                 gpu->pRegs[instr.dest].f32 = fminf(a.f32, b.f32);
+                DEBUG_PRINT("MIN F32: %f, %f -> %f\n", a.f32, b.f32, gpu->pRegs[instr.dest].f32);
+            }
             else 
+            {
                 gpu->pRegs[instr.dest].u32 = (a.u32 < b.u32) ? a.u32 : b.u32;   
+                DEBUG_PRINT("MIN U32: %u, %u -> %u\n", a.u32, b.u32, gpu->pRegs[instr.dest].u32);
+            }
             break;
         }
         case INSTR_MAX:
@@ -491,9 +509,15 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
 
             if(instr.opType == OP_TYPE_F32)
+            {
                 gpu->pRegs[instr.dest].f32 = fmaxf(a.f32, b.f32);
+                DEBUG_PRINT("MAX F32: %f, %f -> %f\n", a.f32, b.f32, gpu->pRegs[instr.dest].f32);
+            }
             else 
-                gpu->pRegs[instr.dest].u32 = (a.u32 > b.u32) ? a.u32 : b.u32;   
+            {
+                gpu->pRegs[instr.dest].u32 = (a.u32 > b.u32) ? a.u32 : b.u32;  
+                DEBUG_PRINT("MAX U32: %u, %u -> %u\n", a.u32, b.u32, gpu->pRegs[instr.dest].u32);
+            }
             break;
         }
         case INSTR_FMA:
@@ -507,6 +531,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             else 
                 gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) );      
             break;
+            DEBUG_PRINT("FMA: %u * %u + %u -> %u\n", a.u32, b.u32, c.u32, gpu->pRegs[instr.dest].u32);
         }
         case INSTR_MAD:
         {
@@ -519,6 +544,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             else 
                 gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) );      
             break;
+            DEBUG_PRINT("MAD: %u * %u + %u -> %u\n", a.u32, b.u32, c.u32, gpu->pRegs[instr.dest].u32);
         }
         case INSTR_SAT:
         {
@@ -529,12 +555,14 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 if(val.f32 < 0.0f) gpu->pRegs[instr.dest].f32 = 0.0f;
                 else if(val.f32 > 1.0f) gpu->pRegs[instr.dest].f32 = 1.0f;
                 else gpu->pRegs[instr.dest].f32 = val.f32;
+                DEBUG_PRINT("SAT F32: %f -> %f\n", val.f32, gpu->pRegs[instr.dest].f32);
             }
             else 
             {
                 if((int)val.u32 < 0) gpu->pRegs[instr.dest].u32 = 0;
                 else if(val.u32 > 255) gpu->pRegs[instr.dest].u32 = 255;
                 else gpu->pRegs[instr.dest].u32 = val.u32;
+                DEBUG_PRINT("SAT U32: %u -> %u\n", val.u32, gpu->pRegs[instr.dest].u32);
             }
             break;
         }
@@ -544,6 +572,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             InstrArg x = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
 
             gpu->pRegs[instr.dest].f32 = atan2f(y.f32, x.f32);
+            DEBUG_PRINT("ATAN2: y=%f, x=%f -> %f\n", y.f32, x.f32, gpu->pRegs[instr.dest].f32);
             break;
         }
         case INSTR_TAN:
@@ -551,6 +580,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
 
             gpu->pRegs[instr.dest].f32 = tanf(a.f32);
+            DEBUG_PRINT("TAN: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
             break;
         }
         case INSTR_PCMP:
@@ -561,6 +591,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 gpu->pRegs[instr.dest].u32 = cmp_f32(a.f32, b.f32, instr.cFlag);
             else 
                 gpu->pRegs[instr.dest].u32 = cmp_u32(a.u32, b.u32, instr.cFlag);   
+            DEBUG_PRINT("PCMP result: %u\n", gpu->pRegs[instr.dest].u32);
             break;
         }
         case INSTR_VEC3:
@@ -570,6 +601,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             InstrArg z = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
             Vec3Raw vec = {x.f32, y.f32, z.f32};
             gpu->regs[instr.dest].vec3 = vec;
+            print_mat4(&gpu->regs[instr.dest], "VEC3");
             break;
         }
     
@@ -577,6 +609,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         {
             Vec3Raw vec = gpu->regs[instr.arg0.u32].vec3;
             gpu->pRegs[instr.dest].f32 = sqrtf(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+            DEBUG_PRINT("LEN: %f\n", gpu->pRegs[instr.dest].f32);
             break;
         }
         case INSTR_NORM:
@@ -590,6 +623,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 vec.z /= len;
             }
             gpu->regs[instr.dest].vec3 = vec;
+            print_mat4(&gpu->regs[instr.dest], "NORM");
             break;
         }
         case INSTR_DOT:
@@ -597,6 +631,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             Vec3Raw v1 = gpu->regs[instr.arg0.u32].vec3;
             Vec3Raw v2 = gpu->regs[instr.arg1.u32].vec3;
             gpu->pRegs[instr.dest].f32 = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+            DEBUG_PRINT("DOT: %f\n", gpu->pRegs[instr.dest].f32);
             break;
         }
         case INSTR_CROSS:
@@ -608,6 +643,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             res.y = v1.z * v2.x - v1.x * v2.z;
             res.z = v1.x * v2.y - v1.y * v2.x;
             gpu->regs[instr.dest].vec3 = res;
+            print_mat4(&gpu->regs[instr.dest], "CROSS");
             break;
         }
         case INSTR_SIGN:
@@ -619,6 +655,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 if(a.f32 > 0.0f) gpu->pRegs[instr.dest].f32 = 1.0f;
                 else if(a.f32 < 0.0f) gpu->pRegs[instr.dest].f32 = -1.0f;
                 else gpu->pRegs[instr.dest].f32 = 0.0f;
+                DEBUG_PRINT("SIGN F32: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
             }
             else 
             {
@@ -626,6 +663,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 if(val > 0) gpu->pRegs[instr.dest].u32 = 1;
                 else if(val < 0) gpu->pRegs[instr.dest].u32 = (uint32_t)(-1);
                 else gpu->pRegs[instr.dest].u32 = 0;
+                DEBUG_PRINT("SIGN U32: %d -> %d\n", val, (int32_t)gpu->pRegs[instr.dest].u32);
             }
             break;
         }
@@ -633,6 +671,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         {
             uint32_t target = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0).u32;
             program_address = program_begin + target;
+            DEBUG_PRINT("JMP to %u\n", target);
             continue;
         }
         case INSTR_EXIT:
