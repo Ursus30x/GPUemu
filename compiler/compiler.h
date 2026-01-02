@@ -35,6 +35,7 @@
 #define TOKEN_DIVF "divf"
 #define TOKEN_MOD "mod"
 #define TOKEN_COL "col"
+#define TOKEN_COLV3 "colv3"
 #define TOKEN_FSAN "fsan"
 #define TOKEN_BLENDI "blendi"
 #define TOKEN_BLENDF "blendf"
@@ -60,7 +61,6 @@
 #define TOKEN_PCMPI   "pcmpi"
 #define TOKEN_PCMPF   "pcmpf"
 #define TOKEN_NORMV3   "normv3"
-
 #define TOKEN_MINI   "mini"
 #define TOKEN_MINF   "minf"
 #define TOKEN_MAXI   "maxi"
@@ -75,6 +75,7 @@
 #define TOKEN_DOTV3  "dotv3"
 #define TOKEN_CROSSV3 "crossv3"
 #define TOKEN_LENV3  "lenv3"
+#define TOKEN_LENF   "lenf"
 #define TOKEN_FMAF   "fmaf"
 #define TOKEN_FMAI   "fmai"
 #define TOKEN_MADI   "madi"
@@ -86,6 +87,7 @@
 #define TOKEN_VEC3 "vec3"
 #define TOKEN_TAN "tan"
 #define TOKEN_ATAN "atan"
+#define TOKEN_EXP "exp"
 
 
 #define TOKEN_REG_M 'm'

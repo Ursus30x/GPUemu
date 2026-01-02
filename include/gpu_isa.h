@@ -118,7 +118,8 @@ typedef enum {
     INSTR_SIGN,    // sign(x)
     INSTR_VEC3,
     INSTR_TAN,
-    INSTR_ATAN
+    INSTR_ATAN,
+    INSTR_EXP
 } InstrOpcode;
 
 

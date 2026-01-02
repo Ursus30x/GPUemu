@@ -84,7 +84,7 @@ typedef struct GpuState {
     Preg pRegs[REG_P_GEN_SIZE];
                      
     // fragment pseudo regs
-    uint32_t px, py;                  
+    float px, py;                  
     uint32_t pr, pg, pb;   
     // vector pseudo regs
     Mat4 v_out;
