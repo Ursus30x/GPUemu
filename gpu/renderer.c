@@ -267,21 +267,112 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 print_mat4(&gpu->regs[instr.dest], "MUL");
                 break;
             }
+            if (instr.opType == OP_TYPE_VEC3)
+            {
+                Mat4 *a =  &gpu->regs[instr.arg0.u32];
+                Vec3Raw b = gpu->regs[instr.arg1.u32].vec3;
+                Vec4 b4 = {b.x, b.y, b.z, 1.0f};
+                Vec4 res = mat4_mul_vec4(a,b4);
+                gpu->regs[instr.dest].vec3.x = res.x;
+                gpu->regs[instr.dest].vec3.y = res.y;
+                gpu->regs[instr.dest].vec3.z = res.z;
+                print_mat4(&gpu->regs[instr.dest], "MUL");
+                break;
+            }
            ARITHMETIC_OP(*=);
            break;
         }
         case INSTR_ADD:
         {
+            if(instr.opType == OP_TYPE_VEC4)
+            {
+                Vec4 a = gpu->regs[instr.arg0.u32].right;
+                Vec4 b = gpu->regs[instr.arg1.u32].right;
+                if(instr.arg1.u32 == REG_M_IN)
+                    b = gpu->v_pos.right;
+                Vec4 res = vec4_add(a,b);
+                gpu->regs[instr.dest].right = res;
+                print_mat4(&gpu->regs[instr.dest], "ADD");
+                break;
+            }
+            if (instr.opType == OP_TYPE_VEC3)
+            {
+                Vec3Raw a = gpu->regs[instr.arg0.u32].vec3;
+                Vec3Raw b = gpu->regs[instr.arg1.u32].vec3;
+                Vec3Raw res;
+                res.x = a.x + b.x;
+                res.y = a.y + b.y;
+                res.z = a.z + b.z;
+                gpu->regs[instr.dest].vec3 = res;
+                print_mat4(&gpu->regs[instr.dest], "ADD");
+                break;
+            }
+            
             ARITHMETIC_OP(+=);
             break;
         }
         case INSTR_SUB:
         {
+            if (instr.opType == OP_TYPE_VEC4)
+            {
+                Vec4 a = gpu->regs[instr.arg0.u32].right;
+                Vec4 b = gpu->regs[instr.arg1.u32].right;
+                if(instr.arg1.u32 == REG_M_IN)
+                    b = gpu->v_pos.right;
+                Vec4 res;
+                res.x = a.x - b.x;
+                res.y = a.y - b.y;
+                res.z = a.z - b.z;
+                res.w = a.w - b.w;
+                gpu->regs[instr.dest].right = res;
+                print_mat4(&gpu->regs[instr.dest], "SUB");
+                break;
+            }
+            if (instr.opType == OP_TYPE_VEC3)
+            {
+                Vec3Raw a = gpu->regs[instr.arg0.u32].vec3;
+                Vec3Raw b = gpu->regs[instr.arg1.u32].vec3;
+                Vec3Raw res;
+                res.x = a.x - b.x;
+                res.y = a.y - b.y;
+                res.z = a.z - b.z;
+                gpu->regs[instr.dest].vec3 = res;
+                print_mat4(&gpu->regs[instr.dest], "SUB");
+                break;
+            }
+            
             ARITHMETIC_OP(-=);
             break;
         }
         case INSTR_DIV:
         {
+            if(instr.opType == OP_TYPE_VEC4)
+            {
+                Vec4 a = gpu->regs[instr.arg0.u32].right;
+                Vec4 b = gpu->regs[instr.arg1.u32].right;
+                if(instr.arg1.u32 == REG_M_IN)
+                    b = gpu->v_pos.right;
+                Vec4 res;
+                res.x = a.x / b.x;
+                res.y = a.y / b.y;
+                res.z = a.z / b.z;
+                res.w = a.w / b.w;
+                gpu->regs[instr.dest].right = res;
+                print_mat4(&gpu->regs[instr.dest], "DIV");
+                break;
+            }
+            if (instr.opType == OP_TYPE_VEC3)
+            {
+                Vec3Raw a = gpu->regs[instr.arg0.u32].vec3;
+                Vec3Raw b = gpu->regs[instr.arg1.u32].vec3;
+                Vec3Raw res;
+                res.x = a.x / b.x;
+                res.y = a.y / b.y;
+                res.z = a.z / b.z;
+                gpu->regs[instr.dest].vec3 = res;
+                print_mat4(&gpu->regs[instr.dest], "DIV");
+                break;
+            }
             ARITHMETIC_OP(/=);
             break;
         }
