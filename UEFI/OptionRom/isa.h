@@ -1,1 +1,1 @@
-/home/julian/Desktop/c/GPUemu/include/isa.h
+/home/julian/Desktop/c/GPUemu/include/gpu_isa.h
