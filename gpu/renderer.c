@@ -116,6 +116,7 @@ static inline InstrArg get_arg_scalar_value(GpuState *gpu, uint8_t argType, Inst
 void exec_shader(GpuState *gpu, uint32_t program_offset)
 {
     void *program_address = gpu->vram_ptr+program_offset;
+    void *program_begin =program_address;
     int end = 1;
     do{ 
         Instr instr = *(Instr*)program_address;
@@ -221,7 +222,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         // a + (b - a) * t
         case INSTR_LERP:
         {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg1);
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
             InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
             InstrArg t = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
 
@@ -235,7 +236,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         // a * (1 - weight) + b * weight
         case INSTR_BLEND:
         {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg1);
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
             InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
             InstrArg w = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
 
@@ -304,7 +305,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         }
         case INSTR_TRANS:
         {
-            InstrArg x = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg1);
+            InstrArg x = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
             InstrArg y = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
             InstrArg z = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
             gpu->regs[instr.dest] = mat4_translate(x.u32, y.u32, z.u32);
@@ -335,6 +336,213 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 break;
             } 
             break;
+        }
+        case INSTR_CLAMP:
+        {
+            InstrArg val = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            InstrArg min = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            InstrArg max = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
+
+            if(instr.opType == OP_TYPE_F32)
+            {
+                if(val.f32 < min.f32) gpu->pRegs[instr.dest].f32 = min.f32;
+                else if(val.f32 > max.f32) gpu->pRegs[instr.dest].f32 = max.f32;
+                else gpu->pRegs[instr.dest].f32 = val.f32;
+            }
+            else 
+            {
+                if(val.u32 < min.u32) gpu->pRegs[instr.dest].u32 = min.u32;
+                else if(val.u32 > max.u32) gpu->pRegs[instr.dest].u32 = max.u32;
+                else gpu->pRegs[instr.dest].u32 = val.u32;
+            }
+            break;
+        }
+        case INSTR_NEG:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].f32 = -a.f32;
+            else 
+                gpu->pRegs[instr.dest].u32 = (uint32_t)(-((int32_t)a.u32));   
+            break;
+        }
+        case INSTR_RECIP:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].f32 = 1.0f / a.f32;
+            else 
+                gpu->pRegs[instr.dest].u32 = (uint32_t)(1 / (float)(a.u32));   
+            break;
+        }
+        case INSTR_RSQRT:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            gpu->pRegs[instr.dest].f32 = 1.0f / sqrtf(a.f32);
+            break;
+        }
+        case INSTR_MIN:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].f32 = fminf(a.f32, b.f32);
+            else 
+                gpu->pRegs[instr.dest].u32 = (a.u32 < b.u32) ? a.u32 : b.u32;   
+            break;
+        }
+        case INSTR_MAX:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].f32 = fmaxf(a.f32, b.f32);
+            else 
+                gpu->pRegs[instr.dest].u32 = (a.u32 > b.u32) ? a.u32 : b.u32;   
+            break;
+        }
+        case INSTR_FMA:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            InstrArg c = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
+
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].f32 = a.f32 * b.f32 + c.f32;
+            else 
+                gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) );      
+            break;
+        }
+        case INSTR_MAD:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            InstrArg c = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
+
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].f32 = a.f32 * b.f32 + c.f32;
+            else 
+                gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) );      
+            break;
+        }
+        case INSTR_SAT:
+        {
+            InstrArg val = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+
+            if(instr.opType == OP_TYPE_F32)
+            {
+                if(val.f32 < 0.0f) gpu->pRegs[instr.dest].f32 = 0.0f;
+                else if(val.f32 > 1.0f) gpu->pRegs[instr.dest].f32 = 1.0f;
+                else gpu->pRegs[instr.dest].f32 = val.f32;
+            }
+            else 
+            {
+                if((int)val.u32 < 0) gpu->pRegs[instr.dest].u32 = 0;
+                else if(val.u32 > 255) gpu->pRegs[instr.dest].u32 = 255;
+                else gpu->pRegs[instr.dest].u32 = val.u32;
+            }
+            break;
+        }
+        case INSTR_ATAN:
+        {
+            InstrArg y = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            InstrArg x = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+
+            gpu->pRegs[instr.dest].f32 = atan2f(y.f32, x.f32);
+            break;
+        }
+        case INSTR_TAN:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+
+            gpu->pRegs[instr.dest].f32 = tanf(a.f32);
+            break;
+        }
+        case INSTR_PCMP:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            if(instr.opType == OP_TYPE_F32)
+                gpu->pRegs[instr.dest].u32 = cmp_f32(a.f32, b.f32, instr.cFlag);
+            else 
+                gpu->pRegs[instr.dest].u32 = cmp_u32(a.u32, b.u32, instr.cFlag);   
+            break;
+        }
+        case INSTR_VEC3:
+        {
+            InstrArg x = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+            InstrArg y = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
+            InstrArg z = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
+            Vec3Raw vec = {x.f32, y.f32, z.f32};
+            gpu->regs[instr.dest].vec3 = vec;
+            break;
+        }
+    
+        case INSTR_LEN:
+        {
+            Vec3Raw vec = gpu->regs[instr.arg0.u32].vec3;
+            gpu->pRegs[instr.dest].f32 = sqrtf(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+            break;
+        }
+        case INSTR_NORM:
+        {
+            Vec3Raw vec = gpu->regs[instr.arg0.u32].vec3;
+            float len = sqrtf(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+            if(len > 0.0f)
+            {
+                vec.x /= len;
+                vec.y /= len;
+                vec.z /= len;
+            }
+            gpu->regs[instr.dest].vec3 = vec;
+            break;
+        }
+        case INSTR_DOT:
+        {
+            Vec3Raw v1 = gpu->regs[instr.arg0.u32].vec3;
+            Vec3Raw v2 = gpu->regs[instr.arg1.u32].vec3;
+            gpu->pRegs[instr.dest].f32 = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+            break;
+        }
+        case INSTR_CROSS:
+        {
+            Vec3Raw v1 = gpu->regs[instr.arg0.u32].vec3;
+            Vec3Raw v2 = gpu->regs[instr.arg1.u32].vec3;
+            Vec3Raw res;
+            res.x = v1.y * v2.z - v1.z * v2.y;
+            res.y = v1.z * v2.x - v1.x * v2.z;
+            res.z = v1.x * v2.y - v1.y * v2.x;
+            gpu->regs[instr.dest].vec3 = res;
+            break;
+        }
+        case INSTR_SIGN:
+        {
+            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
+
+            if(instr.opType == OP_TYPE_F32)
+            {
+                if(a.f32 > 0.0f) gpu->pRegs[instr.dest].f32 = 1.0f;
+                else if(a.f32 < 0.0f) gpu->pRegs[instr.dest].f32 = -1.0f;
+                else gpu->pRegs[instr.dest].f32 = 0.0f;
+            }
+            else 
+            {
+                int32_t val = (int32_t)a.u32;
+                if(val > 0) gpu->pRegs[instr.dest].u32 = 1;
+                else if(val < 0) gpu->pRegs[instr.dest].u32 = (uint32_t)(-1);
+                else gpu->pRegs[instr.dest].u32 = 0;
+            }
+            break;
+        }
+        case INSTR_JMP:
+        {
+            uint32_t target = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0).u32;
+            program_address = program_begin + target;
+            continue;
         }
         case INSTR_EXIT:
             end = 0;
