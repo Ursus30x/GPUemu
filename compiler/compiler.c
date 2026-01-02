@@ -33,6 +33,7 @@ static const TokenDef token_defs[] = {
     { TOKEN_MULV3,  INSTR_MUL,   OP_TYPE_VEC3,   2, FORMAT_D_A_B },
     { TOKEN_MOD,    INSTR_MOD,   OP_TYPE_U32,    2, FORMAT_D_A_B },
     { TOKEN_COL,    INSTR_COL,   OP_TYPE_U32,    3, FORMAT_D_A_B_C },
+    { TOKEN_COLV3,  INSTR_COL,   OP_TYPE_VEC3,   0, FORMAT_D},
     { TOKEN_FSAN,   INSTR_FSAN,  OP_TYPE_F32,    0, FORMAT_D },
     { TOKEN_BLENDI, INSTR_BLEND, OP_TYPE_U32,    3, FORMAT_D_A_B_C },
     { TOKEN_BLENDF, INSTR_BLEND, OP_TYPE_F32,    3, FORMAT_D_A_B_C },
@@ -48,7 +49,7 @@ static const TokenDef token_defs[] = {
     { TOKEN_LDUM,   INSTR_LDU,   OP_TYPE_MATRIX, 1, FORMAT_D_A },
     { TOKEN_LDUV,   INSTR_LDU,   OP_TYPE_VEC4,   1, FORMAT_D_A },
     { TOKEN_LDUI,   INSTR_LDU,   OP_TYPE_U32,    1, FORMAT_D_A },
-    { TOKEN_LDUF,   INSTR_LDU,   OP_TYPE_F32,    1, FORMAT_D_A },
+    { TOKEN_LDUF,   INSTR_LDU,   OP_TYPE_F32,    1, FORMAT_D_A }, 
     { TOKEN_JMP,    INSTR_JMP,   OP_TYPE_U32,    1, FORMAT_JMP },
     { TOKEN_AND,    INSTR_AND,   OP_TYPE_U32,    2, FORMAT_D_A_B },
     { TOKEN_OR,     INSTR_OR,    OP_TYPE_U32,    2, FORMAT_D_A_B },
@@ -71,6 +72,7 @@ static const TokenDef token_defs[] = {
     { TOKEN_DOTV3,  INSTR_DOT,   OP_TYPE_VEC3,   2, FORMAT_D_A_B  },
     { TOKEN_CROSSV3,INSTR_CROSS, OP_TYPE_VEC3,   2, FORMAT_D_A_B  },
     { TOKEN_LENV3,  INSTR_LEN,   OP_TYPE_VEC3,   1, FORMAT_D_A    },
+    { TOKEN_LENF,   INSTR_LEN,   OP_TYPE_F32,    2, FORMAT_D_A_B  },
     { TOKEN_FMAF,   INSTR_FMA,   OP_TYPE_F32,    3, FORMAT_D_A_B_C},
     { TOKEN_FMAI,   INSTR_FMA,   OP_TYPE_U32,    3, FORMAT_D_A_B_C},
     { TOKEN_MADI,   INSTR_MAD,   OP_TYPE_U32,    3, FORMAT_D_A_B_C},
@@ -79,9 +81,10 @@ static const TokenDef token_defs[] = {
     { TOKEN_SIGNF,  INSTR_SIGN,  OP_TYPE_F32,    1, FORMAT_D_A    },
     { TOKEN_SIGNI,  INSTR_SIGN,  OP_TYPE_U32,    1, FORMAT_D_A    },
     { TOKEN_SIGNV3, INSTR_SIGN,  OP_TYPE_VEC3,   1, FORMAT_D_A    },
-    { TOKEN_VEC3,   INSTR_VEC3,  OP_TYPE_U32,    1, FORMAT_D_A_B_C}, // to do in pregs out m reg
+    { TOKEN_VEC3,   INSTR_VEC3,  OP_TYPE_VEC3,   3, FORMAT_D_A_B_C}, // pregs in, M reg out
     { TOKEN_TAN,    INSTR_TAN,   OP_TYPE_F32,    1, FORMAT_D_A    },
-    { TOKEN_ATAN,   INSTR_ATAN,  OP_TYPE_F32,    2, FORMAT_D_A_B  }
+    { TOKEN_ATAN,   INSTR_ATAN,  OP_TYPE_F32,    2, FORMAT_D_A_B  },
+    { TOKEN_EXP,    INSTR_EXP,   OP_TYPE_F32,    1, FORMAT_D_A    },
 };
 
 static const size_t num_token_defs = sizeof(token_defs) / sizeof(token_defs[0]);
@@ -462,7 +465,7 @@ arg_data parse_arg(Assembler *as, const char* tok, const TokenDef *def, int pass
     if (isdigit(tok[0]) || (tok[0] == '-' && isdigit(tok[1]))) 
     {
         arg.type = ARG_TYPE_IMM;
-        if (def->opType == OP_TYPE_F32) arg.val.f32 = strtof(tok, &endptr);
+        if (def->opType == OP_TYPE_F32 || def->opType == OP_TYPE_VEC3) arg.val.f32 = strtof(tok, &endptr);
         else arg.val.u32 = (uint32_t)strtol(tok, &endptr, 0);
         return arg;
     }
@@ -482,8 +485,8 @@ arg_data parse_arg(Assembler *as, const char* tok, const TokenDef *def, int pass
 
 void print_instr_debug(const char *tok, const Instr* instr) 
 {
-    printf("[DEBUG] %-10s | Opcode: %u, CFlag: %u, Dest: %u, Arg0: 0x%08x, Arg1: 0x%08x\n", 
-           tok, instr->opcode, instr->cFlag, instr->dest, instr->arg0.u32, instr->arg1.u32);
+    printf("[DEBUG] %-10s | Opcode: %u, CFlag: %u, Dest: %u, Arg0: 0x%08x, Arg1: 0x%08x  Arg2: 0x%08x\n", 
+           tok, instr->opcode, instr->cFlag, instr->dest, instr->arg0.u32, instr->arg1.u32,instr->arg2.u32);
 }
 
 void process_instruction(Assembler *as, int pass) 
@@ -535,18 +538,55 @@ void process_instruction(Assembler *as, int pass)
         if (def->format != FORMAT_NONE && def->format != FORMAT_CMP && 
             def->format != FORMAT_A && def->format != FORMAT_JMP) 
             {
+            const char* dest_tok = peek(as);
+            if (!dest_tok) report_error(as, "Missing destination register");
+            /* Special-case: vec3-like operations require an M register as destination */
+            if ((def->opcode == INSTR_VEC3) || 
+                ((def->opcode == INSTR_MUL || def->opcode == INSTR_ADD || def->opcode == INSTR_SUB) && def->opType == OP_TYPE_VEC3)) {
+                if (dest_tok[0] != TOKEN_REG_M) report_error(as, "destination must be an M register for vec3 ops");
+            }
             instr.dest = parse_reg(as, consume(as), def->opType, 0);
         }
 
-        for (int i = 0; i < def->argc; i++) 
-        {
-            arg_data arg = parse_arg(as, consume(as), def, pass);
-            if (i == 0) 
-            { instr.arg0 = arg.val; instr.arg0Type = arg.type; }
-            else if (i == 1) 
-            { instr.arg1 = arg.val; instr.arg1Type = arg.type; }
-            else if (i == 2) 
-            { instr.arg2 = arg.val; instr.arg2Type = arg.type; }
+        /* Special parsing rules for mulv3/addv3/subv3: dest = mX; arg0 = mY; arg1 = pZ or imm(float) */
+        if ((def->opcode == INSTR_MUL || def->opcode == INSTR_ADD || def->opcode == INSTR_SUB) && def->opType == OP_TYPE_VEC3 && def->argc == 2) {
+            if (pass == 2) {
+                const char* a0tok = peek(as);
+                if (!a0tok) report_error(as, "Missing first argument for vec3 op");
+                if (a0tok[0] != TOKEN_REG_M) report_error(as, "First argument must be an M register for vec3 ops");
+                /* parse first arg as non-scalar register (allow M) */
+                instr.arg0Type = ARG_TYPE_REG;
+                instr.arg0.u32 = parse_reg(as, consume(as), def->opType, 0);
+
+                /* second arg can be preg or immediate (float) */
+                arg_data a1 = parse_arg(as, consume(as), def, pass);
+                if (a1.type == ARG_TYPE_REG) {
+                    /* ensure it's a P register by checking token prefix - parse_reg with force_scalar=1 already enforces this */
+                    instr.arg1Type = ARG_TYPE_REG;
+                    instr.arg1 = a1.val;
+                } else {
+                    instr.arg1Type = ARG_TYPE_IMM;
+                    instr.arg1 = a1.val;
+                }
+            } else {
+                /* pass 1: consume two args */
+                const char* a0tok = peek(as);
+                if (!a0tok) report_error(as, "Missing first argument for vec3 op");
+                if (a0tok[0] != TOKEN_REG_M) report_error(as, "First argument must be an M register for vec3 ops");
+                consume(as);
+                consume(as);
+            }
+        } else {
+            for (int i = 0; i < def->argc; i++) 
+            {
+                arg_data arg = parse_arg(as, consume(as), def, pass);
+                if (i == 0) 
+                { instr.arg0 = arg.val; instr.arg0Type = arg.type; }
+                else if (i == 1) 
+                { instr.arg1 = arg.val; instr.arg1Type = arg.type; }
+                else if (i == 2) 
+                { instr.arg2 = arg.val; instr.arg2Type = arg.type; }
+            }
         }
 
         uint64_t *raw = (uint64_t*)&instr;
@@ -558,9 +598,27 @@ void process_instruction(Assembler *as, int pass)
     } else {
         // Pass 1: skip appropriate amount of tokens to keep PC in sync
         if (def->format == FORMAT_CMP || def->format == FORMAT_PCMP) consume(as); // condition
+
         if (def->format != FORMAT_NONE && def->format != FORMAT_CMP && 
-            def->format != FORMAT_A && def->format != FORMAT_JMP) consume(as); // dest
-        for (int i = 0; i < def->argc; i++) consume(as);
+            def->format != FORMAT_A && def->format != FORMAT_JMP) {
+            const char* dest_tok = peek(as);
+            if (!dest_tok) report_error(as, "Missing destination register");
+            if ((def->opcode == INSTR_VEC3) || 
+                ((def->opcode == INSTR_MUL || def->opcode == INSTR_ADD || def->opcode == INSTR_SUB) && def->opType == OP_TYPE_VEC3)) {
+                if (dest_tok[0] != TOKEN_REG_M) report_error(as, "destination must be an M register for vec3 ops");
+            }
+            consume(as); // dest
+        }
+
+        if ((def->opcode == INSTR_MUL || def->opcode == INSTR_ADD || def->opcode == INSTR_SUB) && def->opType == OP_TYPE_VEC3 && def->argc == 2) {
+            const char* a0tok = peek(as);
+            if (!a0tok) report_error(as, "Missing first argument for vec3 op");
+            if (a0tok[0] != TOKEN_REG_M) report_error(as, "First argument must be an M register for vec3 ops");
+            consume(as);
+            consume(as);
+        } else {
+            for (int i = 0; i < def->argc; i++) consume(as);
+        }
     }
 
     as->current_pc++;
