@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 typedef struct { float x, y, z; uint32_t rgba; } Vec3;
+typedef struct { float x, y, z; } Vec3Raw;
 typedef struct { uint32_t a, b; } Edge;
 typedef struct { uint32_t a, b, c; } Triangle;
 typedef struct { float x, y, z, w;  } Vec4;
@@ -12,6 +13,7 @@ typedef union {
     float m[4][4]; 
     float elements[16];
     Vec4 rows[4]; 
+    Vec3Raw vec3;
     struct {
         Vec4 right;
         Vec4 up;
