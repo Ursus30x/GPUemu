@@ -1,7 +1,7 @@
 #ifndef COMPILER
 #define COMPILER
 
-#include "isa.h"
+#include "gpu_isa.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

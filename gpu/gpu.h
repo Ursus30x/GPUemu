@@ -12,7 +12,7 @@
 #include "ui/console.h"
 #include <stdint.h>
 #include <math.h>
-#include "isa.h"
+#include "gpu_isa.h"
 #include "gpu_hw.h"
 #include "vram.h"
 
