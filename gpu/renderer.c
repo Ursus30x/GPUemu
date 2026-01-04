@@ -105,7 +105,6 @@ static inline InstrArg get_arg_scalar_value(GpuState *gpu, uint8_t argType, Inst
     if(argType == ARG_TYPE_IMM) return arg;
         return gpu->pRegs[arg.u32];
 }
-static float timer = 0.0f;
 #define ARITHMETIC_OP(op) \
             InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0); \
             InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1); \
@@ -490,7 +489,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 DEBUG_PRINT("LDU U32: offset=%u, value=%u\n", offset, gpu->pRegs[instr.dest].u32);
                 break;
             case OP_TYPE_F32:
-                gpu->pRegs[instr.dest].f32 = timer; // Temporary fix for stability
+                gpu->pRegs[instr.dest].f32 =  *(float *)ptr;
                 DEBUG_PRINT("LDU F32: offset=%u, value=%f\n", offset, gpu->pRegs[instr.dest].f32);
             break;
 
@@ -840,7 +839,6 @@ void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
 }
 void gpu_render_triangles(void *opaque)
 {
-    timer += 0.016f; // Temporary timer increment for stability
     GpuState *gpu = opaque;
     if(gpu->gpu_mode == GPU_MODE_IDLE)//REG_EXEC_VERTEX_SHADER(gpu) == 1
     {
