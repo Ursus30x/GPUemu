@@ -201,11 +201,27 @@ arg_data parse_arg(Assembler *as, const char* tok, const TokenDef *def, int pass
     arg_data arg;
     char* endptr;
 
+    if (def->opcode == INSTR_VEC3) {
+        if (isdigit(tok[0]) || (tok[0] == '-' && isdigit(tok[1]))) {
+            arg.type = ARG_TYPE_IMM;
+            arg.val.f32 = strtof(tok, &endptr);
+            return arg;
+        }
+        arg.type = ARG_TYPE_REG;
+        arg.val.u32 = parse_reg(as, tok, OP_TYPE_VEC3, 1);
+        return arg;
+    }
+
     if (isdigit(tok[0]) || (tok[0] == '-' && isdigit(tok[1]))) 
     {
         arg.type = ARG_TYPE_IMM;
-        if (def->opType == OP_TYPE_F32 || def->opType == OP_TYPE_VEC3) arg.val.f32 = strtof(tok, &endptr);
-        else arg.val.u32 = (uint32_t)strtol(tok, &endptr, 0);
+        if (def->opcode == INSTR_LDU) {
+            arg.val.u32 = (uint32_t)strtol(tok, &endptr, 0);
+        } else if (def->opType == OP_TYPE_F32 || def->opType == OP_TYPE_VEC3) {
+            arg.val.f32 = strtof(tok, &endptr);
+        } else {
+            arg.val.u32 = (uint32_t)strtol(tok, &endptr, 0);
+        }
         return arg;
     }
     
@@ -218,7 +234,11 @@ arg_data parse_arg(Assembler *as, const char* tok, const TokenDef *def, int pass
     }
 
     arg.type = ARG_TYPE_REG;
-    arg.val.u32 = parse_reg(as, tok, def->opType, 1);
+    if (def->opcode == INSTR_LDU) {
+        arg.val.u32 = parse_reg(as, tok, OP_TYPE_U32, 1);
+    } else {
+        arg.val.u32 = parse_reg(as, tok, def->opType, 1);
+    }
     return arg;
 }
 
@@ -287,7 +307,6 @@ void process_instruction(Assembler *as, int pass)
             instr.dest = parse_reg(as, consume(as), def->opType, 0);
         }
 
-        /* Special parsing rules for mulv3/addv3/subv3: dest = mX; arg0 = mY; arg1 = pZ or imm(float) */
         if ((def->opcode == INSTR_MUL || def->opcode == INSTR_ADD || def->opcode == INSTR_SUB) && def->opType == OP_TYPE_VEC3 && def->argc == 2) {
             if (pass == 2) {
                 const char* a0tok = peek(as);
@@ -300,7 +319,6 @@ void process_instruction(Assembler *as, int pass)
                 /* second arg can be preg or immediate (float) */
                 arg_data a1 = parse_arg(as, consume(as), def, pass);
                 if (a1.type == ARG_TYPE_REG) {
-                    /* ensure it's a P register by checking token prefix - parse_reg with force_scalar=1 already enforces this */
                     instr.arg1Type = ARG_TYPE_REG;
                     instr.arg1 = a1.val;
                 } else {
