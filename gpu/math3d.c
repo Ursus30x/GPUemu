@@ -1,4 +1,14 @@
 #include "math3d.h"
+
+Vec4 vec4_add(Vec4 a, Vec4 b) 
+{
+    Vec4 r;
+    r.x = a.x + b.x;
+    r.y = a.y + b.y;
+    r.z = a.z + b.z;
+    r.w = a.w + b.w;
+    return r;
+}
 Mat4 mat4_mul(Mat4 *a, Mat4 *b) 
 {
     Mat4 r = {0};

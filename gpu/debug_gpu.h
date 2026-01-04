@@ -1,5 +1,6 @@
 #include "gpu.h"
 //#define DEBUG
+#define DEBUG_VAR __attribute__((unused))
 #ifdef DEBUG
   #define DEBUG_PRINT(...) printf(__VA_ARGS__)
   #define DEDUG_MAT

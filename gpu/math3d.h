@@ -1,6 +1,7 @@
 #include "gpu.h"
 #ifndef MATH3D
 #define MATH3D
+Vec4 vec4_add(Vec4 a, Vec4 b);
 Mat4 mat4_mul(Mat4 *a, Mat4 *b);
 Mat4 mat4_identity(void);
 Mat4 mat4_rotate_y(float angle);

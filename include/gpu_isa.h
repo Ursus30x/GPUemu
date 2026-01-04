@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 typedef struct { float x, y, z; uint32_t rgba; } Vec3;
+typedef struct { float x, y, z; } Vec3Raw;
 typedef struct { uint32_t a, b; } Edge;
 typedef struct { uint32_t a, b, c; } Triangle;
 typedef struct { float x, y, z, w;  } Vec4;
@@ -12,6 +13,7 @@ typedef union {
     float m[4][4]; 
     float elements[16];
     Vec4 rows[4]; 
+    Vec3Raw vec3;
     struct {
         Vec4 right;
         Vec4 up;
@@ -92,7 +94,32 @@ typedef enum {
     INSTR_SIN,    
     INSTR_COS,    
     INSTR_CAST,  
-    INSTR_LDU
+    INSTR_LDU,
+    INSTR_JMP,
+    INSTR_AND,
+    INSTR_OR,
+    INSTR_XOR,
+    INSTR_NOT,
+    INSTR_PCMP,
+    //ADD INSTRUCTIONS
+    INSTR_NORM, 
+    INSTR_MIN,
+    INSTR_MAX,
+    INSTR_CLAMP,   // min(max(x,a),b)
+    INSTR_NEG,     // -x
+    INSTR_RECIP,   // 1/x (szybsze niż DIV)
+    INSTR_RSQRT,   // 1/sqrt(x)
+    INSTR_DOT,     // dot(v1, v2)
+    INSTR_CROSS,   // cross(v1, v2)
+    INSTR_LEN,     // length(v)
+    INSTR_FMA,     // fused multiply-add (a*b + c)
+    INSTR_MAD,     // multiply-add
+    INSTR_SAT,     // saturate [0,1]
+    INSTR_SIGN,    // sign(x)
+    INSTR_VEC3,
+    INSTR_TAN,
+    INSTR_ATAN,
+    INSTR_EXP
 } InstrOpcode;
 
 
@@ -107,6 +134,7 @@ typedef enum {
     OP_TYPE_F32,
     OP_TYPE_MATRIX,
     OP_TYPE_VEC4,
+    OP_TYPE_VEC3,
 } OpType;
 
 typedef union {

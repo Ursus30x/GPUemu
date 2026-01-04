@@ -320,6 +320,8 @@ VOID Test3D(){
 }
 
 
+
+
 VOID Test3DTriangles(){
     EFI_INPUT_KEY Key;
 
@@ -426,7 +428,85 @@ VOID Test3DTriangles(){
 
     FpsCounterShowStats();
 }
+VOID FullScreenQuad() {
+    EFI_INPUT_KEY Key;
 
+    Vec3 vertices[] = {
+        {-0.5f, -0.5f, 0.0f, 0xFFFF00},
+        { 0.5f, -0.5f, 0.0f, 0xFFFF00}, 
+        {-0.5f,  0.5f, 0.0f, 0xFFFF00},
+        { 0.5f,  0.5f, 0.0f, 0xFFFF00}  
+    };
+
+    Triangle indices[] = {
+        {0, 1, 2}, 
+        {1, 3, 2}  
+    };
+    
+    UINT32 IndexCount = 6; 
+
+    UINT64 bin_vertex_shader[]   = { 0x80000916, 0x0, 0xC5010901, 0x8, 0x80010906, 0x0, 0x907, 0x0 };
+    UINT64 bin_fragment_shader[] = { 0x84100090B, 0x44200000, 0x94101090B, 0x43F00000, 0x41000901, 0x40000000, 0x4100090A, 0x3F800000, 0x141010901, 0x40000000, 0x14101090A, 0x3F800000, 0x41000901, 0x3FAAAAAA, 0x14502092D, 0x0, 0x145010926, 0x0, 0x4040000916, 0x0, 0x141030901, 0x41200000, 0x41040901, 0x40000000, 0x34503090A, 0x4, 0x341030913, 0x0, 0x241040901, 0x41200000, 0x41050901, 0x40400000, 0x445050909, 0x5, 0x541050914, 0x0, 0x345050909, 0x5, 0x545060909, 0x0, 0x64106092C, 0x0, 0x41070901, 0x3F000000, 0x54507090A, 0x7, 0x74107092C, 0x0, 0x41030901, 0x3E99999A, 0x541050901, 0x3F333333, 0x345080909, 0x5, 0x84108092C, 0x0, 0x61500092B, 0x800000007, 0x1000901, 0x3F000000, 0x1000909, 0x3F000000, 0x141010921, 0x0, 0x141010901, 0x40400000, 0x14102092E, 0x0, 0x5000901, 0x2, 0x90D, 0x0, 0x907, 0x0 };
+
+    mGOP3D->GpuSetMode(mGOP3D, 1); 
+
+    VRAMADDR hVBO, hIBO, hVS, hFS, hMVP1 = 0;
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+
+    Print(L"Rendering Full Screen Quad... Press Key to Exit.\n");
+    FpsCounterStart(); 
+    mTimerInit = FALSE; 
+
+    Mat4 mvp1;
+    Mat4_Identity(&mvp1); 
+
+    struct  UniformBuffer {
+        Mat4 mvp;
+        float iTime;
+    } uniform;
+    uniform.mvp = mvp1;
+
+    float time = 0.0f;
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        GetTimeSeconds(&time); 
+        uniform.iTime = time;
+        if(hMVP1 == 0){
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
+        } else {
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
+        }
+        
+        mGOP3D->GpuCmdBegin(mGOP3D);
+        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000); 
+        
+        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 4);
+        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 2);
+
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(struct UniformBuffer)); 
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount); 
+        
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);        
+
+        FpsCounterTick();
+    }
+
+    // --- Cleanup ---
+    FpsCounterStop();
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);    
+    mGOP3D->GpuSetMode(mGOP3D, 0); 
+    FpsCounterShowStats();
+}
 EFI_STATUS EFIAPI Test() {
     EFI_STATUS Status;
     EFI_INPUT_KEY Key;
@@ -470,10 +550,17 @@ EFI_STATUS EFIAPI Test() {
     WAIT_FOR_KEYPRESS()
 
     Print(L"Test 3D capabilities\n\nPress any key to test 3D\n");
+    WAIT_FOR_KEYPRESS()
+    Test3D();
+  
+    WAIT_FOR_KEYPRESS()
+    
+    Test3DTriangles();
     
     WAIT_FOR_KEYPRESS()
-
-    Test3DTriangles();
+    
+    FullScreenQuad();
+    
 
     DEBUG((EFI_D_INFO, "Test end\n"));
     return EFI_SUCCESS;

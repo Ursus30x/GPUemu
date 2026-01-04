@@ -376,7 +376,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->width = 640;
     gpu->gpu_mode = GPU_MODE_GOP;
     gpu->framebuffer_vram_offset = 0x0000000;
-    printf("[INIT] Ring Buffer starts at VRAM offset 0x%x\n", 0);
+    
 }
 
 /* Uninitialize GPU device */

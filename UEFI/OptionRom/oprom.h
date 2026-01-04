@@ -2,7 +2,7 @@
 #define OPROM_H
 
 
-#include "isa.h"
+#include "gpu_isa.h"
 #include "vram.h"
 #include "gpu_hw.h"
 #include <Uefi.h>

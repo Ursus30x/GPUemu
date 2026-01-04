@@ -12,7 +12,7 @@
 #include "ui/console.h"
 #include <stdint.h>
 #include <math.h>
-#include "isa.h"
+#include "gpu_isa.h"
 #include "gpu_hw.h"
 #include "vram.h"
 
@@ -84,7 +84,7 @@ typedef struct GpuState {
     Preg pRegs[REG_P_GEN_SIZE];
                      
     // fragment pseudo regs
-    uint32_t px, py;                  
+    float px, py;                  
     uint32_t pr, pg, pb;   
     // vector pseudo regs
     Mat4 v_out;
