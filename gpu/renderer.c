@@ -868,14 +868,29 @@ void gpu_render_triangles(void *opaque)
             v[2].z = vertices[indices[i].c].z;
             v[2].w = 1.0f;
 
-            Col3 color = {vertices[indices[i].a].rgba, vertices[indices[i].b].rgba, vertices[indices[i].c].rgba};
-
+            uint32_t colors[3] = {vertices[indices[i].a].rgba, vertices[indices[i].b].rgba, vertices[indices[i].c].rgba};
             for(int j=0; j<3; j++) 
             {
                 gpu->v_pos.right = v[j];
+                uint32_t color = colors[j];
+                uint8_t r  = GET_R(color);
+                uint8_t g  = GET_G(color);
+                uint8_t b  = GET_B(color);
+                gpu->pRegs[REG_PR].u32 = r;
+                gpu->pRegs[REG_PG].u32 = g;
+                gpu->pRegs[REG_PB].u32 = b;
                 exec_shader(gpu, gpu->vs_code_addr);     
                 v[j] = gpu->v_out.right;
+                colors[j] = RGB_TO_UINT(
+                    (uint8_t)gpu->pRegs[REG_PR].u32, 
+                    (uint8_t)gpu->pRegs[REG_PG].u32, 
+                    (uint8_t)gpu->pRegs[REG_PB].u32);
             }
+            Col3 color = {
+                .a_col = colors[0],
+                .b_col = colors[1],
+                .c_col = colors[2],
+            };
             draw_triangle(v[0], v[1], v[2], color, gpu);
     }
     
@@ -916,8 +931,22 @@ void gpu_render_wireframe(void *opaque)
     {
         Vec4 v = {vertices[i].x, vertices[i].y, vertices[i].z, 1.0f};
         gpu->v_pos.right = v;
+        
+        uint32_t color = vertices[i].rgba;
+        uint8_t r  = GET_R(color);
+        uint8_t g  = GET_G(color);
+        uint8_t b  = GET_B(color);
+        gpu->pRegs[REG_PR].u32 = r;
+        gpu->pRegs[REG_PG].u32 = g;
+        gpu->pRegs[REG_PB].u32 = b;
         //exec vertex shader
-        exec_shader(gpu, gpu->vs_code_addr);     
+        exec_shader(gpu, gpu->vs_code_addr);    
+
+        vertices[i].rgba = RGB_TO_UINT(
+            (uint8_t)gpu->pRegs[REG_PR].u32, 
+            (uint8_t)gpu->pRegs[REG_PG].u32, 
+            (uint8_t)gpu->pRegs[REG_PB].u32);
+
         Vec4 tv = gpu->v_out.right;
         float ndc_x = tv.x / tv.w;
         float ndc_y = tv.y / tv.w;
