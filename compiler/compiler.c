@@ -234,11 +234,8 @@ arg_data parse_arg(Assembler *as, const char* tok, const TokenDef *def, int pass
     }
 
     arg.type = ARG_TYPE_REG;
-    if (def->opcode == INSTR_LDU) {
-        arg.val.u32 = parse_reg(as, tok, OP_TYPE_U32, 1);
-    } else {
-        arg.val.u32 = parse_reg(as, tok, def->opType, 1);
-    }
+    int force_scalar = (def->opType == OP_TYPE_MATRIX || def->opType == OP_TYPE_VEC4 || def->opType == OP_TYPE_VEC3) ? 0 : 1;
+    arg.val.u32 = parse_reg(as, tok, def->opType, force_scalar);
     return arg;
 }
 
