@@ -145,17 +145,17 @@ typedef union {
 typedef FI32 Preg;
 typedef FI32 InstrArg;
 
-typedef struct  Instr {
+typedef struct  Instr  {
     uint8_t  opcode;
-    uint8_t  cFlag;
     uint8_t  dest;
+    uint8_t  cFlag:4;
+    uint8_t  opType:4;
     uint8_t  arg0Type:2;
     uint8_t  arg1Type:2;
     uint8_t  arg2Type:2;
-    uint8_t  opType:2;
     InstrArg arg0;
     InstrArg arg1;
     InstrArg arg2;
 } Instr;
-
+#define fd sizeof(Instr)
 #endif

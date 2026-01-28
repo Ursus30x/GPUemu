@@ -245,7 +245,8 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             else 
                 gpu->pRegs[instr.dest].u32 = (int)((float)(a.u32 + (b.u32 - a.u32)) * t.f32);
             
-            DEBUG_PRINT("LERP: a=%u, b=%u, t=%u -> out=%u\n", a.u32, b.u32, t.u32, gpu->pRegs[instr.dest].u32);
+            DEBUG_PRINT("LERP: a=%f, b=%f, t=%f -> out=%f\n", a.f32, b.f32, t.f32, gpu->pRegs[instr.dest].f32);
+            
             break;
         }
         // a * (1 - weight) + b * weight

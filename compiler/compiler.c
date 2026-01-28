@@ -2,6 +2,8 @@
 #define VECTOR_IMPLEMENTATION
 #include "compiler.h"
 #include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
 
 static const TokenDef token_defs[] = {
     { TOKEN_MOVM,   INSTR_MOV,   OP_TYPE_MATRIX, 1, FORMAT_D_A },
@@ -241,8 +243,8 @@ arg_data parse_arg(Assembler *as, const char* tok, const TokenDef *def, int pass
 
 void print_instr_debug(const char *tok, const Instr* instr) 
 {
-    printf("[DEBUG] %-10s | Opcode: %u, CFlag: %u, Dest: %u, Arg0: 0x%08x, Arg1: 0x%08x  Arg2: 0x%08x\n", 
-           tok, instr->opcode, instr->cFlag, instr->dest, instr->arg0.u32, instr->arg1.u32,instr->arg2.u32);
+    printf("[DEBUG] %-10s | Opcode: %u, CFlag: %u, Dest: %u, Arg0: 0x%08x, Arg1: 0x%08x  Arg2: 0x%08x OpType: 0x%x\n", 
+           tok, instr->opcode, instr->cFlag, instr->dest, instr->arg0.u32, instr->arg1.u32,instr->arg2.u32, instr->opType);
 }
 
 void process_instruction(Assembler *as, int pass) 
@@ -314,7 +316,20 @@ void process_instruction(Assembler *as, int pass)
                 instr.arg0.u32 = parse_reg(as, consume(as), def->opType, 0);
 
                 /* second arg can be preg or immediate (float) */
-                arg_data a1 = parse_arg(as, consume(as), def, pass);
+                // FIX: manually handle second argument to allow scalar P registers or Immediates
+                const char* a1tok = consume(as);
+                arg_data a1;
+                char* endptr;
+                
+                if (isdigit(a1tok[0]) || (a1tok[0] == '-' && isdigit(a1tok[1]))) {
+                    a1.type = ARG_TYPE_IMM;
+                    a1.val.f32 = strtof(a1tok, &endptr);
+                } else {
+                    // Force scalar parsing for this argument (P-regs allowed)
+                    a1.type = ARG_TYPE_REG;
+                    a1.val.u32 = parse_reg(as, a1tok, def->opType, 1); 
+                }
+
                 if (a1.type == ARG_TYPE_REG) {
                     instr.arg1Type = ARG_TYPE_REG;
                     instr.arg1 = a1.val;
