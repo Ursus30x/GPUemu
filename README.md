@@ -15,6 +15,11 @@ This project could be extended in many ways, and the final product is not yet fu
 Since most of this project relies on modifying QEMU and EDK2 projects, we decided to avoid creating two different forks. Instead, we write our code as patches for both QEMU and EDK2 sources.
 
 Here are the instructions:
+-   Download needed packages:
+    -   For Ubuntu/Debian:
+    ``` sh
+    apt install make g++ gcc python3 uuid-dev nasm python3-pip python3-venv ninja-build libglib2.0-dev cmake libpixman-1-dev libgtk-3-dev
+    ```
 
 -   Run `scripts/apply_patches.sh`
     -   This prepares submodules, applies patches to them, and symlinks directories to their respective submodules.
