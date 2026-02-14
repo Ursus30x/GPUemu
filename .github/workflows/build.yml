@@ -1,20 +1,18 @@
 name: sanity-check
 
 on:
-  # Trigger on push to any branch
   push:
-  
-  # Trigger on PRs only targeting main
+    branches:
+      - "main"
+      
   pull_request:
     branches: [ "main" ]
-    # 'ready_for_review' ensures the workflow runs when you convert a Draft PR to Ready
     types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   build:
     name: build
     runs-on: self-hosted
-    # Logic: Run if it's NOT a PR (i.e., a Push) OR if it IS a PR and NOT a Draft
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     
     defaults:
