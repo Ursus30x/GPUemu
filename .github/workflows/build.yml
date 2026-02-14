@@ -1,0 +1,32 @@
+name: build project
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: Build on Self-Hosted Runner
+    runs-on: self-hosted
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # Clean ensures we don't have artifacts from previous runs messing up patches
+          clean: true 
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Apply Patches
+        run: ./scripts/apply_patches.sh
+        # This will fail if patches can't apply, stopping the workflow
+
+      - name: Build All
+        run: ./scripts/build_all.sh
+        # This will fail if any build step fails, stopping the workflow
