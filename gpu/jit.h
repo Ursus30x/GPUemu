@@ -27,15 +27,23 @@ typedef struct {
     LLVMValueRef func;
     LLVMValueRef out_ptr_arg;
 
+    LLVMValueRef emask;
+
     LLVMTypeRef float_type;
     LLVMTypeRef int_type;
+    LLVMTypeRef i1_type;
+    LLVMTypeRef vec_float_type;
+    LLVMTypeRef vec_i1_type;
+    
 } JitContext;
 
 
 LLVMValueRef get_val(JitContext* ctx, uint32_t id);
+
 void set_val(JitContext* ctx, uint32_t id, LLVMValueRef val);
 void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count);
 void jit_compile_spirv(uint32_t* binary, size_t word_count);
+void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask);
 
 
 #endif

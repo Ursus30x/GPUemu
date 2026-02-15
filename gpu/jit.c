@@ -21,7 +21,8 @@ void set_val(JitContext* ctx, uint32_t id, LLVMValueRef val)
     ctx->id_val_map[id] = val;
 }
 
-static inline void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands) {
+static inline void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands) 
+{
     uint8_t kind = ctx->type_kind_map[type_id];
     LLVMValueRef const_val;
     
@@ -35,7 +36,8 @@ static inline void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t
 
     // Creating the SIMT vector
     LLVMValueRef* vals = malloc(sizeof(LLVMValueRef) * SIMT_WIDTH);
-    for (int i = 0; i < SIMT_WIDTH; i++) {
+    for (int i = 0; i < SIMT_WIDTH; i++) 
+    {
         vals[i] = const_val;
     }
 
@@ -45,14 +47,16 @@ static inline void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t
     set_val(ctx, res_id, vec_val);
 }
 
-static inline void handle_op_fadd(JitContext* ctx, uint32_t res_id, uint32_t* operands) {
+static inline void handle_op_fadd(JitContext* ctx, uint32_t res_id, uint32_t* operands) 
+{
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
     LLVMValueRef res = LLVMBuildFAdd(ctx->builder, lhs, rhs, "v_fadd");
     set_val(ctx, res_id, res);
 }
 
-static inline void handle_op_fmul(JitContext* ctx, uint32_t res_id, uint32_t* operands) {
+static inline void handle_op_fmul(JitContext* ctx, uint32_t res_id, uint32_t* operands) 
+{
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
     LLVMValueRef res = LLVMBuildFMul(ctx->builder, lhs, rhs, "v_fmul");
@@ -60,7 +64,7 @@ static inline void handle_op_fmul(JitContext* ctx, uint32_t res_id, uint32_t* op
 }
 
 static inline void handle_op_fdiv(JitContext* ctx, uint32_t res_id, uint32_t* operands)
- {
+{
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
     LLVMValueRef res = LLVMBuildFDiv(ctx->builder, lhs, rhs, "v_fdiv");
@@ -68,21 +72,21 @@ static inline void handle_op_fdiv(JitContext* ctx, uint32_t res_id, uint32_t* op
 }
 
 static inline void handle_op_return_value(JitContext* ctx, uint32_t* operands)
- {
+{
     LLVMValueRef vec_val = get_val(ctx, operands[0]);
     
-    LLVMTypeRef vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
-    LLVMTypeRef vec_ptr_type = LLVMPointerType(vec_type, 0);
+    LLVMTypeRef vec_ptr_type = LLVMPointerType(ctx->vec_float_type, 0);
     LLVMValueRef bitcast_ptr = LLVMBuildBitCast(ctx->builder, ctx->out_ptr_arg, vec_ptr_type, "vec_ptr_cast");
     
-    LLVMBuildStore(ctx->builder, vec_val, bitcast_ptr);
+    build_masked_store(ctx, vec_val, bitcast_ptr, ctx->emask);
+    
     LLVMBuildRetVoid(ctx->builder);
 }
-
 void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count) 
 {
     
-    switch (opcode) {
+    switch (opcode) 
+    {
         case SpvOpConstant:
             handle_op_constant(ctx, res_id, type_id, operands);
             break;
@@ -106,9 +110,16 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
             break;
-        }
+    }
 }
+void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask) 
+{
+    LLVMValueRef current_val = LLVMBuildLoad2(ctx->builder, ctx->vec_float_type, ptr, "v_load_current");
 
+    LLVMValueRef masked_val = LLVMBuildSelect(ctx->builder, mask, val_to_store, current_val, "v_select_mask");
+
+    LLVMBuildStore(ctx->builder, masked_val, ptr);
+}
 void jit_compile_spirv(uint32_t* binary, size_t word_count) 
 {
     uint32_t* p = binary + 5;
@@ -141,18 +152,36 @@ void jit_compile_spirv(uint32_t* binary, size_t word_count)
 
     ctx.float_type = LLVMFloatTypeInContext(ctx.context);
     ctx.int_type = LLVMInt32TypeInContext(ctx.context);
+    ctx.vec_float_type = LLVMVectorType(LLVMFloatTypeInContext(ctx.context), SIMT_WIDTH);
+    ctx.vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx.context), SIMT_WIDTH);
 
-    while (p < end) {
+    LLVMValueRef values[SIMT_WIDTH];
+    for (size_t i = 0; i < SIMT_WIDTH; i++)
+    {
+         values[i] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 1, 0); 
+    }
+    
+    values[0] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 0, 0); 
+    values[1] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 0, 0); 
+    values[2] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 0, 0); 
+    values[3] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 0, 0); 
+    ctx.emask = LLVMConstVector(values, SIMT_WIDTH);
+ 
+
+    while (p < end) 
+    {
         uint32_t instruction = p[0];
         uint16_t opcode = instruction & 0xFFFF;
         uint16_t inst_word_count = instruction >> 16;
 
-        if (opcode == SpvOpTypeFloat || opcode == SpvOpTypeInt) {
+        if (opcode == SpvOpTypeFloat || opcode == SpvOpTypeInt) 
+        {
             ctx.type_kind_map[p[1]] = (uint8_t)opcode;
         }
 
         if (opcode == SpvOpSource || opcode == SpvOpName || opcode == SpvOpMemberName || 
-            opcode == SpvOpLine || opcode == SpvOpNoLine) {
+            opcode == SpvOpLine || opcode == SpvOpNoLine) 
+        {
             p += inst_word_count;
             continue;
         }
@@ -166,7 +195,8 @@ void jit_compile_spirv(uint32_t* binary, size_t word_count)
 
         uint32_t operands[16];
         int op_count = 0;
-        while (current_idx < inst_word_count && op_count < 16) {
+        while (current_idx < inst_word_count && op_count < 16) 
+        {
             operands[op_count++] = p[current_idx++];
         }
 
@@ -179,7 +209,8 @@ void jit_compile_spirv(uint32_t* binary, size_t word_count)
     LLVMDisposeMessage(error);
 
     LLVMExecutionEngineRef engine;
-    if (LLVMCreateExecutionEngineForModule(&engine, ctx.module, &error) != 0) {
+    if (LLVMCreateExecutionEngineForModule(&engine, ctx.module, &error) != 0) 
+    {
         DEBUG_PRINT("Failed to create execution engine: %s\n", error);
         return;
     }
