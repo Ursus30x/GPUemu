@@ -5,6 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ################################################
+################# GPU CODE GEN #################
+################################################
+cd "$CWD/gpu/gen"
+wget https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/refs/heads/main/include/spirv/1.2/spirv.core.grammar.json
+python gen_header.py
+
+################################################
 #################### COMMON ####################
 ################################################
 
@@ -31,6 +38,9 @@ ln -sf "$CWD/gpu/renderer.c" "$CWD/qemu/hw/misc/renderer.c"
 ln -sf "$CWD/gpu/renderer.h" "$CWD/qemu/hw/misc/renderer.h"
 ln -sf "$CWD/gpu/math3d.c" "$CWD/qemu/hw/misc/math3d.c"
 ln -sf "$CWD/gpu/math3d.h" "$CWD/qemu/hw/misc/math3d.h"
+ln -sf "$CWD/gpu/jit.c" "$CWD/qemu/hw/misc/jit.c"
+ln -sf "$CWD/gpu/jit.h" "$CWD/qemu/hw/misc/jit.h"
+ln -sf "$CWD/gpu/gen/spirv_jit_meta.h" "$CWD/qemu/hw/misc/spirv_jit_meta.h"
 ln -sf "$CWD/include/gpu_isa.h" "$CWD/qemu/hw/misc/gpu_isa.h"
 ln -sf "$CWD/include/gpu_hw.h" "$CWD/qemu/hw/misc/gpu_hw.h"
 ln -sf "$CWD/include/vram.h" "$CWD/qemu/hw/misc/vram.h"

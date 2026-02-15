@@ -13,4 +13,8 @@ compiler/gpu_hw.h
 compiler/vram.h
 compiler/gpu_isa.h
 
+# Ignore auto-generated files
+gpu/gen/spirv_jit_meta.h
+gpu/gen/spirv.core.grammar.json
+
 .last_build_type
