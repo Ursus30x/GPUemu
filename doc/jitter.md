@@ -45,16 +45,16 @@
 | 131    | OpFSub                   | 30    | ✅ | 🟢 Easy   | ⭐ |
 | 133    | OpFMul                   | 40    | ✅ | 🟢 Easy   | ⭐ |
 | 136    | OpFDiv                   | 24    | ✅ | 🟢 Easy   | ⭐ |
-| 141    | OpFMod                   | 5     | ❌ | 🟡 Medium | ⭐ |
+| 141    | OpFMod                   | 5     | ✅ | 🟡 Medium | ⭐ |
 | 142    | OpVectorTimesScalar      | 30    | ❌ | 🟡 Medium | ⭐ |
 | 144    | OpVectorTimesMatrix      | 3     | ❌ | 🔴 Hard   | ⭐ |
 | 145    | OpMatrixTimesVector      | 6     | ❌ | 🔴 Hard   | ⭐ |
 | 146    | OpMatrixTimesMatrix      | 1     | ❌ | 🔴 Hard   | ⭐ |
 | 148    | OpDot                    | 4     | ❌ | 🟡 Medium | ⭐ |
-| 169    | OpSelect                 | 1     | ❌ | 🟡 Medium | ⭐ |
-| 177    | OpSLessThan              | 5     | ❌ | 🟢 Easy   | ⭐ |
-| 184    | OpFOrdLessThan           | 6     | ❌ | 🟢 Easy   | ⭐ |
-| 186    | OpFOrdGreaterThan        | 1     | ❌ | 🟢 Easy   | ⭐ |
+| 169    | OpSelect                 | 1     | ✅ | 🟢 Easy   | ⭐ |
+| 177    | OpSLessThan              | 5     | ✅ | 🟢 Easy   | ⭐ |
+| 184    | OpFOrdLessThan           | 6     | ✅ | 🟢 Easy   | ⭐ |
+| 186    | OpFOrdGreaterThan        | 1     | ✅ | 🟢 Easy   | ⭐ |
 | 246    | OpLoopMerge              | 5     | ❌ | 🔴 Hard   | ⭐ |
 | 247    | OpSelectionMerge         | 6     | ❌ | 🔴 Hard   | ⭐ |
 | 248    | OpLabel                  | 52    | ❌ | 🟡 Medium | ⭐ |
@@ -62,3 +62,5 @@
 | 250    | OpBranchConditional      | 11    | ❌ | 🔴 Hard   | ⭐ |
 | 253    | OpReturn                 | 6     | ❌ | 🟢 Easy   | ⭐ |
 | 254    | OpReturnValue            | 7     | ✅ | 🟢 Easy   | ⭐ |
+
+Status: 25 / 62
