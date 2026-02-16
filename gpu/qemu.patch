@@ -29,7 +29,7 @@ index b1d8d8e5d2..feea70f9aa 100644
 +  modules: ['core', 'mcjit', 'native', 'executionengine'],
 +  required: true
 +)
-+system_ss.add(when: 'CONFIG_GPU', if_true: [files('math3d.c', 'renderer.c', 'jit.c', 'gpu.c'), llvm_dep])
++system_ss.add(when: 'CONFIG_GPU', if_true: [files('math3d.c', 'renderer.c', 'jit_decorators.c', 'jit_alu.c', 'jit.c', 'gpu.c'), llvm_dep])
 +
  system_ss.add(when: 'CONFIG_EDU', if_true: files('edu.c'))
  system_ss.add(when: 'CONFIG_FW_CFG_DMA', if_true: files('vmcoreinfo.c'))
