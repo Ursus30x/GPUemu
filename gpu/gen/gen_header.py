@@ -10,14 +10,36 @@ def generate_header(json_path, output_path):
         f.write("#ifndef SPIRV_JIT_META_H\n#define SPIRV_JIT_META_H\n\n")
         f.write("#include <stdint.h>\n#include <stdbool.h>\n\n")
 
-
+        # ================================
+        # SpvOp enum
+        # ================================
         f.write("typedef enum {\n")
         for inst in data['instructions']:
             f.write(f"    Spv{inst['opname']} = {inst['opcode']},\n")
         f.write("    SpvOpMax = 0x7FFFFFFF\n")
         f.write("} SpvOp;\n\n")
 
-    
+        # ================================
+        # SpvDecoration enum
+        # ================================
+        decoration_kind = None
+        for kind in data.get("operand_kinds", []):
+            if kind.get("kind") == "Decoration":
+                decoration_kind = kind
+                break
+
+        if decoration_kind:
+            f.write("typedef enum {\n")
+            for enum in decoration_kind.get("enumerants", []):
+                name = enum["enumerant"]
+                value = enum["value"]
+                f.write(f"    SpvDecoration{name} = {value},\n")
+            f.write("    SpvDecorationMax = 0x7FFFFFFF\n")
+            f.write("} SpvDecoration;\n\n")
+
+        # ================================
+        # SpvOpMeta struct
+        # ================================
         f.write("typedef struct {\n")
         f.write("    const char* name;\n")
         f.write("    bool has_result_type;\n")
@@ -25,7 +47,6 @@ def generate_header(json_path, output_path):
         f.write("    int fixed_operand_count;\n")
         f.write("} SpvOpMeta;\n\n")
 
-       
         max_op = max(inst['opcode'] for inst in data['instructions'])
         f.write(f"static const SpvOpMeta SPV_META[{max_op + 1}] = {{\n")
         
@@ -39,9 +60,17 @@ def generate_header(json_path, output_path):
                 has_type = any(o['kind'] == 'IdResultType' for o in ops)
                 has_id = any(o['kind'] == 'IdResult' for o in ops)
                 
-                fixed_count = len([o for o in ops if o['kind'] not in ('IdResultType', 'IdResult')])
+                fixed_count = len([
+                    o for o in ops
+                    if o['kind'] not in ('IdResultType', 'IdResult')
+                ])
                 
-                f.write(f"    [{i}] = {{ \"{inst['opname']}\", {str(has_type).lower()}, {str(has_id).lower()}, {fixed_count} }},\n")
+                f.write(
+                    f"    [{i}] = {{ \"{inst['opname']}\", "
+                    f"{str(has_type).lower()}, "
+                    f"{str(has_id).lower()}, "
+                    f"{fixed_count} }},\n"
+                )
             else:
                 f.write(f"    [{i}] = {{ \"OpUnknown\", false, false, 0 }},\n")
         
