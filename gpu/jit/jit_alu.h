@@ -16,5 +16,8 @@ void handle_op_sdiv(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_udiv(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_sitof(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_select(JitContext* ctx, uint32_t res_id, uint32_t* operands);
-
+void handle_op_slessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_op_fordlessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_op_fordgreaterthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_op_fmod(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 #endif 
