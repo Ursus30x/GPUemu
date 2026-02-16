@@ -113,3 +113,51 @@ void handle_op_select(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     LLVMValueRef res = LLVMBuildSelect(ctx->builder, cond, true_val, false_val, "v_select");
     set_val(ctx, res_id, res);
 }
+
+void handle_op_slessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMValueRef lhs = get_val(ctx, operands[0]);
+    LLVMValueRef rhs = get_val(ctx, operands[1]);
+
+    LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntSLT, lhs, rhs, "v_slt");
+
+    set_val(ctx, res_id, cmp);
+}
+
+void handle_op_fordlessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMValueRef lhs = get_val(ctx, operands[0]);
+    LLVMValueRef rhs = get_val(ctx, operands[1]);
+
+    LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOLT, lhs, rhs,"v_folt");
+    set_val(ctx, res_id, cmp);
+}
+
+void handle_op_fordgreaterthan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMValueRef lhs = get_val(ctx, operands[0]);
+    LLVMValueRef rhs = get_val(ctx, operands[1]);
+
+    LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOGT, lhs, rhs, "v_fogt");
+
+    set_val(ctx, res_id, cmp);
+}
+
+void handle_op_fmod(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef y = get_val(ctx, operands[1]);
+
+    LLVMValueRef div = LLVMBuildFDiv(ctx->builder, x, y, "div");
+
+    LLVMValueRef trunc =
+        LLVMBuildFPToSI(ctx->builder,
+                        div,
+                        ctx->vec_float_type,
+                        "trunc"); 
+
+    LLVMValueRef mul =  LLVMBuildFMul(ctx->builder, y, trunc, "mul");
+    LLVMValueRef result = LLVMBuildFSub(ctx->builder, x, mul, "fmod");
+
+    set_val(ctx, res_id, result);
+}

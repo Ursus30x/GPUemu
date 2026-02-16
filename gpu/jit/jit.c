@@ -232,6 +232,19 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpReturnValue:
             handle_op_return_value(ctx, operands);
             break;
+        case SpvOpSLessThan:
+            handle_op_slessthan(ctx, res_id, operands);
+            break;
+        case SpvOpFOrdLessThan:
+            handle_op_fordlessthan(ctx, res_id, operands);
+            break;
+        case SpvOpFOrdGreaterThan:
+            handle_op_fordgreaterthan(ctx, res_id, operands);
+            break;
+        case SpvOpFMod:
+            handle_op_fmod(ctx, res_id, operands);
+            break;
+
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
             break;
