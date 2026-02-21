@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -e  # Exit immediately if any command fails
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
