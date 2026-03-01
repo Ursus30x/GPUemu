@@ -1,9 +1,9 @@
 | Opcode | Name                     | Count | Completed | Difficulty | Must Have |
 |--------|--------------------------|-------|------------|------------|------------|
-| 3      | OpSource                 | 6     | ❌ | 🟢 Easy   | ❌ |
-| 5      | OpName                   | 147   | ❌ | 🟢 Easy   | ❌ |
-| 6      | OpMemberName             | 23    | ❌ | 🟢 Easy   | ❌ |
-| 11     | OpExtInstImport          | 6     | ❌ | 🟡 Medium | ❌ |
+| 3      | OpSource                 | 6     | ✅ | 🟢 Easy   | ❌ |
+| 5      | OpName                   | 147   | ✅ | 🟢 Easy   | ❌ |
+| 6      | OpMemberName             | 23    | ✅ | 🟢 Easy   | ❌ |
+| 11     | OpExtInstImport          | 6     | ✅ | 🟡 Medium | ❌ |
 | 12     | OpExtInst                | 90    | ❌ | 🔴 Hard   | ⭐ |
 | 14     | OpMemoryModel            | 6     | ❌ | 🟢 Easy   | ⭐ |
 | 15     | OpEntryPoint             | 6     | ❌ | 🟡 Medium | ⭐ |
@@ -27,10 +27,10 @@
 | 55     | OpFunctionParameter      | 14    | ❌ | 🟢 Easy   | ⭐ |
 | 56     | OpFunctionEnd            | 12    | ✅ | 🟢 Easy   | ⭐ |
 | 57     | OpFunctionCall           | 12    | ❌ | 🔴 Hard   | ⭐ |
-| 59     | OpVariable               | 116   | ❌ | 🟡 Medium | ⭐ |
-| 61     | OpLoad                   | 262   | ❌ | 🟡 Medium | ⭐ |
-| 62     | OpStore                  | 138   | ❌ | 🟡 Medium | ⭐ |
-| 65     | OpAccessChain            | 63    | ❌ | 🔴 Hard   | ⭐ |
+| 59     | OpVariable               | 116   | ✅ | 🟡 Medium | ⭐ |
+| 61     | OpLoad                   | 262   | ✅ | 🟡 Medium | ⭐ |
+| 62     | OpStore                  | 138   | ✅ | 🟡 Medium | ⭐ |
+| 65     | OpAccessChain            | 63    | ✅ | 🔴 Hard   | ⭐ |
 | 71     | OpDecorate               | 37    | ✅ | 🟢 Easy   | ⭐ |
 | 72     | OpMemberDecorate         | 31    | ✅ | 🟢 Easy   | ⭐ |
 | 79     | OpVectorShuffle          | 21    | ❌ | 🟡 Medium | ⭐ |
@@ -63,6 +63,6 @@
 | 253    | OpReturn                 | 6     | ❌ | 🟢 Easy   | ⭐ |
 | 254    | OpReturnValue            | 7     | ✅ | 🟢 Easy   | ⭐ |
 
-Status: 29 / 62 (4 unused)
+Status: 37 / 62 (4 unused)
 
 - We only support single function shaders

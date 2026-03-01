@@ -271,6 +271,9 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpStore:
             handle_op_store(ctx, operands);
             break;
+        case SpvOpAccessChain:
+            handle_op_access_chain(ctx, res_id, type_id, operands, operand_count);
+            break;
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
             break;
