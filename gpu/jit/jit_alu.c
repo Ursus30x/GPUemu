@@ -6,10 +6,13 @@ void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     uint8_t kind = ctx->type_kind_map[type_id];
     LLVMValueRef const_val;
     
-    if (kind == SpvOpTypeFloat) {
+    if (kind == SpvOpTypeFloat)
+    {
         float val = *(float*)&operands[0];
         const_val = LLVMConstReal(ctx->float_type, val);
-    } else {
+    } 
+    else 
+    {
         int32_t val = *(int32_t*)&operands[0];
         const_val = LLVMConstInt(ctx->int_type, (unsigned long long)val, 1);
     }
@@ -31,7 +34,9 @@ void handle_op_fadd(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
+    
     LLVMValueRef res = LLVMBuildFAdd(ctx->builder, lhs, rhs, "v_fadd");
+    printf("Emitting FAdd for ID %u: %p + %p = %p\n", res_id, (void*)lhs, (void*)rhs, (void*)res);
     set_val(ctx, res_id, res);
 }
 
