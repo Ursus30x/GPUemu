@@ -20,22 +20,22 @@ def generate_header(json_path, output_path):
         f.write("} SpvOp;\n\n")
 
         # ================================
-        # SpvDecoration enum
+        # Helper to extract and write enums from operand_kinds
         # ================================
-        decoration_kind = None
-        for kind in data.get("operand_kinds", []):
-            if kind.get("kind") == "Decoration":
-                decoration_kind = kind
-                break
+        def write_enum_from_kind(kind_name, prefix):
+            target_kind = next((k for k in data.get("operand_kinds", []) if k.get("kind") == kind_name), None)
+            if target_kind:
+                f.write(f"typedef enum {{\n")
+                for enum in target_kind.get("enumerants", []):
+                    name = enum["enumerant"]
+                    value = enum["value"]
+                    f.write(f"    {prefix}{name} = {value},\n")
+                f.write(f"    {prefix}Max = 0x7FFFFFFF\n")
+                f.write(f"}} {prefix[:-1] if prefix.endswith('_') else prefix};\n\n")
 
-        if decoration_kind:
-            f.write("typedef enum {\n")
-            for enum in decoration_kind.get("enumerants", []):
-                name = enum["enumerant"]
-                value = enum["value"]
-                f.write(f"    SpvDecoration{name} = {value},\n")
-            f.write("    SpvDecorationMax = 0x7FFFFFFF\n")
-            f.write("} SpvDecoration;\n\n")
+        # Generate Decoration and StorageClass Enums
+        write_enum_from_kind("Decoration", "SpvDecoration")
+        write_enum_from_kind("StorageClass", "SpvStorageClass")
 
         # ================================
         # SpvOpMeta struct
@@ -57,9 +57,11 @@ def generate_header(json_path, output_path):
                 inst = op_map[i]
                 ops = inst.get('operands', [])
                 
+                # Check for Result Type and ID
                 has_type = any(o['kind'] == 'IdResultType' for o in ops)
                 has_id = any(o['kind'] == 'IdResult' for o in ops)
                 
+                # Count operands that aren't the result ID/Type
                 fixed_count = len([
                     o for o in ops
                     if o['kind'] not in ('IdResultType', 'IdResult')
@@ -78,5 +80,6 @@ def generate_header(json_path, output_path):
         f.write("#endif\n")
 
 if __name__ == "__main__":
+    # Ensure you have the spirv.core.grammar.json in the same directory
     generate_header('spirv.core.grammar.json', 'spirv_jit_meta.h')
-    print("Generated spirv_jit_meta.h")
+    print("Generated spirv_jit_meta.h with SpvOp, SpvDecoration, and SpvStorageClass.")
