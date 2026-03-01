@@ -37,9 +37,7 @@ void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
         ctx->func = LLVMAddFunction(ctx->module, "main_simt", func_type);
         ctx->out_ptr_arg = LLVMGetParam(ctx->func, 1);
     }
-
     
-    printf("Emitting Function ID %u (Mapped to main_simt)\n", res_id);
 }
 
 void handle_op_label(JitContext* ctx, uint32_t res_id) 

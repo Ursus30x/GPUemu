@@ -4,6 +4,7 @@
 #include "jit_decorators.h"
 #include "jit_flow.h"
 #include "debug_gpu.h"
+#include "jit_mem.h"
 #include <llvm-c/Transforms/PassBuilder.h>
 
 static void debug_print_single_deco(uint32_t id, SpvDecoInfo* d)
@@ -261,7 +262,15 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpReturn:
             LLVMBuildRetVoid(ctx->builder);
             break;
-
+        case SpvOpVariable:
+            handle_op_variable(ctx, res_id, type_id, operands);
+            break;
+        case SpvOpLoad:
+            handle_op_load(ctx, res_id, type_id, operands);
+            break;
+        case SpvOpStore:
+            handle_op_store(ctx, operands);
+            break;
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
             break;
