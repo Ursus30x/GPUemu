@@ -2,7 +2,9 @@
 #include "jit.h"
 #include "jit_alu.h"
 #include "jit_decorators.h"
+#include "jit_flow.h"
 #include "debug_gpu.h"
+#include <llvm-c/Transforms/PassBuilder.h>
 
 static void debug_print_single_deco(uint32_t id, SpvDecoInfo* d)
 {
@@ -244,6 +246,21 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpFMod:
             handle_op_fmod(ctx, res_id, operands);
             break;
+        case SpvOpTypeFunction:
+            handle_op_type_function(ctx, res_id, operands);
+            break;
+        case SpvOpFunction:
+            handle_op_function(ctx, res_id, type_id, operands);
+            break;
+        case SpvOpLabel:
+            handle_op_label(ctx, res_id);
+            break;
+        case SpvOpFunctionEnd:
+            // Nothing to do here for now, but we could add cleanup logic if needed in the future
+            break;
+        case SpvOpReturn:
+            LLVMBuildRetVoid(ctx->builder);
+            break;
 
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
@@ -295,28 +312,6 @@ void jit_compile_spirv(uint32_t* binary, size_t word_count)
     ctx.vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx.context), SIMT_WIDTH);
     ctx.int8_type = LLVMInt8TypeInContext(ctx.context);
     ctx.ptr_type = LLVMPointerType(ctx.int8_type, 0);
-
-    LLVMTypeRef ptr_array_type = LLVMArrayType(ctx.ptr_type, MAX_BINDINGS);
-    LLVMTypeRef stride_array_type = LLVMArrayType(ctx.int_type, MAX_ATTRIBUTES);
-    LLVMTypeRef env_struct_elements[] = {
-        ptr_array_type,     
-        ptr_array_type,     
-        stride_array_type,  
-        ctx.int_type        
-    };
-    LLVMTypeRef env_struct_type = LLVMStructTypeInContext(ctx.context, env_struct_elements, 4, 0);
-
-    // Function Signature: void main_simt(ExecutionContext* env, float* out_ptr)
-    LLVMTypeRef param_types[] = { 
-        LLVMPointerType(env_struct_type, 0), 
-        LLVMPointerType(ctx.float_type, 0) 
-    };
-    LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx.context), param_types, 2, 0);
-    ctx.func = LLVMAddFunction(ctx.module, "main_simt", func_type);
-    ctx.out_ptr_arg = LLVMGetParam(ctx.func, 1);
-
-    LLVMBasicBlockRef entry = LLVMAppendBasicBlockInContext(ctx.context, ctx.func, "entry");
-    LLVMPositionBuilderAtEnd(ctx.builder, entry);
 
     DEBUG_PRINT("--- Starting JIT Compilation (LLVM Vector Backend) ---\n");
 
@@ -380,7 +375,7 @@ void jit_compile_spirv(uint32_t* binary, size_t word_count)
         DEBUG_PRINT("Failed to create execution engine: %s\n", error);
         return;
     }
-
+    LLVMDumpModule(ctx.module); // Debug: Dump the generated LLVM IR
     typedef void (*jitted_func_t)(ExecutionContext*, float*);
     jitted_func_t my_func = (jitted_func_t)LLVMGetFunctionAddress(engine, "main_simt");
 

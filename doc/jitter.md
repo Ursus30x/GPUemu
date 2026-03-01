@@ -20,12 +20,12 @@
 | 28     | OpTypeArray              | 3     | ✅ | 🟡 Medium | ⭐ |
 | 30     | OpTypeStruct             | 7     | ✅ | 🟡 Medium | ⭐ |
 | 32     | OpTypePointer            | 51    | ✅ | 🟡 Medium | ⭐ |
-| 33     | OpTypeFunction           | 12    | ❌ | 🟢 Easy   | ⭐ |
+| 33     | OpTypeFunction           | 12    | ✅ | 🟢 Easy   | ⭐ |
 | 43     | OpConstant               | 117   | ✅ | 🟢 Easy   | ⭐ |
 | 44     | OpConstantComposite      | 26    | ❌ | 🟡 Medium | ⭐ |
-| 54     | OpFunction               | 12    | ❌ | 🟡 Medium | ⭐ |
+| 54     | OpFunction               | 12    | ✅ | 🟡 Medium | ⭐ |
 | 55     | OpFunctionParameter      | 14    | ❌ | 🟢 Easy   | ⭐ |
-| 56     | OpFunctionEnd            | 12    | ❌ | 🟢 Easy   | ⭐ |
+| 56     | OpFunctionEnd            | 12    | ✅ | 🟢 Easy   | ⭐ |
 | 57     | OpFunctionCall           | 12    | ❌ | 🔴 Hard   | ⭐ |
 | 59     | OpVariable               | 116   | ❌ | 🟡 Medium | ⭐ |
 | 61     | OpLoad                   | 262   | ❌ | 🟡 Medium | ⭐ |
@@ -57,10 +57,12 @@
 | 186    | OpFOrdGreaterThan        | 1     | ✅ | 🟢 Easy   | ⭐ |
 | 246    | OpLoopMerge              | 5     | ❌ | 🔴 Hard   | ⭐ |
 | 247    | OpSelectionMerge         | 6     | ❌ | 🔴 Hard   | ⭐ |
-| 248    | OpLabel                  | 52    | ❌ | 🟡 Medium | ⭐ |
+| 248    | OpLabel                  | 52    | ✅ | 🟡 Medium | ⭐ |
 | 249    | OpBranch                 | 28    | ❌ | 🔴 Hard   | ⭐ |
 | 250    | OpBranchConditional      | 11    | ❌ | 🔴 Hard   | ⭐ |
 | 253    | OpReturn                 | 6     | ❌ | 🟢 Easy   | ⭐ |
 | 254    | OpReturnValue            | 7     | ✅ | 🟢 Easy   | ⭐ |
 
-Status: 25 / 62
+Status: 29 / 62 (4 unused)
+
+- We only support single function shaders
