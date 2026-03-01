@@ -36,7 +36,6 @@ void handle_op_fadd(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     LLVMValueRef rhs = get_val(ctx, operands[1]);
     
     LLVMValueRef res = LLVMBuildFAdd(ctx->builder, lhs, rhs, "v_fadd");
-    printf("Emitting FAdd for ID %u: %p + %p = %p\n", res_id, (void*)lhs, (void*)rhs, (void*)res);
     set_val(ctx, res_id, res);
 }
 
