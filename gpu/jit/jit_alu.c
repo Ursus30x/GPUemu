@@ -1,6 +1,6 @@
 #include "jit_alu.h"
 #include "debug_gpu.h"
-
+#include "glsl_std_450.h"
 void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands) 
 {
     uint8_t kind = ctx->type_kind_map[type_id];
@@ -165,3 +165,112 @@ void handle_op_fmod(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 
     set_val(ctx, res_id, result);
 }
+void handle_op_ext_instr(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    uint32_t instr_id = operands[1];
+    ctx->glsl_handlers[instr_id](ctx, res_id, &operands[2]);
+}
+
+void create_glsl_std_450_map(JitContext* ctx)
+{
+    ctx->glsl_handlers[GLSLstd450Sin] = handle_ext_sin;
+    ctx->glsl_handlers[GLSLstd450Cos] = handle_ext_cos;
+    ctx->glsl_handlers[GLSLstd450Sqrt] = handle_ext_sqrt;
+    ctx->glsl_handlers[GLSLstd450Pow] = handle_ext_pow;
+    ctx->glsl_handlers[GLSLstd450Atan2] = handle_ext_atan2;
+    ctx->glsl_handlers[GLSLstd450Log] = handle_ext_log;
+    ctx->glsl_handlers[GLSLstd450FAbs] = handle_ext_fabs;
+    ctx->glsl_handlers[GLSLstd450FMax] = handle_ext_fmax;
+    ctx->glsl_handlers[GLSLstd450FMin] = handle_ext_fmin;
+    ctx->glsl_handlers[GLSLstd450FClamp] = handle_ext_fclamp;
+    ctx->glsl_handlers[GLSLstd450SmoothStep] = handle_ext_smoothstep;
+    ctx->glsl_handlers[GLSLstd450FMix] = handle_ext_fmix;
+    ctx->glsl_handlers[GLSLstd450FSign] = handle_ext_fsign;
+    ctx->glsl_handlers[GLSLstd450Step] = handle_ext_step;
+    ctx->glsl_handlers[GLSLstd450Length] = handle_ext_length;
+    ctx->glsl_handlers[GLSLstd450Normalize] = handle_ext_normalize;
+    ctx->glsl_handlers[GLSLstd450Reflect] = handle_ext_reflect;
+    ctx->glsl_handlers[GLSLstd450Distance] = handle_ext_distance;
+    ctx->glsl_handlers[GLSLstd450Cross] = handle_ext_cross;
+    ctx->glsl_handlers[GLSLstd450Refract] = handle_ext_refract;
+}
+void handle_ext_sin(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}     
+void handle_ext_cos(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}      
+void handle_ext_sqrt(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}     
+void handle_ext_pow(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}     
+void handle_ext_atan2(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}    
+void handle_ext_log(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_fabs(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_fmax(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_fmin(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_fclamp(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_smoothstep(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_fmix(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_fsign(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+} 
+void handle_ext_step(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_length(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_normalize(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_reflect(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_distance(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_cross(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}
+void handle_ext_refract(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+
+}   

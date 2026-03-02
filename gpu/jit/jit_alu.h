@@ -20,4 +20,31 @@ void handle_op_slessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_fordlessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_fordgreaterthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_fmod(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+
+
+
+void create_glsl_std_450_map(JitContext* ctx);
+
+void handle_op_ext_instr(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+
+void handle_ext_sin(JitContext* ctx, uint32_t res_id, uint32_t* operands);     
+void handle_ext_cos(JitContext* ctx, uint32_t res_id, uint32_t* operands);      
+void handle_ext_sqrt(JitContext* ctx, uint32_t res_id, uint32_t* operands);     
+void handle_ext_pow(JitContext* ctx, uint32_t res_id, uint32_t* operands);     
+void handle_ext_atan2(JitContext* ctx, uint32_t res_id, uint32_t* operands);    
+void handle_ext_log(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_fabs(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_fmax(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_fmin(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_fclamp(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_smoothstep(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_fmix(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_fsign(JitContext* ctx, uint32_t res_id, uint32_t* operands); 
+void handle_ext_step(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_length(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_normalize(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_reflect(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_distance(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_cross(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_ext_refract(JitContext* ctx, uint32_t res_id, uint32_t* operands);   
 #endif 

@@ -1,3 +1,7 @@
+# Jitter TO-DO list
+
+## Spir-V operations
+
 | Opcode | Name                     | Count | Completed | Difficulty | Must Have |
 |--------|--------------------------|-------|------------|------------|------------|
 | 3      | OpSource                 | 6     | ✅ | 🟢 Easy   | ❌ |
@@ -66,3 +70,30 @@
 Status: 37 / 62 (4 unused)
 
 - We only support single function shaders
+
+## Extended GLSL 450 operations
+
+| Ext Set      | Name       | Count | Completed | Difficulty |
+| ------------ | ---------- | ----- | --------- | ---------- |
+| GLSL.std.450 | Sin        | 13    | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Cos        | 11    | ❌         | 🟡 Medium  |
+| GLSL.std.450 | FAbs       | 9     | ❌         | 🟢 Easy    |
+| GLSL.std.450 | Length     | 9     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Normalize  | 8     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | FMax       | 7     | ❌         | 🟢 Easy    |
+| GLSL.std.450 | FMin       | 6     | ❌         | 🟢 Easy    |
+| GLSL.std.450 | FClamp     | 4     | ❌         | 🟢 Easy    |
+| GLSL.std.450 | SmoothStep | 4     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Sqrt       | 3     | ❌         | 🟢 Easy    |
+| GLSL.std.450 | FMix       | 3     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Reflect    | 2     | ❌         | 🔴 Hard    |
+| GLSL.std.450 | Distance   | 2     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Cross      | 2     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Pow        | 2     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Atan2      | 1     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Refract    | 1     | ❌         | 🔴 Hard    |
+| GLSL.std.450 | FSign      | 1     | ❌         | 🟢 Easy    |
+| GLSL.std.450 | Step       | 1     | ❌         | 🟢 Easy    |
+| GLSL.std.450 | Log        | 1     | ❌         | 🟡 Medium  |
+
+Status: 0/20

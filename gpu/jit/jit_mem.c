@@ -133,7 +133,8 @@ void handle_op_store(JitContext* ctx, uint32_t* operands)
 /**
  * handle_op_access_chain: Calculates pointer offsets using raw integer arithmetic.
  */
- void handle_op_access_chain(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count) {
+void handle_op_access_chain(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count) 
+{
     uint32_t base_id = operands[0];
     LLVMValueRef base_ptr = get_val(ctx, base_id);
     

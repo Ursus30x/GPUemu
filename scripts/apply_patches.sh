@@ -8,9 +8,24 @@ CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
 ################# GPU CODE GEN #################
 ################################################
 cd "$CWD/gpu/gen"
-wget https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/refs/heads/main/include/spirv/1.2/spirv.core.grammar.json
-python gen_header.py
 
+CORE_JSON="spirv.core.grammar.json"
+CORE_URL="https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/main/include/spirv/unified1/spirv.core.grammar.json"
+
+if [ ! -f "$CORE_JSON" ]; then
+    echo "Downloading $CORE_JSON..."
+    wget -q "$CORE_URL" -O "$CORE_JSON"
+fi
+python3 gen_spirv_header.py
+
+GLSL_JSON="extinst.glsl.std.450.grammar.json"
+GLSL_URL="https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/main/include/spirv/unified1/extinst.glsl.std.450.grammar.json"
+
+if [ ! -f "$GLSL_JSON" ]; then
+    echo "Downloading $GLSL_JSON..."
+    wget -q "$GLSL_URL" -O "$GLSL_JSON"
+fi
+python3 gen_glsl_header.py
 ################################################
 #################### COMMON ####################
 ################################################
@@ -45,6 +60,7 @@ ln -sf "$CWD/gpu/jit/jit_alu.h" "$CWD/qemu/hw/misc/jit_alu.h"
 ln -sf "$CWD/gpu/jit/jit_decorators.c" "$CWD/qemu/hw/misc/jit_decorators.c"
 ln -sf "$CWD/gpu/jit/jit_decorators.h" "$CWD/qemu/hw/misc/jit_decorators.h"
 ln -sf "$CWD/gpu/gen/spirv_jit_meta.h" "$CWD/qemu/hw/misc/spirv_jit_meta.h"
+ln -sf "$CWD/gpu/gen/glsl_std_450.h" "$CWD/qemu/hw/misc/glsl_std_450.h"
 ln -sf "$CWD/gpu/jit/jit_flow.c" "$CWD/qemu/hw/misc/jit_flow.c"
 ln -sf "$CWD/gpu/jit/jit_flow.h" "$CWD/qemu/hw/misc/jit_flow.h"
 ln -sf "$CWD/gpu/jit/jit_mem.c" "$CWD/qemu/hw/misc/jit_mem.c"
