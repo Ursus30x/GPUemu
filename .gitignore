@@ -16,5 +16,7 @@ compiler/gpu_isa.h
 # Ignore auto-generated files
 gpu/gen/spirv_jit_meta.h
 gpu/gen/spirv.core.grammar.json
+gpu/gen/extinst.glsl.std.450.grammar.json
+gpu/gen/glsl_std_450.h
 
 .last_build_type

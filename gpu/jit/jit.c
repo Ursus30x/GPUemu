@@ -289,13 +289,14 @@ void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef
 }
 
 void jit_compile_spirv(uint32_t* binary, size_t word_count) 
-{
+{   
     uint32_t* p = binary + 5;
     uint32_t* end = binary + word_count;
     
     JitContext ctx;
     ctx.bound = binary[3];
     ctx.type_kind_map = (uint8_t*)calloc(ctx.bound, sizeof(uint8_t));
+    create_glsl_std_450_map(&ctx);
 
     ctx.id_val_map = (LLVMValueRef*)calloc(ctx.bound, sizeof(LLVMValueRef));
     ctx.decorations = calloc(ctx.bound, sizeof(SpvDecoInfo));
