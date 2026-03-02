@@ -47,6 +47,7 @@ typedef struct {
     uint32_t* member_types;
     uint32_t member_count;
 } SpvTypeInfo;
+typedef void (*AluHandler)(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 
 typedef struct {
     uint32_t bound;
@@ -76,7 +77,8 @@ typedef struct {
     LLVMTypeRef vec_i1_type;
     LLVMTypeRef int8_type;
     LLVMTypeRef ptr_type; 
-
+    
+    AluHandler glsl_handlers[82];
     
 } JitContext;
 
