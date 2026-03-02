@@ -1,6 +1,8 @@
 #include "jit_alu.h"
 #include "debug_gpu.h"
 #include "glsl_std_450.h"
+#include <llvm-c/Core.h>
+
 void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands) 
 {
     uint8_t kind = ctx->type_kind_map[type_id];
@@ -168,6 +170,7 @@ void handle_op_fmod(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 void handle_op_ext_instr(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     uint32_t instr_id = operands[1];
+    printf("Handling extended instruction with ID %d\n", instr_id);
     ctx->glsl_handlers[instr_id](ctx, res_id, &operands[2]);
 }
 
@@ -194,60 +197,305 @@ void create_glsl_std_450_map(JitContext* ctx)
     ctx->glsl_handlers[GLSLstd450Cross] = handle_ext_cross;
     ctx->glsl_handlers[GLSLstd450Refract] = handle_ext_refract;
 }
+
+#define CREATE_CONST_VEC(name, val) \
+    for(int i = 0; i < SIMT_WIDTH; i++) scalars[i] = LLVMConstReal(f32_type, val); \
+    LLVMValueRef name = LLVMConstVector(scalars, SIMT_WIDTH);
+    
 void handle_ext_sin(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
 
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.sin", 8); 
+    LLVMValueRef sin_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef args[] = { x };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(sin_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    sin_func, 
+                                    args, 1, 
+                                    "sin_v");
+    set_val(ctx, res_id, result);
 }     
 void handle_ext_cos(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
 
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.cos", 8); 
+    LLVMValueRef cos_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef args[] = { x };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(cos_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    cos_func, 
+                                    args, 1, 
+                                    "cos_v");
+    set_val(ctx, res_id, result);
 }      
 void handle_ext_sqrt(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
 
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.sqrt", 9); 
+    LLVMValueRef sqrt_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef args[] = { x };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(sqrt_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    sqrt_func, 
+                                    args, 1, 
+                                    "sqrt_v");
+    set_val(ctx, res_id, result);
 }     
 void handle_ext_pow(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.pow", 8); 
+    LLVMValueRef pow_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 2);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef y = get_val(ctx, operands[1]);
+
+    LLVMValueRef args[] = { x,y };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(pow_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    pow_func, 
+                                    args, 2, 
+                                    "pow_v");
+    set_val(ctx, res_id, result);
 
 }     
 void handle_ext_atan2(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.atan2", 9); 
+    LLVMValueRef atan2_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 2);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef y = get_val(ctx, operands[1]);
+
+    LLVMValueRef args[] = { x, y };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(atan2_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    atan2_func, 
+                                    args, 2, 
+                                    "atan2_v");
+    set_val(ctx, res_id, result);
 
 }    
 void handle_ext_log(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.log", 8); 
+    LLVMValueRef log_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef args[] = { x };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(log_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    log_func, 
+                                    args, 1, 
+                                    "log_v");
+    set_val(ctx, res_id, result);
 
 }
 void handle_ext_fabs(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.fabs", 9); 
+    LLVMValueRef fabs_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef args[] = { x };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(fabs_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    fabs_func, 
+                                    args, 1, 
+                                    "fabs_v");
+    set_val(ctx, res_id, result);
 }
 void handle_ext_fmax(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.maxnum", 11); 
+    LLVMValueRef max_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 2);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef y = get_val(ctx, operands[1]);
+
+    LLVMValueRef args[] = { x, y };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(max_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    max_func, 
+                                    args, 2, 
+                                    "max_v");
+    set_val(ctx, res_id, result);
 
 }
 void handle_ext_fmin(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.minnum", 11); 
+    LLVMValueRef min_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 2);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef y = get_val(ctx, operands[1]);
 
+    LLVMValueRef args[] = { x, y };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(min_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    min_func, 
+                                    args, 2, 
+                                    "min_v");
+    set_val(ctx, res_id, result);
 }
 void handle_ext_fclamp(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+    
+    unsigned max_id = LLVMLookupIntrinsicID("llvm.maxnum", 11);
+    unsigned min_id = LLVMLookupIntrinsicID("llvm.minnum", 11);
 
+    LLVMValueRef max_func = LLVMGetIntrinsicDeclaration(ctx->module, max_id, &vec_float_type, 1);
+    LLVMValueRef min_func = LLVMGetIntrinsicDeclaration(ctx->module, min_id, &vec_float_type, 1);
+
+    LLVMValueRef val = get_val(ctx, operands[0]);
+    LLVMValueRef min = get_val(ctx, operands[1]);
+    LLVMValueRef max = get_val(ctx, operands[2]);
+
+    LLVMValueRef args_max[] = { val, min };
+    LLVMValueRef clamped_min = LLVMBuildCall2(ctx->builder, 
+                                            LLVMGlobalGetValueType(max_func), 
+                                            max_func, 
+                                            args_max, 2, 
+                                            "clamp_max_tmp");
+
+    LLVMValueRef args_min[] = { clamped_min, max };
+    LLVMValueRef final_result = LLVMBuildCall2(ctx->builder, 
+                                            LLVMGlobalGetValueType(min_func), 
+                                            min_func, 
+                                            args_min, 2, 
+                                            "fclamp_res");
+
+    set_val(ctx, res_id, final_result);
 }
 void handle_ext_smoothstep(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMValueRef scalars[SIMT_WIDTH];
+   
+    LLVMTypeRef f32_type = ctx->float_type;
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
 
+    LLVMValueRef edge0 = get_val(ctx, operands[0]);
+    LLVMValueRef edge1 = get_val(ctx, operands[1]);
+    LLVMValueRef x     = get_val(ctx, operands[2]);
+
+    // t = (x - edge0) / (edge1 - edge0)
+    LLVMValueRef num   = LLVMBuildFSub(ctx->builder, x, edge0, "sub_x_e0");
+    LLVMValueRef den   = LLVMBuildFSub(ctx->builder, edge1, edge0, "sub_e1_e0");
+    LLVMValueRef t_raw = LLVMBuildFDiv(ctx->builder, num, den, "t_raw");
+
+    // Clamp t between 0.0 and 1.0
+    CREATE_CONST_VEC(zero_vec, (float)0.0f);
+    CREATE_CONST_VEC(one_vec, (float)1.0f);
+
+
+    unsigned max_id = LLVMLookupIntrinsicID("llvm.maxnum", 11);
+    unsigned min_id = LLVMLookupIntrinsicID("llvm.minnum", 11);
+    LLVMValueRef max_f = LLVMGetIntrinsicDeclaration(ctx->module, max_id, &vec_float_type, 1);
+    LLVMValueRef min_f = LLVMGetIntrinsicDeclaration(ctx->module, min_id, &vec_float_type, 1);
+
+    LLVMValueRef args_max[] = { t_raw, zero_vec };
+    LLVMValueRef t_clamped_min = LLVMBuildCall2(ctx->builder, LLVMGlobalGetValueType(max_f), max_f, args_max, 2, "t_max");
+
+    LLVMValueRef args_min[] = { t_clamped_min, one_vec };
+    LLVMValueRef t = LLVMBuildCall2(ctx->builder, LLVMGlobalGetValueType(min_f), min_f, args_min, 2, "t_clamped");
+
+    //result = t * t * (3.0 - 2.0 * t)
+    CREATE_CONST_VEC(three_v, (float)3.0f);
+    CREATE_CONST_VEC(two_v, (float)2.0f);
+
+    // (2.0 * t)
+    LLVMValueRef two_t   = LLVMBuildFMul(ctx->builder, two_v, t, "two_t");
+    // (3.0 - 2.0 * t)
+    LLVMValueRef term3   = LLVMBuildFSub(ctx->builder, three_v, two_t, "term3");
+    // t * t
+    LLVMValueRef t_sq    = LLVMBuildFMul(ctx->builder, t, t, "t_sq");
+    // t_sq * term3
+    LLVMValueRef final_res = LLVMBuildFMul(ctx->builder, t_sq, term3, "smoothstep_v");
+
+    set_val(ctx, res_id, final_res);
 }
 void handle_ext_fmix(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    //x * (1 - a) + y * a.
+    LLVMValueRef scalars[SIMT_WIDTH];
+   
+    LLVMTypeRef f32_type = ctx->float_type;
 
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef y = get_val(ctx, operands[1]);
+    LLVMValueRef a = get_val(ctx, operands[2]);
+
+    CREATE_CONST_VEC(one_vec, (float)1.0f);
+    LLVMValueRef one_minus_a = LLVMBuildFSub(ctx->builder, one_vec, a, "one_minus_a");
+    LLVMValueRef x_times_one_minus_a = LLVMBuildFMul(ctx->builder, x, one_minus_a, "x_times_one_minus_a");
+
+    LLVMValueRef y_times_a = LLVMBuildFMul(ctx->builder, y, a, "y_times_a");
+    LLVMValueRef final_result = LLVMBuildFAdd(ctx->builder, x_times_one_minus_a, y_times_a, "fmix_v");
+
+    set_val(ctx, res_id, final_result);
 }
 void handle_ext_fsign(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMValueRef scalars[SIMT_WIDTH];
+    LLVMTypeRef f32_type = ctx->float_type;
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
 
-} 
+    LLVMValueRef x = get_val(ctx, operands[0]);
+  
+    CREATE_CONST_VEC(one_v, (float)1.0f);
+    CREATE_CONST_VEC(zero_v, (float)0.0f);
+
+    unsigned copy_id = LLVMLookupIntrinsicID("llvm.copysign", 13);
+    LLVMValueRef copy_f = LLVMGetIntrinsicDeclaration(ctx->module, copy_id, &vec_float_type, 1);
+    
+    LLVMValueRef args[] = { one_v, x };
+    LLVMValueRef sign_bits = LLVMBuildCall2(ctx->builder, 
+                                           LLVMGlobalGetValueType(copy_f), 
+                                           copy_f, 
+                                           args, 2, 
+                                           "sign_bits");
+
+    LLVMValueRef is_zero = LLVMBuildFCmp(ctx->builder, LLVMRealOEQ, x, zero_v, "is_zero_mask");
+
+   
+    LLVMValueRef final_res = LLVMBuildSelect(ctx->builder, 
+                                             is_zero, 
+                                             zero_v, 
+                                             sign_bits, 
+                                             "fsign_res");
+
+    set_val(ctx, res_id, final_res);
+}
+
+
 void handle_ext_step(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    //Result is 0.0 if x < edge; otherwise result is 1.0.
+    LLVMValueRef scalars[SIMT_WIDTH];
+    LLVMTypeRef f32_type = ctx->float_type;
+    LLVMValueRef edge = get_val(ctx, operands[0]);
+    LLVMValueRef x = get_val(ctx, operands[1]);
+
+    CREATE_CONST_VEC(one_v, (float)1.0f);
+    LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOLT, x, edge, "step_cmp");
+    
+    LLVMValueRef result = LLVMBuildSelect(ctx->builder, cmp, one_v, LLVMConstNull(ctx->vec_float_type), "step_res");
+    set_val(ctx, res_id, result);
 
 }
 void handle_ext_length(JitContext* ctx, uint32_t res_id, uint32_t* operands)

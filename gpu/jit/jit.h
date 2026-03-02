@@ -47,9 +47,10 @@ typedef struct {
     uint32_t* member_types;
     uint32_t member_count;
 } SpvTypeInfo;
+typedef struct JitContext JitContext;
 typedef void (*AluHandler)(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 
-typedef struct {
+struct JitContext{
     uint32_t bound;
     uint8_t* type_kind_map;
     
@@ -80,7 +81,7 @@ typedef struct {
     
     AluHandler glsl_handlers[82];
     
-} JitContext;
+};
 
 
 LLVMValueRef get_val(JitContext* ctx, uint32_t id);
