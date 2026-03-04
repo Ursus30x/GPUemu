@@ -1,7 +1,9 @@
 #ifndef JIT_H
 #define JIT_H
 
-#include "gpu.h"
+#define DEBUG_PRINT(...) printf(__VA_ARGS__)
+#define G_GNUC_UNUSED  __attribute__ ((__unused__))
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -88,7 +90,7 @@ LLVMValueRef get_val(JitContext* ctx, uint32_t id);
 
 void set_val(JitContext* ctx, uint32_t id, LLVMValueRef val);
 void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count);
-void jit_compile_spirv(uint32_t* binary, size_t word_count);
+float* jit_compile_spirv(uint32_t* binary, size_t word_count);
 void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask);
 
 

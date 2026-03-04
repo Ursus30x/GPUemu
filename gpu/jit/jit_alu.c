@@ -1,8 +1,14 @@
 #include "jit_alu.h"
-#include "debug_gpu.h"
 #include "glsl_std_450.h"
 #include <llvm-c/Core.h>
-
+#define CREATE_CONST_VEC(name, val) \
+    for(int i = 0; i < SIMT_WIDTH; i++) scalars[i] = LLVMConstReal(f32_type, val); \
+    LLVMValueRef name = LLVMConstVector(scalars, SIMT_WIDTH);
+    
+#define CREATE_CONST_VEC_N(name, val,size) \
+    for(int i = 0; i < size; i++) scalars[i] = LLVMConstReal(f32_type, val); \
+    LLVMValueRef name = LLVMConstVector(scalars, size);
+    
 void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands) 
 {
     uint8_t kind = ctx->type_kind_map[type_id];
@@ -174,6 +180,47 @@ void handle_op_ext_instr(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     ctx->glsl_handlers[instr_id](ctx, res_id, &operands[2]);
 }
 
+void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t type_id,  uint32_t* operands)
+{
+    SpvTypeInfo* info = &ctx->type_info[type_id];
+    if (info->opcode == SpvOpTypeVector)
+    {
+        printf("  Base type is vector with %u components\n", info->member_count);
+        uint32_t num_components = info->member_count;
+        
+        LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
+        LLVMTypeRef array_type = LLVMArrayType(lane_vec_type, num_components);
+        
+        LLVMValueRef composite = LLVMGetUndef(array_type);
+
+        for (uint32_t i = 0; i < num_components; i++)
+        {
+            LLVMValueRef component_vec = get_val(ctx, operands[i]);
+            
+            composite = LLVMBuildInsertValue(ctx->builder, composite, component_vec, i, "pack");
+        }
+
+        set_val(ctx, res_id, composite);
+    }
+}
+void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    // operands[0] = Result Type ID
+    // operands[1] = Composite ID (the source vector/struct)
+    // operands[2] = Literal index (e.g., 0 for .x, 1 for .y)
+    
+    LLVMValueRef composite = get_val(ctx, operands[0]);
+    uint32_t index = operands[1]; 
+
+       LLVMValueRef result = LLVMBuildExtractValue(
+        ctx->builder, 
+        composite, 
+        index, 
+        "extract_comp"
+    );
+
+    set_val(ctx, res_id, result);
+}
 void create_glsl_std_450_map(JitContext* ctx)
 {
     ctx->glsl_handlers[GLSLstd450Sin] = handle_ext_sin;
@@ -198,10 +245,7 @@ void create_glsl_std_450_map(JitContext* ctx)
     ctx->glsl_handlers[GLSLstd450Refract] = handle_ext_refract;
 }
 
-#define CREATE_CONST_VEC(name, val) \
-    for(int i = 0; i < SIMT_WIDTH; i++) scalars[i] = LLVMConstReal(f32_type, val); \
-    LLVMValueRef name = LLVMConstVector(scalars, SIMT_WIDTH);
-    
+
 void handle_ext_sin(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMTypeRef vec_float_type = ctx->vec_float_type;
@@ -493,7 +537,7 @@ void handle_ext_step(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 
     CREATE_CONST_VEC(one_v, (float)1.0f);
     LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOLT, x, edge, "step_cmp");
-    
+
     LLVMValueRef result = LLVMBuildSelect(ctx->builder, cmp, one_v, LLVMConstNull(ctx->vec_float_type), "step_res");
     set_val(ctx, res_id, result);
 

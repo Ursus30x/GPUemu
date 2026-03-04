@@ -69,6 +69,8 @@ ln -sf "$CWD/include/gpu_isa.h" "$CWD/qemu/hw/misc/gpu_isa.h"
 ln -sf "$CWD/include/gpu_hw.h" "$CWD/qemu/hw/misc/gpu_hw.h"
 ln -sf "$CWD/include/vram.h" "$CWD/qemu/hw/misc/vram.h"
 
+ln -sf "$CWD/gpu/gen/spirv_jit_meta.h" "$CWD/gpu/jit/spirv_jit_meta.h"
+ln -sf "$CWD/gpu/gen/glsl_std_450.h" "$CWD/gpu/jit/glsl_std_450.h"
 # Apply config patches
 git apply "$CWD/gpu/qemu.patch"
 
