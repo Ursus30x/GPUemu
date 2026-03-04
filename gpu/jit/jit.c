@@ -3,7 +3,6 @@
 #include "jit_alu.h"
 #include "jit_decorators.h"
 #include "jit_flow.h"
-#include "debug_gpu.h"
 #include "jit_mem.h"
 #include <llvm-c/Transforms/PassBuilder.h>
 
@@ -277,6 +276,12 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpExtInst:
             handle_op_ext_instr(ctx, res_id, operands);
             break;
+        case SpvOpCompositeConstruct:
+            handle_op_composite_construct(ctx, res_id, type_id, operands);
+            break;
+        case SpvOpCompositeExtract:
+            handle_op_composite_extract(ctx, res_id, operands);
+            break;
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
             break;
@@ -291,12 +296,20 @@ void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef
     LLVMBuildStore(ctx->builder, masked_val, ptr);
 }
 
-void jit_compile_spirv(uint32_t* binary, size_t word_count) 
+float* jit_compile_spirv(uint32_t* binary, size_t word_count) 
 {   
     uint32_t* p = binary + 5;
     uint32_t* end = binary + word_count;
     
-    JitContext ctx;
+    JitContext ctx = {0};
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+    LLVMInitializeNativeAsmParser();
+
+    ctx.context = LLVMContextCreate();
+    ctx.module = LLVMModuleCreateWithNameInContext("spirv_vector_module", ctx.context);
+    ctx.builder = LLVMCreateBuilderInContext(ctx.context);
+
     ctx.bound = binary[3];
     ctx.type_kind_map = (uint8_t*)calloc(ctx.bound, sizeof(uint8_t));
     create_glsl_std_450_map(&ctx);
@@ -314,14 +327,7 @@ void jit_compile_spirv(uint32_t* binary, size_t word_count)
         ctx.decorations[i].builtin = -1;
         ctx.decorations[i].array_stride = -1;
     }
-    LLVMInitializeNativeTarget();
-    LLVMInitializeNativeAsmPrinter();
-    LLVMInitializeNativeAsmParser();
-
-    ctx.context = LLVMContextCreate();
-    ctx.module = LLVMModuleCreateWithNameInContext("spirv_vector_module", ctx.context);
-    ctx.builder = LLVMCreateBuilderInContext(ctx.context);
-
+ 
     ctx.float_type = LLVMFloatTypeInContext(ctx.context);
     ctx.int_type = LLVMInt32TypeInContext(ctx.context);
     ctx.vec_float_type = LLVMVectorType(LLVMFloatTypeInContext(ctx.context), SIMT_WIDTH);
@@ -380,7 +386,6 @@ void jit_compile_spirv(uint32_t* binary, size_t word_count)
         jit_emit_instr(&ctx, opcode, res_id, type_id, operands, op_count);
         p += inst_word_count;
     }
-
     char *error = NULL;
     LLVMVerifyModule(ctx.module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
@@ -389,7 +394,7 @@ void jit_compile_spirv(uint32_t* binary, size_t word_count)
     if (LLVMCreateExecutionEngineForModule(&engine, ctx.module, &error) != 0) 
     {
         DEBUG_PRINT("Failed to create execution engine: %s\n", error);
-        return;
+        return NULL;
     }
     LLVMDumpModule(ctx.module); // Debug: Dump the generated LLVM IR
     typedef void (*jitted_func_t)(ExecutionContext*, float*);
@@ -413,10 +418,10 @@ void jit_compile_spirv(uint32_t* binary, size_t word_count)
         while(n) { MemberDecoNode* next = n->next; free(n); n = next; }
         if(ctx.type_info[i].opcode == SpvOpTypeStruct) free(ctx.type_info[i].member_types);
     }
-    free(results);
     free(ctx.type_kind_map);
     free(ctx.id_val_map);
     LLVMDisposeBuilder(ctx.builder);
     LLVMDisposeExecutionEngine(engine);
     LLVMContextDispose(ctx.context);
+    return results;
 }
