@@ -1,0 +1,16 @@
+; SPIR-V
+      OpCapability Shader
+%1 =  OpExtInstImport "GLSL.std.450"
+      OpMemoryModel Logical GLSL450
+      OpEntryPoint GLCompute %main "main"
+      OpExecutionMode %main LocalSize 1 1 1
+
+      %float = OpTypeFloat 32
+      %neg_half = OpConstant %float -0.5
+
+      %ft = OpTypeFunction %float
+      %main = OpFunction %float None %ft
+      %label = OpLabel
+      %res = OpExtInst %float %1 FSign %neg_half
+      OpReturnValue %res
+      OpFunctionEnd

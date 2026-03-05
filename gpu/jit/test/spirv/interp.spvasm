@@ -1,0 +1,28 @@
+; SPIR-V
+      OpCapability Shader
+%glsl = OpExtInstImport "GLSL.std.450"
+      OpMemoryModel Logical GLSL450
+      OpEntryPoint GLCompute %main "main"
+      OpExecutionMode %main LocalSize 1 1 1
+
+      %float = OpTypeFloat 32
+      %zero = OpConstant %float 0.0
+      %one = OpConstant %float 1.0
+      %half = OpConstant %float 0.5
+      %val = OpConstant %float 10.0
+
+      %ft = OpTypeFunction %float
+      %main = OpFunction %float None %ft
+      %label = OpLabel
+      
+      ; FClamp(value, min, max)
+      %clamp = OpExtInst %float %glsl FClamp %val %zero %one ; Result: 1.0
+      
+      ; FMix(x, y, a) -> x*(1-a) + y*a
+      %mix = OpExtInst %float %glsl FMix %zero %val %half   ; Result: 5.0
+      
+      ; SmoothStep(edge0, edge1, x)
+      %sstep = OpExtInst %float %glsl SmoothStep %zero %val %half ; Result: small smooth value
+      
+      OpReturnValue %sstep
+      OpFunctionEnd

@@ -41,3 +41,6 @@ else
 fi
 
 make -j"$(nproc)"
+
+cd "$CWD/gpu/jit/test"
+python3 test.py

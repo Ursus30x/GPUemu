@@ -26,6 +26,8 @@ if [ ! -f "$GLSL_JSON" ]; then
     wget -q "$GLSL_URL" -O "$GLSL_JSON"
 fi
 python3 gen_glsl_header.py
+
+
 ################################################
 #################### COMMON ####################
 ################################################
@@ -73,6 +75,13 @@ ln -sf "$CWD/gpu/gen/spirv_jit_meta.h" "$CWD/gpu/jit/spirv_jit_meta.h"
 ln -sf "$CWD/gpu/gen/glsl_std_450.h" "$CWD/gpu/jit/glsl_std_450.h"
 # Apply config patches
 git apply "$CWD/gpu/qemu.patch"
+
+
+cd "$CWD/qemu/jit"
+make
+cd "$CWD/qemu/jit/test"
+python3 test.py
+
 
 ################################################
 ################# EDK2 PATCHES #################

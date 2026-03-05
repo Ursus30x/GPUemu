@@ -3,9 +3,6 @@ from pathlib import Path
 
 subprocess.run(["mkdir", "out"], capture_output=True, text=True)
 
-
-
-
 test_directory = Path("spirv")
 
 files = list(test_directory.glob("*.spvasm"))
@@ -30,4 +27,4 @@ print(f"\n\n\n\n")
 print("=============================")
 print(f"Passed {passed}/{len(files)} tests")
 print("=============================")
-subprocess.run(["rm", "-rf", "out"], capture_output=True, text=True)
+#subprocess.run(["rm", "-rf", "out"], capture_output=True, text=True)

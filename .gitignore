@@ -19,4 +19,8 @@ gpu/gen/spirv.core.grammar.json
 gpu/gen/extinst.glsl.std.450.grammar.json
 gpu/gen/glsl_std_450.h
 
+gpu/jit/spirv_jit_meta.h
+gpu/jit/glsl_std_450.h
+gpu/jit/test/out
+gpu/jit/test/test_jit
 .last_build_type
