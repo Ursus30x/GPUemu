@@ -1,8 +1,5 @@
 ; SPIR-V
 ; Version: 1.0
-; Generator: Khronos SPIR-V Tools Assembler; 0
-; Bound: 25
-; Schema: 0
       OpCapability Shader
       OpMemoryModel Logical GLSL450
       OpEntryPoint GLCompute %f "main" 
@@ -10,31 +7,27 @@
       
       %void = OpTypeVoid
       %float = OpTypeFloat 32
-      
       %_ptr_Private_float = OpTypePointer Private %float
       
       %const_2 = OpConstant %float 2.0
-      %const_3_5 = OpConstant %float 3.5
-      %const_4 = OpConstant %float 4.0
-      
+      %const_3 = OpConstant %float 3.0
+      %const_1_5 = OpConstant %float 1.5
 
       %ft = OpTypeFunction %float
       %f = OpFunction %float None %ft
-      %14 = OpLabel
+      %label = OpLabel
 
       %f1 = OpVariable %_ptr_Private_float Private %const_2
-      %f2 = OpVariable %_ptr_Private_float Private %const_3_5
-      %f3 = OpVariable %_ptr_Private_float Private %const_4
+      %f2 = OpVariable %_ptr_Private_float Private %const_3
+      %f3 = OpVariable %_ptr_Private_float Private %const_1_5
       
-      
-      ; 4. Load the values from the variables
       %val1 = OpLoad %float %f1
       %val2 = OpLoad %float %f2
       %val3 = OpLoad %float %f3
       
-      ; 5. Perform the addition using the loaded values
-      %add_result = OpFAdd %float %val1 %val2
-      %add_result2 = OpFAdd %float %add_result %val3
+      ; Multiplication: (2.0 * 3.0) * 1.5
+      %mul_result = OpFMul %float %val1 %val2
+      %mul_result2 = OpFMul %float %mul_result %val3
       
-      OpReturnValue %add_result2
-      OpFunctionEnd
+      OpReturnValue %mul_result2
+      OpFunctionEnd 
