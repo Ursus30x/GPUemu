@@ -1,0 +1,33 @@
+; SPIR-V
+; Version: 1.0
+      OpCapability Shader
+      OpMemoryModel Logical GLSL450
+      OpEntryPoint GLCompute %f "main" 
+      OpExecutionMode %f LocalSize 1 1 1
+      
+      %void = OpTypeVoid
+      %float = OpTypeFloat 32
+      %_ptr_Private_float = OpTypePointer Private %float
+      
+      %const_12 = OpConstant %float 12.0
+      %const_2 = OpConstant %float 2.0
+      %const_1_5 = OpConstant %float 1.5
+
+      %ft = OpTypeFunction %float
+      %f = OpFunction %float None %ft
+      %label = OpLabel
+
+      %f1 = OpVariable %_ptr_Private_float Private %const_12
+      %f2 = OpVariable %_ptr_Private_float Private %const_2
+      %f3 = OpVariable %_ptr_Private_float Private %const_1_5
+      
+      %val1 = OpLoad %float %f1
+      %val2 = OpLoad %float %f2
+      %val3 = OpLoad %float %f3
+      
+      ; Division: (12.0 / 2.0) / 1.5
+      %div_result = OpFDiv %float %val1 %val2
+      %div_result2 = OpFDiv %float %div_result %val3
+      
+      OpReturnValue %div_result2
+      OpFunctionEnd 

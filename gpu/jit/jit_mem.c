@@ -3,7 +3,7 @@
 
 //handle_op_variable: Maps SPIR-V variables to physical resources or local memory.
 //operands[0]: Storage Class (Uniform, Input, Output, Function, etc.)
-void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands) 
+void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t opCount, uint32_t* operands) 
 {
     uint32_t storage_class = operands[0];
     SpvDecoInfo* deco = &ctx->decorations[res_id];
@@ -59,11 +59,31 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
             set_val(ctx, res_id, LLVMConstNull(ctx->ptr_type));
         }
     }
-    else if (storage_class == SpvStorageClassFunction) 
+    else if (storage_class == SpvStorageClassFunction || storage_class == SpvStorageClassPrivate) 
     {
         LLVMValueRef alloca_inst = LLVMBuildAlloca(ctx->builder, ctx->vec_float_type, "local_var");
         LLVMSetAlignment(alloca_inst, 64);
         set_val(ctx, res_id, alloca_inst);
+
+        if (opCount > 1) 
+        {
+            uint32_t init_id = operands[1];
+            LLVMValueRef init_val = ctx->id_val_map[init_id]; // Get the constant value
+            
+            if (init_val != NULL) 
+            {
+                LLVMBuildStore(ctx->builder, init_val, alloca_inst);
+            } else 
+            {
+                DEBUG_PRINT("Warning: Initializer %u not found for variable %u\n", init_id, res_id);
+            }
+        }
+    }
+    else 
+    {
+        // ALWAYS have a fallback to prevent silent NULL pointer segfaults!
+        DEBUG_PRINT("Warning: Unhandled Storage Class %u\n", storage_class);
+        set_val(ctx, res_id, LLVMConstNull(ctx->ptr_type));
     }
 }
 

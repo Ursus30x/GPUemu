@@ -1,6 +1,9 @@
 #include "jit.h"
 #include <stdio.h> 
 #include <stdlib.h>
+#include <math.h>
+
+float epsilon = 1e-6f;
 
 int main(int argc, char *argv[]) 
 {
@@ -52,7 +55,7 @@ int main(int argc, char *argv[])
     fclose(out_f);
     for(uint32_t i = 0; i < SIMT_WIDTH; i++)
     {
-        if(output[i] != expected_output[i]) 
+        if(fabs(output[i] - expected_output[i]) > epsilon) 
         {
             printf("Test failed at lane %d: Expected %f, Got %f\n", i, expected_output[i], output[i]);
             for(uint32_t i = 0; i < SIMT_WIDTH; i++)

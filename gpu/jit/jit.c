@@ -262,7 +262,7 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             LLVMBuildRetVoid(ctx->builder);
             break;
         case SpvOpVariable:
-            handle_op_variable(ctx, res_id, type_id, operands);
+            handle_op_variable(ctx, res_id, type_id, operand_count, operands);
             break;
         case SpvOpLoad:
             handle_op_load(ctx, res_id, type_id, operands);
