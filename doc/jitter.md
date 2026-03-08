@@ -50,11 +50,11 @@
 | 133    | OpFMul                   | 40    | ✅ | 🟢 Easy   | ⭐ |
 | 136    | OpFDiv                   | 24    | ✅ | 🟢 Easy   | ⭐ |
 | 141    | OpFMod                   | 5     | ✅ | 🟡 Medium | ⭐ |
-| 142    | OpVectorTimesScalar      | 30    | ❌ | 🟡 Medium | ⭐ |
+| 142    | OpVectorTimesScalar      | 30    | ✅ | 🟡 Medium | ⭐ |
 | 144    | OpVectorTimesMatrix      | 3     | ❌ | 🔴 Hard   | ⭐ |
 | 145    | OpMatrixTimesVector      | 6     | ❌ | 🔴 Hard   | ⭐ |
 | 146    | OpMatrixTimesMatrix      | 1     | ❌ | 🔴 Hard   | ⭐ |
-| 148    | OpDot                    | 4     | ❌ | 🟡 Medium | ⭐ |
+| 148    | OpDot                    | 4     | ✅ | 🟡 Medium | ⭐ |
 | 169    | OpSelect                 | 1     | ✅ | 🟢 Easy   | ⭐ |
 | 177    | OpSLessThan              | 5     | ✅ | 🟢 Easy   | ⭐ |
 | 184    | OpFOrdLessThan           | 6     | ✅ | 🟢 Easy   | ⭐ |
@@ -67,7 +67,7 @@
 | 253    | OpReturn                 | 6     | ❌ | 🟢 Easy   | ⭐ |
 | 254    | OpReturnValue            | 7     | ✅ | 🟢 Easy   | ⭐ |
 
-Status: 39 / 62 (4 unused)
+Status: 41 / 62 (4 unused)
 
 - We only support single function shaders
 
@@ -86,14 +86,14 @@ Status: 39 / 62 (4 unused)
 | GLSL.std.450 | SmoothStep | 4     | ✅         | 🟢 Easy  |
 | GLSL.std.450 | Sqrt       | 3     | ✅         | 🟢 Easy    |
 | GLSL.std.450 | FMix       | 3     | ✅         | 🟡 Medium  |
-| GLSL.std.450 | Reflect    | 2     | ❌         | 🔴 Hard    |
+| GLSL.std.450 | Reflect    | 2     | ✅         | 🔴 Hard    |
 | GLSL.std.450 | Distance   | 2     | ✅         | 🟡 Medium  |
 | GLSL.std.450 | Cross      | 2     | ✅         | 🟡 Medium  |
 | GLSL.std.450 | Pow        | 2     | ✅         | 🟢 Easy  |
 | GLSL.std.450 | Atan2      | 1     | ✅         | 🟢 Easy  |
-| GLSL.std.450 | Refract    | 1     | ❌         | 🔴 Hard    |
+| GLSL.std.450 | Refract    | 1     | ✅         | 🔴 Hard    |
 | GLSL.std.450 | FSign      | 1     | ✅         | 🟢 Easy    |
 | GLSL.std.450 | Step       | 1     | ✅         | 🟢 Easy    |
 | GLSL.std.450 | Log        | 1     | ✅         | 🟢 Easy  |
 
-Status: 18/20
+Status: 20/20
