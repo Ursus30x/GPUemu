@@ -21,7 +21,7 @@ void handle_op_fordlessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands
 void handle_op_fordgreaterthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_fmod(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t type_id,  uint32_t* operands);
-void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* operands, uint32_t num_indices);
 
 
 void create_glsl_std_450_map(JitContext* ctx);

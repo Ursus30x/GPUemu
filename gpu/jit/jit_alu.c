@@ -183,41 +183,80 @@ void handle_op_ext_instr(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t type_id,  uint32_t* operands)
 {
     SpvTypeInfo* info = &ctx->type_info[type_id];
+
     if (info->opcode == SpvOpTypeVector)
     {
-        printf("  Base type is vector with %u components\n", info->member_count);
         uint32_t num_components = info->member_count;
-        
+
         LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
         LLVMTypeRef array_type = LLVMArrayType(lane_vec_type, num_components);
-        
+
         LLVMValueRef composite = LLVMGetUndef(array_type);
 
         for (uint32_t i = 0; i < num_components; i++)
         {
             LLVMValueRef component_vec = get_val(ctx, operands[i]);
-            
             composite = LLVMBuildInsertValue(ctx->builder, composite, component_vec, i, "pack");
         }
 
         set_val(ctx, res_id, composite);
+        return;
+    }
+
+    if (info->opcode == SpvOpTypeMatrix)
+    {
+        uint32_t num_cols = info->member_count;
+        uint32_t vec_type = info->base_type_id;
+
+        SpvTypeInfo* vec_info = &ctx->type_info[vec_type];
+        uint32_t num_rows = vec_info->member_count;
+
+        printf("  Matrix %u x %u\n", num_cols, num_rows);
+
+        LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
+        LLVMTypeRef column_type = LLVMArrayType(lane_vec_type, num_rows);
+        LLVMTypeRef matrix_type = LLVMArrayType(column_type, num_cols);
+
+        LLVMValueRef matrix = LLVMGetUndef(matrix_type);
+
+        for (uint32_t c = 0; c < num_cols; c++)
+        {
+            LLVMValueRef column = get_val(ctx, operands[c]);
+
+            matrix = LLVMBuildInsertValue(
+                ctx->builder,
+                matrix,
+                column,
+                c,
+                "insert_col");
+        }
+
+        set_val(ctx, res_id, matrix);
+        return;
     }
 }
-void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+
+
+void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* operands, uint32_t num_indices)
 {
-    // operands[0] = Result Type ID
-    // operands[1] = Composite ID (the source vector/struct)
-    // operands[2] = Literal index (e.g., 0 for .x, 1 for .y)
+    // operands[0] = Composite ID
+    // operands[1..] = literal indices
     
     LLVMValueRef composite = get_val(ctx, operands[0]);
-    uint32_t index = operands[1]; 
 
-       LLVMValueRef result = LLVMBuildExtractValue(
-        ctx->builder, 
-        composite, 
-        index, 
-        "extract_comp"
-    );
+    LLVMValueRef result = NULL;
+    for (uint32_t i = 0; i < num_indices; i++)
+    {
+        uint32_t index = operands[i + 1]; 
+        result = LLVMBuildExtractValue(
+            ctx->builder, 
+            composite, 
+            index, 
+            "extract_comp"
+        );
+        composite = result; 
+    }
+    printf("Extracting composite with %u indices\n", num_indices);
 
     set_val(ctx, res_id, result);
 }
