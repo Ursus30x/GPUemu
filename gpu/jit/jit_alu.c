@@ -198,7 +198,6 @@ void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t ty
             LLVMValueRef component_vec = get_val(ctx, operands[i]);
             composite = LLVMBuildInsertValue(ctx->builder, composite, component_vec, i, "pack");
         }
-
         set_val(ctx, res_id, composite);
         return;
     }
@@ -583,10 +582,91 @@ void handle_ext_step(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 }
 void handle_ext_length(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMValueRef vec = get_val(ctx, operands[0]);
+    LLVMTypeRef vec_type = LLVMTypeOf(vec);
+    
+    uint32_t num_elements = LLVMGetVectorSize(vec_type);
+    LLVMValueRef result = NULL;
+
+    for (uint32_t i = 0; i < num_elements; i++)
+    {
+        LLVMValueRef elem = LLVMBuildExtractValue(ctx->builder, vec, i, "elem");
+        LLVMValueRef elem_sq = LLVMBuildFMul(ctx->builder, elem, elem, "elem_sq");
+        
+        if (i == 0) 
+        {
+            result = elem_sq;
+        } 
+        else 
+        {
+            result = LLVMBuildFAdd(ctx->builder, result, elem_sq, "sum_tmp");
+        }
+    }
+
+   
+    LLVMTypeRef scalar_type = LLVMTypeOf(result);
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.sqrt", 9); 
+    LLVMValueRef sqrt_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &scalar_type, 1);
+    
+    LLVMValueRef args[] = { result };
+    LLVMTypeRef sqrt_type = LLVMGlobalGetValueType(sqrt_func);
+    
+    result = LLVMBuildCall2(ctx->builder, 
+                            sqrt_type,
+                            sqrt_func, 
+                            args, 1, 
+                            "sqrt_final");
+
+    set_val(ctx, res_id, result);
 
 }
 void handle_ext_normalize(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMValueRef vec = get_val(ctx, operands[0]);
+    LLVMTypeRef vec_type = LLVMTypeOf(vec);
+    
+    uint32_t num_elements = LLVMGetVectorSize(vec_type);
+    LLVMValueRef result = NULL;
+
+    for (uint32_t i = 0; i < num_elements; i++)
+    {
+        LLVMValueRef elem = LLVMBuildExtractValue(ctx->builder, vec, i, "elem");
+        LLVMValueRef elem_sq = LLVMBuildFMul(ctx->builder, elem, elem, "elem_sq");
+        
+        if (i == 0) 
+        {
+            result = elem_sq;
+        } 
+        else 
+        {
+            result = LLVMBuildFAdd(ctx->builder, result, elem_sq, "sum_tmp");
+        }
+    }
+
+   
+    LLVMTypeRef scalar_type = LLVMTypeOf(result);
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.sqrt", 9); 
+    LLVMValueRef sqrt_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &scalar_type, 1);
+    
+    LLVMValueRef args[] = { result };
+    LLVMTypeRef sqrt_type = LLVMGlobalGetValueType(sqrt_func);
+    
+    result = LLVMBuildCall2(ctx->builder, 
+                            sqrt_type,
+                            sqrt_func, 
+                            args, 1, 
+                            "sqrt_final");
+
+    LLVMValueRef normalized_vec = LLVMGetUndef(vec_type);
+    for (uint32_t i = 0; i < num_elements; i++)
+    {
+        LLVMValueRef elem = LLVMBuildExtractValue(ctx->builder, vec, i, "elem");
+        LLVMValueRef norm_elem = LLVMBuildFDiv(ctx->builder, elem, result, "norm_elem");
+
+        normalized_vec = LLVMBuildInsertValue(ctx->builder, normalized_vec, norm_elem, i, "normalized_vec");
+    
+    }
+    set_val(ctx, res_id, normalized_vec);
 
 }
 void handle_ext_reflect(JitContext* ctx, uint32_t res_id, uint32_t* operands)
@@ -595,11 +675,87 @@ void handle_ext_reflect(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 }
 void handle_ext_distance(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMValueRef vec1 = get_val(ctx, operands[0]);
+    LLVMValueRef vec2 = get_val(ctx, operands[1]);
 
+    //assume vec1 and vec2 are of the same type and are vectors of floats
+    LLVMTypeRef vec_type = LLVMTypeOf(vec1);
+    
+    uint32_t num_elements = LLVMGetVectorSize(vec_type);
+    LLVMValueRef result = NULL;
+
+    for (uint32_t i = 0; i < num_elements; i++)
+    {
+        LLVMValueRef elem1 = LLVMBuildExtractValue(ctx->builder, vec1, i, "elem1");
+        LLVMValueRef elem2 = LLVMBuildExtractValue(ctx->builder, vec2, i, "elem2");
+        LLVMValueRef diff = LLVMBuildFSub(ctx->builder, elem1, elem2, "diff");
+        LLVMValueRef elem_sq = LLVMBuildFMul(ctx->builder, diff, diff, "elem_sq");
+        
+        if (i == 0) 
+        {
+            result = elem_sq;
+        } 
+        else 
+        {
+            result = LLVMBuildFAdd(ctx->builder, result, elem_sq, "sum_tmp");
+        }
+    }
+
+   
+    LLVMTypeRef scalar_type = LLVMTypeOf(result);
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.sqrt", 9); 
+    LLVMValueRef sqrt_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &scalar_type, 1);
+    
+    LLVMValueRef args[] = { result };
+    LLVMTypeRef sqrt_type = LLVMGlobalGetValueType(sqrt_func);
+    
+    result = LLVMBuildCall2(ctx->builder, 
+                            sqrt_type,
+                            sqrt_func, 
+                            args, 1, 
+                            "sqrt_final");
+
+    set_val(ctx, res_id, result);
 }
 void handle_ext_cross(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMValueRef vec_x = get_val(ctx, operands[0]);
+    LLVMValueRef vec_y = get_val(ctx, operands[1]);
 
+    LLVMTypeRef vec_type = LLVMTypeOf(vec_x);
+    
+    uint32_t num_elements = LLVMGetVectorSize(vec_type);
+    if(num_elements != 3) {
+        printf("Error: reflect function expects a vec3 input\n");
+        return;
+    }
+    LLVMValueRef x0 = LLVMBuildExtractValue(ctx->builder, vec_x, 0, "x0");
+    LLVMValueRef x1 = LLVMBuildExtractValue(ctx->builder, vec_x, 1, "x1");
+    LLVMValueRef x2 = LLVMBuildExtractValue(ctx->builder, vec_x, 2, "x2");
+
+    LLVMValueRef y0 = LLVMBuildExtractValue(ctx->builder, vec_y, 0, "y0");
+    LLVMValueRef y1 = LLVMBuildExtractValue(ctx->builder, vec_y, 1, "y1");
+    LLVMValueRef y2 = LLVMBuildExtractValue(ctx->builder, vec_y, 2, "y2");
+ 
+    LLVMValueRef r0 = LLVMBuildFSub(ctx->builder, 
+        LLVMBuildFMul(ctx->builder, x1, y2, "m1"), 
+        LLVMBuildFMul(ctx->builder, y1, x2, "m2"), "r0");
+
+    LLVMValueRef r1 = LLVMBuildFSub(ctx->builder, 
+        LLVMBuildFMul(ctx->builder, x2, y0, "m3"), 
+        LLVMBuildFMul(ctx->builder, y2, x0, "m4"), "r1");
+
+    LLVMValueRef r2 = LLVMBuildFSub(ctx->builder, 
+        LLVMBuildFMul(ctx->builder, x0, y1, "m5"), 
+        LLVMBuildFMul(ctx->builder, y0, x1, "m6"), "r2");
+
+    LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
+    LLVMTypeRef array_type = LLVMArrayType(lane_vec_type, 3);
+    LLVMValueRef res = LLVMGetUndef(array_type);
+    res = LLVMBuildInsertValue(ctx->builder, res, r0, 0, "res0");
+    res = LLVMBuildInsertValue(ctx->builder, res, r1, 1, "res1");
+    res = LLVMBuildInsertValue(ctx->builder, res, r2, 2, "res2");
+    set_val(ctx, res_id, res);
 }
 void handle_ext_refract(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
