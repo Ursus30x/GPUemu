@@ -38,8 +38,8 @@
 | 71     | OpDecorate               | 37    | ✅ | 🟢 Easy   | ⭐ |
 | 72     | OpMemberDecorate         | 31    | ✅ | 🟢 Easy   | ⭐ |
 | 79     | OpVectorShuffle          | 21    | ❌ | 🟡 Medium | ⭐ |
-| 80     | OpCompositeConstruct     | 62    | ❌ | 🟡 Medium | ⭐ |
-| 81     | OpCompositeExtract       | 45    | ❌ | 🟡 Medium | ⭐ |
+| 80     | OpCompositeConstruct     | 62    | ✅ | 🟡 Medium | ⭐ |
+| 81     | OpCompositeExtract       | 45    | ✅ | 🟡 Medium | ⭐ |
 | 87     | OpImageSampleImplicitLod | 6     | ❌ | 🔴 Hard   | ⭐ |
 | 111    | OpConvertSToF            | 5     | ✅ | 🟢 Easy   | ⭐ |
 | 127    | OpFNegate                | 9     | ✅ | 🟢 Easy   | ⭐ |
@@ -67,7 +67,7 @@
 | 253    | OpReturn                 | 6     | ❌ | 🟢 Easy   | ⭐ |
 | 254    | OpReturnValue            | 7     | ✅ | 🟢 Easy   | ⭐ |
 
-Status: 37 / 62 (4 unused)
+Status: 39 / 62 (4 unused)
 
 - We only support single function shaders
 
@@ -78,8 +78,8 @@ Status: 37 / 62 (4 unused)
 | GLSL.std.450 | Sin        | 13    | ✅         | 🟢 Easy  |
 | GLSL.std.450 | Cos        | 11    | ✅         | 🟢 Easy  |
 | GLSL.std.450 | FAbs       | 9     | ✅         | 🟢 Easy    |
-| GLSL.std.450 | Length     | 9     | ❌         | 🟡 Medium  |
-| GLSL.std.450 | Normalize  | 8     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Length     | 9     | ✅         | 🟡 Medium  |
+| GLSL.std.450 | Normalize  | 8     | ✅         | 🟡 Medium  |
 | GLSL.std.450 | FMax       | 7     | ✅         | 🟢 Easy    |
 | GLSL.std.450 | FMin       | 6     | ✅         | 🟢 Easy    |
 | GLSL.std.450 | FClamp     | 4     | ✅         | 🟢 Easy    |
@@ -87,8 +87,8 @@ Status: 37 / 62 (4 unused)
 | GLSL.std.450 | Sqrt       | 3     | ✅         | 🟢 Easy    |
 | GLSL.std.450 | FMix       | 3     | ✅         | 🟡 Medium  |
 | GLSL.std.450 | Reflect    | 2     | ❌         | 🔴 Hard    |
-| GLSL.std.450 | Distance   | 2     | ❌         | 🟡 Medium  |
-| GLSL.std.450 | Cross      | 2     | ❌         | 🟡 Medium  |
+| GLSL.std.450 | Distance   | 2     | ✅         | 🟡 Medium  |
+| GLSL.std.450 | Cross      | 2     | ✅         | 🟡 Medium  |
 | GLSL.std.450 | Pow        | 2     | ✅         | 🟢 Easy  |
 | GLSL.std.450 | Atan2      | 1     | ✅         | 🟢 Easy  |
 | GLSL.std.450 | Refract    | 1     | ❌         | 🔴 Hard    |
@@ -96,4 +96,4 @@ Status: 37 / 62 (4 unused)
 | GLSL.std.450 | Step       | 1     | ✅         | 🟢 Easy    |
 | GLSL.std.450 | Log        | 1     | ✅         | 🟢 Easy  |
 
-Status: 14/20
+Status: 18/20
