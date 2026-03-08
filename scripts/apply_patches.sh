@@ -98,7 +98,7 @@ git clean -qfdx
 git submodule init
 git submodule update --recursive
 
-make -C BaseTools
+
 
 # Remove old driver symlinks/files for driver implementation
 rm -f "$CWD/edk2/OptionRom"
@@ -122,6 +122,8 @@ ln -sf "$CWD/UEFI/target.txt"                       "$CWD/edk2/Conf/target.txt"
 
 # Apply dsc patches
 git apply "$CWD/UEFI/OvmfPkg.patch"
+
+make -C BaseTools
 
 ################################################
 ################################################

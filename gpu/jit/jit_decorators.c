@@ -97,7 +97,17 @@ void handle_op_type_vector(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     ctx->type_info[res_id].member_types = NULL;
     ctx->type_info[res_id].member_count = count;
 }
+void handle_op_type_matrix(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    ctx->type_info[res_id].opcode = SpvOpTypeMatrix;
 
+    uint32_t column_type = operands[0];
+    uint32_t column_count = operands[1];
+
+    ctx->type_info[res_id].base_type_id = column_type; 
+    ctx->type_info[res_id].member_types = NULL;       
+    ctx->type_info[res_id].member_count = column_count;
+}
 void handle_op_member_decorate(JitContext* ctx, uint32_t* operands) 
 {
     uint32_t struct_id = operands[0];

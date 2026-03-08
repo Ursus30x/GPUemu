@@ -280,7 +280,10 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_composite_construct(ctx, res_id, type_id, operands);
             break;
         case SpvOpCompositeExtract:
-            handle_op_composite_extract(ctx, res_id, operands);
+            handle_op_composite_extract(ctx, res_id, operands, operand_count - 1); 
+            break;
+        case SpvOpTypeMatrix:
+            handle_op_type_matrix(ctx, res_id, operands);
             break;
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);

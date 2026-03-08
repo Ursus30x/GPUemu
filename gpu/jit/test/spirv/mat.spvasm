@@ -1,0 +1,36 @@
+; SPIR-V
+; Version: 1.0
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+
+OpEntryPoint GLCompute %f "main"
+OpExecutionMode %f LocalSize 1 1 1
+
+%void = OpTypeVoid
+%float = OpTypeFloat 32
+
+%v2float = OpTypeVector %float 2
+%mat2 = OpTypeMatrix %v2float 2
+
+%const1 = OpConstant %float 1.0
+%const2 = OpConstant %float 2.0
+%const3 = OpConstant %float 3.0
+%const4 = OpConstant %float 4.0
+
+%ft = OpTypeFunction %float
+
+%f = OpFunction %float None %ft
+%label = OpLabel
+
+; vec2 columns
+%c0 = OpCompositeConstruct %v2float %const1 %const2
+%c1 = OpCompositeConstruct %v2float %const3 %const4
+
+; matrix = [c0, c1]
+%m = OpCompositeConstruct %mat2 %c0 %c1
+
+; extract m[1][0]
+%elem = OpCompositeExtract %float %m 1 0
+
+OpReturnValue %elem
+OpFunctionEnd
