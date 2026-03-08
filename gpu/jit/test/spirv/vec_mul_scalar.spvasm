@@ -1,0 +1,28 @@
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+
+%void    = OpTypeVoid
+%float   = OpTypeFloat 32
+%v3float = OpTypeVector %float 3
+
+%c1 = OpConstant %float 1.0
+%c2 = OpConstant %float 2.0
+%c3 = OpConstant %float 3.0
+
+%s10 = OpConstant %float 10.0
+
+%ft = OpTypeFunction %float
+
+%main = OpFunction %float None %ft
+%label = OpLabel
+
+; vec3(1.0, 2.0, 3.0)
+%v = OpCompositeConstruct %v3float %c1 %c2 %c3
+
+%vRes = OpVectorTimesScalar %v3float %v %s10
+%y_val = OpCompositeExtract %float %vRes 1
+
+OpReturnValue %y_val
+OpFunctionEnd

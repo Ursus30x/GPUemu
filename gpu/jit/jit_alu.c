@@ -4,7 +4,7 @@
 #define CREATE_CONST_VEC(name, val) \
     for(int i = 0; i < SIMT_WIDTH; i++) scalars[i] = LLVMConstReal(f32_type, val); \
     LLVMValueRef name = LLVMConstVector(scalars, SIMT_WIDTH);
-    
+   
 #define CREATE_CONST_VEC_N(name, val,size) \
     for(int i = 0; i < size; i++) scalars[i] = LLVMConstReal(f32_type, val); \
     LLVMValueRef name = LLVMConstVector(scalars, size);
@@ -13,7 +13,7 @@ void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
 {
     uint8_t kind = ctx->type_kind_map[type_id];
     LLVMValueRef const_val;
-    
+
     if (kind == SpvOpTypeFloat)
     {
         float val = *(float*)&operands[0];
@@ -258,6 +258,61 @@ void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* ope
     printf("Extracting composite with %u indices\n", num_indices);
 
     set_val(ctx, res_id, result);
+}
+void handle_op_vector_times_scalar(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMValueRef vec = get_val(ctx, operands[0]);
+    LLVMValueRef scalar = get_val(ctx, operands[1]);
+
+
+    LLVMTypeRef vec_type = LLVMTypeOf(vec);
+    uint32_t num_elements = LLVMGetArrayLength(vec_type);
+
+    LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
+    LLVMTypeRef array_type = LLVMArrayType(lane_vec_type, num_elements);
+
+    LLVMValueRef res = LLVMGetUndef(array_type);
+
+    for (uint32_t i = 0; i < num_elements; i++) 
+    {
+        LLVMValueRef elem = LLVMBuildExtractValue(ctx->builder, vec, i, "tmp_elem");
+        LLVMValueRef mul = LLVMBuildFMul(ctx->builder, elem, scalar, "mul_scalar");
+        
+        res = LLVMBuildInsertValue(ctx->builder, res, mul, i, "res_vec");
+    }
+
+    set_val(ctx, res_id, res);
+}
+LLVMValueRef calculate_dot_product(JitContext* ctx,  LLVMValueRef vecA , LLVMValueRef vecB)
+{
+    LLVMTypeRef vec_type = LLVMTypeOf(vecA);
+    uint32_t num_elements = LLVMGetArrayLength(vec_type);
+
+    LLVMValueRef dot_res = NULL;
+
+    for (uint32_t i = 0; i < num_elements; i++) {
+        LLVMValueRef a_elem = LLVMBuildExtractValue(ctx->builder, vecA, i, "a_elem");
+        LLVMValueRef b_elem = LLVMBuildExtractValue(ctx->builder, vecB, i, "b_elem");
+        
+        LLVMValueRef mul = LLVMBuildFMul(ctx->builder, a_elem, b_elem, "mul_tmp");
+        
+        if (i == 0) 
+        {
+            dot_res = mul;
+        } 
+        else 
+        {
+            dot_res = LLVMBuildFAdd(ctx->builder, dot_res, mul, "dot_sum");
+        }
+    }
+    return dot_res;
+}
+void handle_op_dot(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMValueRef vecA = get_val(ctx, operands[0]);
+    LLVMValueRef vecB = get_val(ctx, operands[1]);
+    LLVMValueRef dot_res = calculate_dot_product(ctx, vecA, vecB);
+    set_val(ctx, res_id, dot_res);
 }
 void create_glsl_std_450_map(JitContext* ctx)
 {
@@ -671,7 +726,39 @@ void handle_ext_normalize(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 }
 void handle_ext_reflect(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMValueRef I = get_val(ctx, operands[0]);
+    LLVMValueRef N = get_val(ctx, operands[1]);
+    LLVMTypeRef vec_type = LLVMTypeOf(I);
+    uint32_t num_elements = LLVMGetArrayLength(vec_type);
 
+    // d = dot(N, I)
+    LLVMValueRef dot_ni = calculate_dot_product(ctx, N, I);
+
+    // factor = 2.0 * dot(N, I)
+    LLVMValueRef scalars[SIMT_WIDTH];
+    LLVMTypeRef f32_type = ctx->float_type;
+    CREATE_CONST_VEC(two_vec, (float)2.0f);
+    LLVMValueRef factor = LLVMBuildFMul(ctx->builder, two_vec, dot_ni, "factor");
+
+    // R = I - (factor * N)
+    LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
+    LLVMTypeRef array_type = LLVMArrayType(lane_vec_type, num_elements);
+    LLVMValueRef result_vec = LLVMGetUndef(array_type);
+    for (uint32_t i = 0; i < num_elements; i++) 
+    {
+        LLVMValueRef i_elem = LLVMBuildExtractValue(ctx->builder, I, i, "i_elem");
+        LLVMValueRef n_elem = LLVMBuildExtractValue(ctx->builder, N, i, "n_elem");
+        
+        // (factor * N[i])
+        LLVMValueRef scaled_n = LLVMBuildFMul(ctx->builder, factor, n_elem, "scaled_n");
+        
+        // I[i] - scaled_n
+        LLVMValueRef reflected_elem = LLVMBuildFSub(ctx->builder, i_elem, scaled_n, "reflected_elem");
+        
+        result_vec = LLVMBuildInsertValue(ctx->builder, result_vec, reflected_elem, i, "res_vec");
+    }
+
+    set_val(ctx, res_id, result_vec);
 }
 void handle_ext_distance(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
@@ -725,7 +812,8 @@ void handle_ext_cross(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     LLVMTypeRef vec_type = LLVMTypeOf(vec_x);
     
     uint32_t num_elements = LLVMGetVectorSize(vec_type);
-    if(num_elements != 3) {
+    if(num_elements != 3) 
+    {
         printf("Error: reflect function expects a vec3 input\n");
         return;
     }
@@ -759,5 +847,64 @@ void handle_ext_cross(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 }
 void handle_ext_refract(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    LLVMValueRef scalars[SIMT_WIDTH];
+    LLVMTypeRef f32_type = ctx->float_type;
+    CREATE_CONST_VEC(one_vec, 1.0f);
+    CREATE_CONST_VEC(zero_vec, 0.0f);
+
+    LLVMValueRef eta = get_val(ctx, operands[2]);
+
+    LLVMValueRef I = get_val(ctx, operands[0]);
+    LLVMValueRef N = get_val(ctx, operands[1]);
+
+    LLVMValueRef dotNI = calculate_dot_product(ctx, N, I);
+
+    // k = 1.0 - eta * eta * (1.0 - dotNI * dotNI)
+  
+    LLVMValueRef eta2 = LLVMBuildFMul(ctx->builder, eta, eta, "eta2");
+    LLVMValueRef dotNI2 = LLVMBuildFMul(ctx->builder, dotNI, dotNI, "dotNI2");
+    LLVMValueRef oneMinusDot2 = LLVMBuildFSub(ctx->builder, one_vec, dotNI2, "tmp");
+    LLVMValueRef k = LLVMBuildFSub(ctx->builder, one_vec, 
+                                    LLVMBuildFMul(ctx->builder, eta2, oneMinusDot2, ""), "k");
+
+    // k < 0.0 ?
+    LLVMValueRef cond = LLVMBuildFCmp(ctx->builder, LLVMRealULT, k, zero_vec, "is_internal_reflection");
+
+    //  sqrt(k)
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.sqrt", 9); 
+    LLVMValueRef sqrt_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
+    LLVMValueRef args[] = { k };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(sqrt_func);
+    LLVMValueRef sqrtK = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    sqrt_func, 
+                                    args, 1, 
+                                    "sqrt_v");
+
+    // n_factor = (eta * dotNI + sqrt(k))
+    LLVMValueRef n_factor = LLVMBuildFAdd(ctx->builder, 
+                                        LLVMBuildFMul(ctx->builder, eta, dotNI, ""), 
+                                        sqrtK, "n_factor");
+
+    LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
+    LLVMTypeRef array_type = LLVMArrayType(lane_vec_type, 3);
+    LLVMValueRef res = LLVMGetUndef(array_type);
+    for (uint32_t i = 0; i < 3; i++) 
+    {
+        LLVMValueRef i_elem = LLVMBuildExtractValue(ctx->builder, I, i, "");
+        LLVMValueRef n_elem = LLVMBuildExtractValue(ctx->builder, N, i, "");
+
+        // Term: eta * I[i] - n_factor * N[i]
+        LLVMValueRef p1 = LLVMBuildFMul(ctx->builder, eta, i_elem, "");
+        LLVMValueRef p2 = LLVMBuildFMul(ctx->builder, n_factor, n_elem, "");
+        LLVMValueRef refracted = LLVMBuildFSub(ctx->builder, p1, p2, "refr_tmp");
+
+        // if k < 0, return 0.0 else return refracted
+        LLVMValueRef final_val = LLVMBuildSelect(ctx->builder, cond, zero_vec, refracted, "select_res");
+        
+        res = LLVMBuildInsertValue(ctx->builder, res, final_val, i, "");
+    }
+    set_val(ctx, res_id, res);
 
 }   
