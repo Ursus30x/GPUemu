@@ -314,6 +314,55 @@ void handle_op_dot(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     LLVMValueRef dot_res = calculate_dot_product(ctx, vecA, vecB);
     set_val(ctx, res_id, dot_res);
 }
+void handle_op_matrix_times_vector(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMValueRef scalars[SIMT_WIDTH];
+    LLVMTypeRef f32_type = ctx->float_type;
+
+    LLVMValueRef matrix = get_val(ctx, operands[0]); // [NumCols x [NumRows x <16 x float>]]
+    LLVMValueRef vector = get_val(ctx, operands[1]); // [NumCols x <16 x float>]
+
+    LLVMTypeRef mat_type = LLVMTypeOf(matrix);
+    uint32_t num_cols = LLVMGetArrayLength(mat_type);
+    
+    LLVMTypeRef col_type = LLVMGetElementType(mat_type);
+    uint32_t num_rows = LLVMGetArrayLength(col_type);
+
+    LLVMTypeRef res_vec_type = LLVMArrayType(ctx->vec_float_type, num_rows);
+    LLVMValueRef res_val = LLVMGetUndef(res_vec_type);
+
+    LLVMValueRef accumulators[4]; 
+    CREATE_CONST_VEC(zero_vec, 0.0f);
+    for (uint32_t r = 0; r < num_rows; r++) 
+    {
+        accumulators[r] = zero_vec;
+    }
+
+    for (uint32_t c = 0; c < num_cols; c++) 
+    {
+        LLVMValueRef column = LLVMBuildExtractValue(ctx->builder, matrix, c, "matrix_col");
+        
+        LLVMValueRef v_comp = LLVMBuildExtractValue(ctx->builder, vector, c, "vector_comp");
+
+        for (uint32_t r = 0; r < num_rows; r++) 
+        {
+            LLVMValueRef mat_element = LLVMBuildExtractValue(ctx->builder, column, r, "mat_element");
+
+            //Mat[c][r] * Vec[c] 
+            LLVMValueRef mul = LLVMBuildFMul(ctx->builder, mat_element, v_comp, "mul_tmp");
+            
+            accumulators[r] = LLVMBuildFAdd(ctx->builder, accumulators[r], mul, "acc_tmp");
+        }
+    }
+
+    for (uint32_t r = 0; r < num_rows; r++) 
+    {
+        res_val = LLVMBuildInsertValue(ctx->builder, res_val, accumulators[r], r, "final_vec");
+    }
+
+    set_val(ctx, res_id, res_val);
+}
+
 void create_glsl_std_450_map(JitContext* ctx)
 {
     ctx->glsl_handlers[GLSLstd450Sin] = handle_ext_sin;

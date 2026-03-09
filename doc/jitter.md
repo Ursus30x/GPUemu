@@ -8,7 +8,7 @@
 | 5      | OpName                   | 147   | ✅ | 🟢 Easy   | ❌ |
 | 6      | OpMemberName             | 23    | ✅ | 🟢 Easy   | ❌ |
 | 11     | OpExtInstImport          | 6     | ✅ | 🟡 Medium | ❌ |
-| 12     | OpExtInst                | 90    | ❌ | 🔴 Hard   | ⭐ |
+| 12     | OpExtInst                | 90    | ✅ | 🔴 Hard   | ⭐ |
 | 14     | OpMemoryModel            | 6     | ❌ | 🟢 Easy   | ⭐ |
 | 15     | OpEntryPoint             | 6     | ❌ | 🟡 Medium | ⭐ |
 | 16     | OpExecutionMode          | 3     | ❌ | 🟡 Medium | ⭐ |
@@ -18,7 +18,7 @@
 | 21     | OpTypeInt                | 11    | ✅ | 🟢 Easy   | ⭐ |
 | 22     | OpTypeFloat              | 6     | ✅ | 🟢 Easy   | ⭐ |
 | 23     | OpTypeVector             | 15    | ✅ | 🟡 Medium | ⭐ |
-| 24     | OpTypeMatrix             | 6     | ❌ | 🟡 Medium | ⭐ |
+| 24     | OpTypeMatrix             | 6     | ✅ | 🟡 Medium | ⭐ |
 | 25     | OpTypeImage              | 2     | ❌ | 🔴 Hard   | ⭐ |
 | 27     | OpTypeSampledImage       | 2     | ❌ | 🔴 Hard   | ⭐ |
 | 28     | OpTypeArray              | 3     | ✅ | 🟡 Medium | ⭐ |
@@ -52,7 +52,7 @@
 | 141    | OpFMod                   | 5     | ✅ | 🟡 Medium | ⭐ |
 | 142    | OpVectorTimesScalar      | 30    | ✅ | 🟡 Medium | ⭐ |
 | 144    | OpVectorTimesMatrix      | 3     | ❌ | 🔴 Hard   | ⭐ |
-| 145    | OpMatrixTimesVector      | 6     | ❌ | 🔴 Hard   | ⭐ |
+| 145    | OpMatrixTimesVector      | 6     | ✅ | 🔴 Hard   | ⭐ |
 | 146    | OpMatrixTimesMatrix      | 1     | ❌ | 🔴 Hard   | ⭐ |
 | 148    | OpDot                    | 4     | ✅ | 🟡 Medium | ⭐ |
 | 169    | OpSelect                 | 1     | ✅ | 🟢 Easy   | ⭐ |
@@ -64,10 +64,10 @@
 | 248    | OpLabel                  | 52    | ✅ | 🟡 Medium | ⭐ |
 | 249    | OpBranch                 | 28    | ❌ | 🔴 Hard   | ⭐ |
 | 250    | OpBranchConditional      | 11    | ❌ | 🔴 Hard   | ⭐ |
-| 253    | OpReturn                 | 6     | ❌ | 🟢 Easy   | ⭐ |
+| 253    | OpReturn                 | 6     | ✅ | 🟢 Easy   | ⭐ |
 | 254    | OpReturnValue            | 7     | ✅ | 🟢 Easy   | ⭐ |
 
-Status: 41 / 62 (4 unused)
+Status: 45 / 62 (4 unused)
 
 - We only support single function shaders
 
