@@ -32,10 +32,21 @@ int main(int argc, char *argv[])
         return 1;
     }
     fclose(f);
-    float *output;
+
     printf("SPIR-V file '%s' loaded successfully (%zu bytes)\n", spirv_path, file_size);
     printf("Compiling SPIR-V to native code...\n");
-    output = jit_compile_spirv(spirv_code, file_size / 4);
+    JitContext ctx = {0};
+    init_jit(&ctx);
+    jitted_func_t my_func = jit_compile_spirv( &ctx, spirv_code, file_size / 4);
+     // Align the buffer to 64 bytes for AVX-512 compatibility
+    float *output = aligned_alloc(64, sizeof(float) * SIMT_WIDTH);
+    memset(output, 0, sizeof(float) * SIMT_WIDTH);
+    ExecutionContext exec_ctx = {0};
+    my_func(&exec_ctx, output);
+
+    printf("Execution Results:\n");
+    for(int i=0; i<SIMT_WIDTH; i++) printf(" Lane %d: %f\n", i, output[i]);
+    free_jit(&ctx);
     printf("Compilation finished'\n");
     
     float expected_output[SIMT_WIDTH];

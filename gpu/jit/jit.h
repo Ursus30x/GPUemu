@@ -65,6 +65,7 @@ struct JitContext{
     LLVMContextRef context;
     LLVMModuleRef module;
     LLVMBuilderRef builder;
+    LLVMExecutionEngineRef engine;
     LLVMValueRef func;
     LLVMValueRef out_ptr_arg;
     LLVMValueRef env_arg;     
@@ -84,14 +85,16 @@ struct JitContext{
     AluHandler glsl_handlers[82];
     
 };
+typedef void* (*jitted_func_t)(ExecutionContext*, void*);
 
 
 LLVMValueRef get_val(JitContext* ctx, uint32_t id);
 
 void set_val(JitContext* ctx, uint32_t id, LLVMValueRef val);
 void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count);
-float* jit_compile_spirv(uint32_t* binary, size_t word_count);
+jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_count);
 void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask);
-
+void init_jit(JitContext* ctx);
+void free_jit(JitContext* ctx);
 
 #endif
