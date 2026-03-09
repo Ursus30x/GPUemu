@@ -26,6 +26,8 @@ void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* ope
 
 void handle_op_vector_times_scalar(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_dot(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_op_matrix_times_vector(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+
 LLVMValueRef calculate_dot_product(JitContext* ctx,  LLVMValueRef vecA , LLVMValueRef vecB);
 
 void create_glsl_std_450_map(JitContext* ctx);

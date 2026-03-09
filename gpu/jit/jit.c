@@ -291,6 +291,9 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpDot:
             handle_op_dot(ctx, res_id, operands);
             break;
+        case SpvOpMatrixTimesVector:
+            handle_op_matrix_times_vector(ctx, res_id, operands);
+            break;
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
             break;
