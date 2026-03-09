@@ -620,7 +620,19 @@ uint32_t code[] = {
 //     0x00000011, 0x00000010, 0x00000006, 0x0003003e, 0x0000000f, 0x00000011, 0x0004003d, 0x00000003, 
 //     0x00000012, 0x0000000f, 0x000200fe, 0x00000012, 0x00010038
 // };
-    jit_compile_spirv(code, sizeof(code)/4);
+
+    JitContext ctx = {0};
+    init_jit(&ctx);
+    jitted_func_t my_func = jit_compile_spirv( &ctx, code, sizeof(code)/4);
+     // Align the buffer to 64 bytes for AVX-512 compatibility
+    float *output = aligned_alloc(64, sizeof(float) * SIMT_WIDTH);
+    memset(output, 0, sizeof(float) * SIMT_WIDTH);
+    ExecutionContext exec_ctx = {0};
+    my_func(&exec_ctx, output);
+
+    printf("Execution Results:\n");
+    for(int i=0; i<SIMT_WIDTH; i++) printf(" Lane %d: %f\n", i, output[i]);
+    free_jit(&ctx);
     GpuState *gpu = GPU(pdev);
     /* BAR0: cmd registers */
     memory_region_init_io(&gpu->mmiomem, OBJECT(gpu), &gpu_mmio_ops, gpu, "gpu-mmio", GPU_CMD_SIZE);

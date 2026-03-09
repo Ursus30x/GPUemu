@@ -305,44 +305,36 @@ void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef
     LLVMBuildStore(ctx->builder, masked_val, ptr);
 }
 
-float* jit_compile_spirv(uint32_t* binary, size_t word_count) 
+jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_count) 
 {   
     uint32_t* p = binary + 5;
     uint32_t* end = binary + word_count;
-    
-    JitContext ctx = {0};
-    LLVMInitializeNativeTarget();
-    LLVMInitializeNativeAsmPrinter();
-    LLVMInitializeNativeAsmParser();
+        
 
-    ctx.context = LLVMContextCreate();
-    ctx.module = LLVMModuleCreateWithNameInContext("spirv_vector_module", ctx.context);
-    ctx.builder = LLVMCreateBuilderInContext(ctx.context);
+    ctx->bound = binary[3];
+    ctx->type_kind_map = (uint8_t*)calloc(ctx->bound, sizeof(uint8_t));
+    create_glsl_std_450_map(ctx);
 
-    ctx.bound = binary[3];
-    ctx.type_kind_map = (uint8_t*)calloc(ctx.bound, sizeof(uint8_t));
-    create_glsl_std_450_map(&ctx);
+    ctx->id_val_map = (LLVMValueRef*)calloc(ctx->bound, sizeof(LLVMValueRef));
+    ctx->decorations = calloc(ctx->bound, sizeof(SpvDecoInfo));
+    ctx->member_decorations = calloc(ctx->bound, sizeof(MemberDecoNode*));
+    ctx->type_info = calloc(ctx->bound, sizeof(SpvTypeInfo));
 
-    ctx.id_val_map = (LLVMValueRef*)calloc(ctx.bound, sizeof(LLVMValueRef));
-    ctx.decorations = calloc(ctx.bound, sizeof(SpvDecoInfo));
-    ctx.member_decorations = calloc(ctx.bound, sizeof(MemberDecoNode*)); // NEW
-    ctx.type_info = calloc(ctx.bound, sizeof(SpvTypeInfo)); // NEW
-
-    for (uint32_t i = 0; i < ctx.bound; i++)
+    for (uint32_t i = 0; i < ctx->bound; i++)
     {
-        ctx.decorations[i].descriptor_set = -1;
-        ctx.decorations[i].binding = -1;
-        ctx.decorations[i].location = -1;
-        ctx.decorations[i].builtin = -1;
-        ctx.decorations[i].array_stride = -1;
+        ctx->decorations[i].descriptor_set = -1;
+        ctx->decorations[i].binding = -1;
+        ctx->decorations[i].location = -1;
+        ctx->decorations[i].builtin = -1;
+        ctx->decorations[i].array_stride = -1;
     }
  
-    ctx.float_type = LLVMFloatTypeInContext(ctx.context);
-    ctx.int_type = LLVMInt32TypeInContext(ctx.context);
-    ctx.vec_float_type = LLVMVectorType(LLVMFloatTypeInContext(ctx.context), SIMT_WIDTH);
-    ctx.vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx.context), SIMT_WIDTH);
-    ctx.int8_type = LLVMInt8TypeInContext(ctx.context);
-    ctx.ptr_type = LLVMPointerType(ctx.int8_type, 0);
+    ctx->float_type = LLVMFloatTypeInContext(ctx->context);
+    ctx->int_type = LLVMInt32TypeInContext(ctx->context);
+    ctx->vec_float_type = LLVMVectorType(LLVMFloatTypeInContext(ctx->context), SIMT_WIDTH);
+    ctx->vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx->context), SIMT_WIDTH);
+    ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
+    ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
 
     DEBUG_PRINT("--- Starting JIT Compilation (LLVM Vector Backend) ---\n");
 
@@ -350,14 +342,9 @@ float* jit_compile_spirv(uint32_t* binary, size_t word_count)
     LLVMValueRef values[SIMT_WIDTH];
     for (size_t i = 0; i < SIMT_WIDTH; i++)
     {
-         values[i] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 1, 0); 
+        values[i] = LLVMConstInt(LLVMInt1TypeInContext(ctx->context), 1, 0); 
     }
-    
-    values[0] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 0, 0); 
-    values[1] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 0, 0); 
-    values[2] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 0, 0); 
-    values[3] = LLVMConstInt(LLVMInt1TypeInContext(ctx.context), 0, 0); 
-    ctx.emask = LLVMConstVector(values, SIMT_WIDTH);
+    ctx->emask = LLVMConstVector(values, SIMT_WIDTH);
  
 
     while (p < end) 
@@ -368,7 +355,7 @@ float* jit_compile_spirv(uint32_t* binary, size_t word_count)
 
         if (opcode == SpvOpTypeFloat || opcode == SpvOpTypeInt) 
         {
-            ctx.type_kind_map[p[1]] = (uint8_t)opcode;
+            ctx->type_kind_map[p[1]] = (uint8_t)opcode;
         }
 
         if (opcode == SpvOpSource || opcode == SpvOpName || opcode == SpvOpMemberName || 
@@ -392,45 +379,47 @@ float* jit_compile_spirv(uint32_t* binary, size_t word_count)
             operands[op_count++] = p[current_idx++];
         }
 
-        jit_emit_instr(&ctx, opcode, res_id, type_id, operands, op_count);
+        jit_emit_instr(ctx, opcode, res_id, type_id, operands, op_count);
         p += inst_word_count;
     }
     char *error = NULL;
-    LLVMVerifyModule(ctx.module, LLVMAbortProcessAction, &error);
+    LLVMVerifyModule(ctx->module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
 
-    LLVMExecutionEngineRef engine;
-    if (LLVMCreateExecutionEngineForModule(&engine, ctx.module, &error) != 0) 
+    LLVMDumpModule(ctx->module); // Debug: Dump the generated LLVM IR
+    jitted_func_t my_func = (jitted_func_t)LLVMGetFunctionAddress(ctx->engine, "main_simt");
+
+    for(uint32_t i=0; i<ctx->bound; i++) 
+    {
+        MemberDecoNode* n = ctx->member_decorations[i];
+        while(n) { MemberDecoNode* next = n->next; free(n); n = next; }
+        if(ctx->type_info[i].opcode == SpvOpTypeStruct) free(ctx->type_info[i].member_types);
+    }
+    free(ctx->type_kind_map);
+    free(ctx->id_val_map);
+   
+    return my_func;
+}
+void init_jit(JitContext* ctx)
+{
+    char *error = NULL;
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+    LLVMInitializeNativeAsmParser();
+
+    ctx->context = LLVMContextCreate();
+    ctx->module = LLVMModuleCreateWithNameInContext("spirv_vector_module", ctx->context);
+    ctx->builder = LLVMCreateBuilderInContext(ctx->context);
+
+
+    if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 
     {
         DEBUG_PRINT("Failed to create execution engine: %s\n", error);
-        return NULL;
     }
-    LLVMDumpModule(ctx.module); // Debug: Dump the generated LLVM IR
-    typedef void (*jitted_func_t)(ExecutionContext*, float*);
-    jitted_func_t my_func = (jitted_func_t)LLVMGetFunctionAddress(engine, "main_simt");
-
-
-
-    //TO-DO only for debugging, remove later
-    // Align the buffer to 64 bytes for AVX-512 compatibility
-    float *results = aligned_alloc(64, sizeof(float) * SIMT_WIDTH);
-    memset(results, 0, sizeof(float) * SIMT_WIDTH);
-    ExecutionContext exec_ctx = {0};
-    my_func(&exec_ctx, results);
-
-    DEBUG_PRINT("Execution Results:\n");
-    for(int i=0; i<SIMT_WIDTH; i++) DEBUG_PRINT(" Lane %d: %f\n", i, results[i]);
-    debug_dump_all_metadata(&ctx);
-    for(uint32_t i=0; i<ctx.bound; i++) 
-    {
-        MemberDecoNode* n = ctx.member_decorations[i];
-        while(n) { MemberDecoNode* next = n->next; free(n); n = next; }
-        if(ctx.type_info[i].opcode == SpvOpTypeStruct) free(ctx.type_info[i].member_types);
-    }
-    free(ctx.type_kind_map);
-    free(ctx.id_val_map);
-    LLVMDisposeBuilder(ctx.builder);
-    LLVMDisposeExecutionEngine(engine);
-    LLVMContextDispose(ctx.context);
-    return results;
+}
+void free_jit(JitContext* ctx)
+{
+    LLVMDisposeBuilder(ctx->builder);
+    LLVMDisposeExecutionEngine(ctx->engine);
+    LLVMContextDispose(ctx->context);
 }
