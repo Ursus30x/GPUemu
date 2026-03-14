@@ -96,5 +96,5 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
 void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask);
 void init_jit(JitContext* ctx);
 void free_jit(JitContext* ctx);
-
+LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id);
 #endif

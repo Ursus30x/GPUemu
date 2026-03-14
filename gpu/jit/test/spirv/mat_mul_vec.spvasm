@@ -3,7 +3,7 @@
 ; Generator: Khronos Glslang Reference Front End; 10
 ; Bound: 50
 ; Schema: 0
-     OpCapability Shader
+OpCapability Shader
 %1 = OpExtInstImport "GLSL.std.450"
      OpMemoryModel Logical GLSL450
      OpEntryPoint GLCompute %main "main"
@@ -12,6 +12,11 @@
 %float = OpTypeFloat 32
 %v4float = OpTypeVector %float 4
 %mat44 = OpTypeMatrix %v4float 4
+
+%ptr_mat = OpTypePointer Private %mat44
+%ptr_vec = OpTypePointer Private %v4float
+
+
 
 %f0 = OpConstant %float 0.0
 %f1 = OpConstant %float 1.0
@@ -22,9 +27,8 @@
 %col2 = OpCompositeConstruct %v4float %f0 %f0 %f1 %f0
 %col3 = OpCompositeConstruct %v4float %f0 %f10 %f0 %f1
 
-%mvp = OpCompositeConstruct %mat44 %col0 %col1 %col2 %col3
-
-%v_in = OpCompositeConstruct %v4float %f1 %f1 %f1 %f1
+%mvp_const = OpCompositeConstruct %mat44 %col0 %col1 %col2 %col3
+%vin_const = OpCompositeConstruct %v4float %f1 %f1 %f1 %f1
 
 %void = OpTypeVoid
 %fn_type = OpTypeFunction %float
@@ -32,13 +36,20 @@
 %main = OpFunction %float None %fn_type
 %label = OpLabel
 
-%res_v = OpMatrixTimesVector %v4float %mvp %v_in
+%var_mvp = OpVariable %ptr_mat Private
+%var_vin = OpVariable %ptr_vec Private
 
+OpStore %var_mvp %mvp_const
+OpStore %var_vin %vin_const
+
+%mvp = OpLoad %mat44 %var_mvp
+%v_in = OpLoad %v4float %var_vin
+
+%res_v = OpMatrixTimesVector %v4float %mvp %v_in
 %res_y = OpCompositeExtract %float %res_v 1
 
-    OpReturnValue %res_y
-    OpFunctionEnd
-
+OpReturnValue %res_y
+OpFunctionEnd
 ; [ 1.0  0.0  0.0  0.0 ]   [ 1.0 ]      [ (1.0*1.0) + (0.0*1.0) + (0.0*1.0) + (0.0*1.0)  ]   [  1.0 ]
 ; [ 0.0  1.0  0.0  10.0] x [ 1.0 ]   =  [ (0.0*1.0) + (1.0*1.0) + (0.0*1.0) + (10.0*1.0) ] = [ 11.0 ]
 ; [ 0.0  0.0  1.0  0.0 ]   [ 1.0 ]      [ (0.0*1.0) + (0.0*1.0) + (1.0*1.0) + (0.0*1.0)  ]   [  1.0 ]

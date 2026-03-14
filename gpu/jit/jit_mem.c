@@ -42,10 +42,9 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     {
         int32_t location = deco->location;
         if (location >= 0 && location < MAX_ATTRIBUTES) {
-            // Path: ExecutionContext* env -> vertex_buffers[location]
             LLVMValueRef indices[] = {
                 LLVMConstInt(ctx->int_type, 0, 0),
-                LLVMConstInt(ctx->int_type, 1, 0),       // Access 'vertex_buffers' field (index 1)
+                LLVMConstInt(ctx->int_type, 1, 0),     
                 LLVMConstInt(ctx->int_type, location, 0)
             };
 
@@ -61,93 +60,129 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     }
     else if (storage_class == SpvStorageClassFunction || storage_class == SpvStorageClassPrivate) 
     {
-        LLVMValueRef alloca_inst = LLVMBuildAlloca(ctx->builder, ctx->vec_float_type, "local_var");
-        LLVMSetAlignment(alloca_inst, 64);
-        set_val(ctx, res_id, alloca_inst);
-
         if (opCount > 1) 
         {
             uint32_t init_id = operands[1];
-            LLVMValueRef init_val = ctx->id_val_map[init_id]; // Get the constant value
-            
+            LLVMValueRef init_val = ctx->id_val_map[init_id]; 
+            LLVMTypeRef type = LLVMTypeOf(init_val);
+            LLVMValueRef alloca_inst = LLVMBuildAlloca(ctx->builder, type, "local_var");
+            LLVMSetAlignment(alloca_inst, 64);
+            set_val(ctx, res_id, alloca_inst);
             if (init_val != NULL) 
             {
                 LLVMBuildStore(ctx->builder, init_val, alloca_inst);
-            } else 
+            } 
+            else 
             {
                 DEBUG_PRINT("Warning: Initializer %u not found for variable %u\n", init_id, res_id);
             }
         }
+        else 
+        {
+            LLVMTypeRef type = map_spv_to_llvm_type(ctx, type_id);
+            LLVMValueRef alloca_inst = LLVMBuildAlloca(ctx->builder,type, "local_var");
+            LLVMSetAlignment(alloca_inst, 64);
+            set_val(ctx, res_id, alloca_inst);
+        }
     }
     else 
     {
-        // ALWAYS have a fallback to prevent silent NULL pointer segfaults!
         DEBUG_PRINT("Warning: Unhandled Storage Class %u\n", storage_class);
         set_val(ctx, res_id, LLVMConstNull(ctx->ptr_type));
     }
 }
 
 
+static LLVMValueRef build_recursive_load(JitContext *ctx, LLVMTypeRef type, LLVMValueRef ptr) 
+{
+   
+    if (LLVMGetTypeKind(type) == LLVMVectorTypeKind) 
+    {
+        LLVMValueRef load = LLVMBuildLoad2(ctx->builder, type, ptr, "load_simt");
+        LLVMSetAlignment(load, 64);
+        return load;
+    } 
+    else if (LLVMGetTypeKind(type) == LLVMArrayTypeKind) 
+    {
+        uint32_t count = LLVMGetArrayLength(type);
+        LLVMTypeRef elem_type = LLVMGetElementType(type);
+        
+        LLVMValueRef aggregate = LLVMGetUndef(type);
 
-// handle_op_load: Reads data from memory into a register (ID).
-void handle_op_load(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands) 
+        for (uint32_t i = 0; i < count; i++) {
+            LLVMValueRef index = LLVMConstInt(LLVMInt32Type(), i, 0);
+            
+            LLVMValueRef element_ptr = LLVMBuildInBoundsGEP2(ctx->builder, elem_type, ptr, &index, 1, "load_gep");
+            
+            LLVMValueRef element_val = build_recursive_load(ctx, elem_type, element_ptr);
+            
+            aggregate = LLVMBuildInsertValue(ctx->builder, aggregate, element_val, i, "insert_elem");
+        }
+        return aggregate;
+    }
+    return LLVMGetUndef(type);
+}
+
+void handle_op_load(JitContext* ctx, uint32_t res_id, uint32_t res_type_id, uint32_t* operands) 
 {
     uint32_t ptr_id = operands[0];
     LLVMValueRef ptr = get_val(ctx, ptr_id);
     
-    uint32_t storage_class = ctx->type_kind_map[ptr_id];
-    LLVMValueRef final_val;
+    LLVMTypeRef result_llvm_type = map_spv_to_llvm_type(ctx, res_type_id);
 
     if (LLVMIsConstant(ptr) && LLVMIsNull(ptr)) 
     {
-        DEBUG_PRINT("Warning: OpLoad from NULL pointer ID %u\n", ptr_id);
-        set_val(ctx, res_id, LLVMConstNull(ctx->vec_float_type));
+        set_val(ctx, res_id, LLVMConstNull(result_llvm_type));
         return;
     }
 
-    if (storage_class == SpvStorageClassFunction) 
-    {
-        final_val = LLVMBuildLoad2(ctx->builder, ctx->vec_float_type, ptr, "v_load");
-        LLVMSetAlignment(final_val, 64);
-    } 
-    else 
-    {
-        LLVMValueRef scalar_val = LLVMBuildLoad2(ctx->builder, ctx->float_type, ptr, "s_load");
-        final_val = LLVMGetUndef(ctx->vec_float_type);
-        for (int i = 0; i < SIMT_WIDTH; i++) 
-        {
-            LLVMValueRef idx = LLVMConstInt(ctx->int_type, i, 0);
-            final_val = LLVMBuildInsertElement(ctx->builder, final_val, scalar_val, idx, "v_broadcast");
-        }
-    }
+    LLVMValueRef final_val = build_recursive_load(ctx, result_llvm_type, ptr);
     
     set_val(ctx, res_id, final_val);
-    DEBUG_PRINT("OpLoad ID %u: Vector result from Pointer %u (Class %u)\n", res_id, ptr_id, storage_class);
 }
-// handle_op_store: Writes data from a register (ID) into memory.
-void handle_op_store(JitContext* ctx, uint32_t* operands) 
-{
-    uint32_t ptr_id = operands[0];
-    LLVMValueRef ptr = get_val(ctx, ptr_id);
-    LLVMValueRef val = get_val(ctx, operands[1]);
-    
-    uint32_t storage_class = ctx->type_kind_map[ptr_id];
 
-    if (LLVMGetTypeKind(LLVMTypeOf(val)) != LLVMVectorTypeKind) 
+
+static void build_recursive_store(JitContext *ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask) {
+    LLVMTypeRef type = LLVMTypeOf(val_to_store);
+    LLVMTypeKind kind = LLVMGetTypeKind(type);
+
+    if (kind == LLVMVectorTypeKind) 
     {
-        LLVMValueRef vec = LLVMGetUndef(ctx->vec_float_type);
-        for (int i = 0; i < SIMT_WIDTH; i++)
-        {
-            vec = LLVMBuildInsertElement(ctx->builder, vec, val, LLVMConstInt(ctx->int_type, i, 0), "v_store_broadcast");
-        }
-        val = vec;
-    }
+        LLVMValueRef current_mem_val = LLVMBuildLoad2(ctx->builder, type, ptr, "current_mem");
+        
+        LLVMValueRef masked_val = LLVMBuildSelect(ctx->builder, mask, val_to_store, current_mem_val, "masked_val");
+        
+        LLVMValueRef store_inst = LLVMBuildStore(ctx->builder, masked_val, ptr);
+        LLVMSetAlignment(store_inst, 64);
+    } 
+    else if (kind == LLVMArrayTypeKind) 
+    {
+        uint32_t count = LLVMGetArrayLength(type);
+        LLVMTypeRef elem_type = LLVMGetElementType(type);
 
-    build_masked_store(ctx, val, ptr, ctx->emask);
-    
-    DEBUG_PRINT("OpStore Value ID %u into Pointer ID %u (Class %u)\n", operands[1], ptr_id, storage_class);
+        for (uint32_t i = 0; i < count; i++) 
+        {
+            LLVMValueRef index = LLVMConstInt(LLVMInt32Type(), i, 0);
+            
+            LLVMValueRef element_ptr = LLVMBuildInBoundsGEP2(ctx->builder, elem_type, ptr, &index, 1, "store_gep");
+            
+            LLVMValueRef element_val = LLVMBuildExtractValue(ctx->builder, val_to_store, i, "extract_elem");
+
+            build_recursive_store(ctx, element_val, element_ptr, mask);
+        }
+    }
 }
 
+// handle_op_store: Writes data from a register (ID) into memory.
+void handle_op_store(JitContext* ctx, uint32_t* operands) {
+    uint32_t ptr_id = operands[0];
+    uint32_t val_id = operands[1];
+
+    LLVMValueRef ptr = get_val(ctx, ptr_id);
+    LLVMValueRef val = get_val(ctx, val_id);
+
+    build_recursive_store(ctx, val, ptr, ctx->emask);
+}
 
 /**
  * handle_op_access_chain: Calculates pointer offsets using raw integer arithmetic.
