@@ -299,15 +299,68 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             break;
     }
 }
-void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask) 
+void build_masked_store(JitContext *ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask) 
 {
-    LLVMValueRef current_val = LLVMBuildLoad2(ctx->builder, ctx->vec_float_type, ptr, "v_load_current");
+    LLVMTypeRef type = LLVMTypeOf(val_to_store);
+    
+    if (LLVMGetTypeKind(type) == LLVMVectorTypeKind)
+    {
+        LLVMValueRef current_val = LLVMBuildLoad2(ctx->builder, type, ptr, "v_load_current");
+        LLVMValueRef masked_val = LLVMBuildSelect(ctx->builder, mask, val_to_store, current_val, "v_select_mask");
+        LLVMBuildStore(ctx->builder, masked_val, ptr);
+    } 
+    else if (LLVMGetTypeKind(type) == LLVMArrayTypeKind) 
+    {
+        uint32_t count = LLVMGetArrayLength(type);
+        LLVMTypeRef elem_type = LLVMGetElementType(type);
 
-    LLVMValueRef masked_val = LLVMBuildSelect(ctx->builder, mask, val_to_store, current_val, "v_select_mask");
+        for (uint32_t i = 0; i < count; i++)
+        {
 
-    LLVMBuildStore(ctx->builder, masked_val, ptr);
+            LLVMValueRef index = LLVMConstInt(LLVMInt32Type(), i, 0);
+            
+            LLVMValueRef element_ptr = LLVMBuildInBoundsGEP2(ctx->builder, elem_type, ptr, &index, 1, "elem_ptr");
+            
+            LLVMValueRef element_val = LLVMBuildExtractValue(ctx->builder, val_to_store, i, "elem_val");
+
+            build_masked_store(ctx, element_val, element_ptr, mask);
+        }
+    }
 }
+LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id) 
+{
+    SpvTypeInfo* info = &ctx->type_info[type_id]; 
 
+    switch (info->opcode)
+    {
+        case SpvOpTypeFloat:
+            return ctx->vec_float_type;
+
+        case SpvOpTypeVector: 
+        {
+            uint32_t count = info->member_count; 
+            return LLVMArrayType(ctx->vec_float_type, count);
+        }
+
+        case SpvOpTypeMatrix: 
+        {
+            LLVMTypeRef column_type = map_spv_to_llvm_type(ctx, info->base_type_id);
+            uint32_t col_count = info->member_count;
+            return LLVMArrayType(column_type, col_count);
+        }
+
+        case SpvOpTypePointer:
+            return map_spv_to_llvm_type(ctx, info->base_type_id);
+
+        case SpvOpTypeStruct: 
+            //TO-DO
+            return LLVMStructTypeInContext(ctx->context, NULL, 0, 0);
+
+        default:
+            DEBUG_PRINT("Unsupported type opcode: %d\n", info->opcode);
+            return NULL;
+    }
+}
 jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_count) 
 {   
     uint32_t* p = binary + 5;
@@ -388,6 +441,27 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     char *error = NULL;
     LLVMVerifyModule(ctx->module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
+
+
+    char* triple = LLVMGetDefaultTargetTriple(); 
+    char* cpu = LLVMGetHostCPUName();            
+    char* features = LLVMGetHostCPUFeatures();    
+
+    LLVMTargetRef target;
+    LLVMGetTargetFromTriple(triple, &target, &error);
+
+    LLVMTargetMachineRef tm = LLVMCreateTargetMachine(
+        target, 
+        triple, 
+        cpu,       
+        features,
+        LLVMCodeGenLevelDefault, 
+        LLVMRelocDefault, 
+        LLVMCodeModelDefault
+    );
+    LLVMTargetMachineEmitToFile(tm, ctx->module, "shader_output.s", 
+                             LLVMAssemblyFile, &error);
+
 
     LLVMDumpModule(ctx->module); // Debug: Dump the generated LLVM IR
     jitted_func_t my_func = (jitted_func_t)LLVMGetFunctionAddress(ctx->engine, "main_simt");
