@@ -11,11 +11,17 @@ for file in files:
     name = file.stem
     print(f"Compiling {name}")
     result = subprocess.run(["spirv-as", str(file), "-o", f"out/{name}.spv"], capture_output=True, text=True)
+
     if result.returncode != 0:
         print(f"Failed to compile {name}: {result.stderr}")
         continue
     print(f"Testing {name}")
-    result = subprocess.run(["./test_jit", f"out/{name}.spv", f"spirv/{name}.out"], capture_output=True, text=True)
+
+    in_file = name + ".in"
+    if (test_directory / in_file).exists():
+        result = subprocess.run(["./test_jit", f"out/{name}.spv", f"spirv/{name}.out",  f"spirv/{name}.in"], capture_output=True, text=True)
+    else:
+        result = subprocess.run(["./test_jit", f"out/{name}.spv", f"spirv/{name}.out"], capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Test failed for {name}: {result.stderr}")
         print(result.stdout)
