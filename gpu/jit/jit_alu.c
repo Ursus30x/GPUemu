@@ -180,23 +180,37 @@ void handle_op_ext_instr(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     ctx->glsl_handlers[instr_id](ctx, res_id, &operands[2]);
 }
 
-void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t type_id,  uint32_t* operands)
+void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands)
 {
     SpvTypeInfo* info = &ctx->type_info[type_id];
 
     if (info->opcode == SpvOpTypeVector)
     {
         uint32_t num_components = info->member_count;
-
+        
         LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
         LLVMTypeRef array_type = LLVMArrayType(lane_vec_type, num_components);
-
         LLVMValueRef composite = LLVMGetUndef(array_type);
 
+        // Each operand should be a <SIMT_WIDTH x float> vector
+        // Build the array by inserting each component vector
         for (uint32_t i = 0; i < num_components; i++)
         {
             LLVMValueRef component_vec = get_val(ctx, operands[i]);
-            composite = LLVMBuildInsertValue(ctx->builder, composite, component_vec, i, "pack");
+            
+            // If operand is a scalar, broadcast it to SIMT_WIDTH
+            LLVMTypeRef comp_type = LLVMTypeOf(component_vec);
+            if (LLVMGetTypeKind(comp_type) != LLVMVectorTypeKind)
+            {
+                LLVMValueRef broadcast_vals[SIMT_WIDTH];
+                for (int j = 0; j < SIMT_WIDTH; j++)
+                {
+                    broadcast_vals[j] = component_vec;
+                }
+                component_vec = LLVMConstVector(broadcast_vals, SIMT_WIDTH);
+            }
+            
+            composite = LLVMBuildInsertValue(ctx->builder, composite, component_vec, i, "pack_comp");
         }
         set_val(ctx, res_id, composite);
         return;
@@ -210,24 +224,40 @@ void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t ty
         SpvTypeInfo* vec_info = &ctx->type_info[vec_type];
         uint32_t num_rows = vec_info->member_count;
 
-        printf("  Matrix %u x %u\n", num_cols, num_rows);
-
         LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
         LLVMTypeRef column_type = LLVMArrayType(lane_vec_type, num_rows);
         LLVMTypeRef matrix_type = LLVMArrayType(column_type, num_cols);
 
         LLVMValueRef matrix = LLVMGetUndef(matrix_type);
 
+        // Each operand should be a column vector [num_rows x <SIMT_WIDTH x float>]
         for (uint32_t c = 0; c < num_cols; c++)
         {
             LLVMValueRef column = get_val(ctx, operands[c]);
+            
+            // If operand is a scalar vector, ensure it's properly formatted
+            LLVMTypeRef col_type = LLVMTypeOf(column);
+            if (LLVMGetTypeKind(col_type) == LLVMVectorTypeKind)
+            {
+                // Convert vector of scalars to array of SIMT vectors
+                LLVMValueRef column_array = LLVMGetUndef(column_type);
+                for (uint32_t r = 0; r < num_rows; r++)
+                {
+                    LLVMValueRef scalar_elem = LLVMBuildExtractElement(ctx->builder, column, 
+                                                                       LLVMConstInt(ctx->int_type, r, 0), "");
+                    
+                    LLVMValueRef broadcast_vals[SIMT_WIDTH];
+                    for (int j = 0; j < SIMT_WIDTH; j++)
+                    {
+                        broadcast_vals[j] = scalar_elem;
+                    }
+                    LLVMValueRef simt_vec = LLVMConstVector(broadcast_vals, SIMT_WIDTH);
+                    column_array = LLVMBuildInsertValue(ctx->builder, column_array, simt_vec, r, "");
+                }
+                column = column_array;
+            }
 
-            matrix = LLVMBuildInsertValue(
-                ctx->builder,
-                matrix,
-                column,
-                c,
-                "insert_col");
+            matrix = LLVMBuildInsertValue(ctx->builder, matrix, column, c, "insert_col");
         }
 
         set_val(ctx, res_id, matrix);
@@ -956,4 +986,4 @@ void handle_ext_refract(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     }
     set_val(ctx, res_id, res);
 
-}   
+}

@@ -20,8 +20,8 @@
 #define MAX_ATTRIBUTES 8
 
 typedef struct {
-    uint8_t* uniform_buffers[MAX_BINDINGS];
-    uint8_t* vertex_buffers[MAX_ATTRIBUTES];
+    void* uniform_buffers[MAX_BINDINGS]; 
+    void* vertex_buffers[MAX_ATTRIBUTES];
     uint32_t vertex_stride[MAX_ATTRIBUTES];
     uint32_t base_vertex_index;
 } ExecutionContext;
@@ -52,6 +52,18 @@ typedef struct {
 typedef struct JitContext JitContext;
 typedef void (*AluHandler)(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 
+typedef struct {
+    int id;
+} ShaderInterface;
+
+typedef struct ShaderInfo {
+    char entry_point_name[64];
+    uint32_t execution_model;
+    ShaderInterface interface[MAX_ATTRIBUTES+MAX_BINDINGS];
+    uint32_t interface_count;
+} ShaderInfo;
+
+
 struct JitContext{
     uint32_t bound;
     uint8_t* type_kind_map;
@@ -80,9 +92,12 @@ struct JitContext{
     LLVMTypeRef vec_float_type;
     LLVMTypeRef vec_i1_type;
     LLVMTypeRef int8_type;
-    LLVMTypeRef ptr_type; 
+    LLVMTypeRef ptr_type;
+    LLVMTypeRef exec_ctx_type;
     
     AluHandler glsl_handlers[82];
+
+    ShaderInfo shader_info;
     
 };
 typedef void* (*jitted_func_t)(ExecutionContext*, void*);

@@ -1,0 +1,42 @@
+; SPIR-V
+; Version: 1.0
+; Generator: Khronos SPIR-V Tools Assembler; 0
+; Bound: 25
+; Schema: 0
+     OpCapability Shader
+%1 = OpExtInstImport "GLSL.std.450"
+     OpMemoryModel Logical GLSL450
+     OpEntryPoint Vertex %main "main" %f2 %color
+     OpExecutionMode %main LocalSize 1 1 1
+
+      %void = OpTypeVoid
+      %float = OpTypeFloat 32
+      
+      %_ptr_Private_float = OpTypePointer Private %float
+      %_ptr_Input_float = OpTypePointer Input %float
+
+      %const_2 = OpConstant %float 2.0
+
+     OpDecorate %ubo Binding 0
+     OpDecorate %ubo DescriptorSet 0
+          
+
+      %ft = OpTypeFunction %float
+      %f = OpFunction %float None %ft
+      %14 = OpLabel
+
+      %f1 = OpVariable %_ptr_Private_float Private %const_2
+      %ubo = OpVariable %_ptr_Input_float Uniform
+
+      
+      
+      ; 4. Load the values from the variables
+      %val1 = OpLoad %float %f1
+      %val2 = OpLoad %float %ubo
+
+      
+      ; 5. Perform the addition using the loaded values
+      %add_result = OpFAdd %float %val1 %val2
+      
+      OpReturnValue %add_result
+      OpFunctionEnd
