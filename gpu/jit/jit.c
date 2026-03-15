@@ -1,4 +1,3 @@
-
 #include "jit.h"
 #include "jit_alu.h"
 #include "jit_decorators.h"
@@ -150,6 +149,7 @@ void set_val(JitContext* ctx, uint32_t id, LLVMValueRef val)
 
 static inline void handle_op_return_value(JitContext* ctx, uint32_t* operands)
 {
+    LLVMDumpModule(ctx->module); // Debug dump before return
     LLVMValueRef vec_val = get_val(ctx, operands[0]);
     
     LLVMTypeRef vec_ptr_type = LLVMPointerType(ctx->vec_float_type, 0);
@@ -293,6 +293,9 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             break;
         case SpvOpMatrixTimesVector:
             handle_op_matrix_times_vector(ctx, res_id, operands);
+            break;
+        case SpvOpEntryPoint:
+            handle_op_entry_point(ctx, operands, operand_count);
             break;
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
@@ -439,6 +442,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         p += inst_word_count;
     }
     char *error = NULL;
+    
     LLVMVerifyModule(ctx->module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
 
@@ -455,10 +459,27 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         triple, 
         cpu,       
         features,
-        LLVMCodeGenLevelDefault, 
+        LLVMCodeGenLevelAggressive, 
         LLVMRelocDefault, 
         LLVMCodeModelDefault
     );
+    LLVMPassBuilderOptionsRef options = LLVMCreatePassBuilderOptions();
+    LLVMPassBuilderOptionsSetVerifyEach(options, 1);
+    LLVMPassBuilderOptionsSetDebugLogging(options, 0);
+
+    const char* pipeline = "default<O2>";
+
+    LLVMErrorRef err = LLVMRunPasses(ctx->module, pipeline, tm, options);
+
+    if (err) 
+    {
+        char* msg = LLVMGetErrorMessage(err);
+        fprintf(stderr, "Pass error: %s\n", msg);
+        LLVMDisposeErrorMessage(msg);
+    }
+
+    LLVMDisposePassBuilderOptions(options);
+
     LLVMTargetMachineEmitToFile(tm, ctx->module, "shader_output.s", 
                              LLVMAssemblyFile, &error);
 
@@ -487,6 +508,29 @@ void init_jit(JitContext* ctx)
     ctx->context = LLVMContextCreate();
     ctx->module = LLVMModuleCreateWithNameInContext("spirv_vector_module", ctx->context);
     ctx->builder = LLVMCreateBuilderInContext(ctx->context);
+
+    // Build ExecutionContext struct type
+    // struct ExecutionContext {
+    //     uint8_t* uniform_buffers[MAX_BINDINGS];     // field 0
+    //     uint8_t* vertex_buffers[MAX_ATTRIBUTES];    // field 1
+    //     uint32_t vertex_stride[MAX_ATTRIBUTES];     // field 2
+    //     uint32_t base_vertex_index;                 // field 3
+    // };
+    LLVMTypeRef ptr_i8 = LLVMPointerType(LLVMInt8TypeInContext(ctx->context), 0);
+    LLVMTypeRef i32_type = LLVMInt32TypeInContext(ctx->context);
+    
+    LLVMTypeRef uniform_buf_type = LLVMArrayType(ptr_i8, MAX_BINDINGS);
+    LLVMTypeRef vertex_buf_type = LLVMArrayType(ptr_i8, MAX_ATTRIBUTES);
+    LLVMTypeRef vertex_stride_type = LLVMArrayType(i32_type, MAX_ATTRIBUTES);
+    
+    LLVMTypeRef field_types[] = {
+        uniform_buf_type,
+        vertex_buf_type,
+        vertex_stride_type,
+        i32_type
+    };
+    
+    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, field_types, 4, 0);
 
 
     if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 

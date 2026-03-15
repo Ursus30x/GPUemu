@@ -135,3 +135,36 @@ void handle_op_member_decorate(JitContext* ctx, uint32_t* operands)
         node->offset = value;
     }
 }
+static uint32_t spirv_string_word_length(const char* str)
+{
+    uint32_t len = (uint32_t)strlen(str) + 1;
+    return (len + 3) / 4;
+}
+
+void handle_op_entry_point(JitContext* ctx, uint32_t* operands, uint32_t operand_count)
+{
+    uint32_t execution_model = operands[0];
+    uint32_t entry_point_id  = operands[1];
+
+    const char* name = (const char*)&operands[2];
+
+    memcpy(ctx->shader_info.entry_point_name, name, sizeof(ctx->shader_info.entry_point_name));
+    ctx->shader_info.execution_model = execution_model;
+
+    DEBUG_PRINT("Entry Point: ID %u, Execution Model %u\n", entry_point_id, execution_model);
+    DEBUG_PRINT("Entry Point Name: %s\n", name);
+
+    uint32_t name_words = spirv_string_word_length(name);
+
+    uint32_t interface_start = 2 + name_words;
+
+
+    ctx->shader_info.interface_count = operand_count - interface_start;
+    DEBUG_PRINT("Interface IDs:\n");
+
+    for (uint32_t i = interface_start; i < operand_count; i++)
+    {
+        ctx->shader_info.interface[i - interface_start].id = operands[i];
+        DEBUG_PRINT("  Interface ID: %u\n", operands[i]);
+    }
+}

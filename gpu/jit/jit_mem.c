@@ -15,20 +15,13 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
         int32_t binding = deco->binding;
         if (binding >= 0 && binding < MAX_BINDINGS) 
         {
-            // Path: ExecutionContext* env -> uniform_buffers[binding]
-            // ExecutionContext struct layout:
-            // 0: uint8_t* uniform_buffers[MAX_BINDINGS]
-            // 1: uint8_t* vertex_buffers[MAX_ATTRIBUTES]
-            
             LLVMValueRef indices[] = {
-                LLVMConstInt(ctx->int_type, 0, 0),       // Dereference env_arg pointer
+                LLVMConstInt(ctx->int_type, 0, 0),       // Dereference struct pointer
                 LLVMConstInt(ctx->int_type, 0, 0),       // Access 'uniform_buffers' field (index 0)
                 LLVMConstInt(ctx->int_type, binding, 0)  // Access specific binding index
             };
 
-            // Calculate address of the pointer in the ExecutionContext
-            LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->ptr_type, ctx->env_arg, indices, 3, "ubo_slot");
-            // Load the actual buffer address (e.g., the pointer we put in exec_ctx.uniform_buffers[0])
+            LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg, indices, 3, "ubo_slot");
             LLVMValueRef buffer_ptr = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, slot_ptr, "ubo_ptr");
             
             set_val(ctx, res_id, buffer_ptr);
@@ -41,14 +34,15 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     else if (storage_class == SpvStorageClassInput)
     {
         int32_t location = deco->location;
-        if (location >= 0 && location < MAX_ATTRIBUTES) {
+        if (location >= 0 && location < MAX_ATTRIBUTES) 
+        {
             LLVMValueRef indices[] = {
-                LLVMConstInt(ctx->int_type, 0, 0),
-                LLVMConstInt(ctx->int_type, 1, 0),     
-                LLVMConstInt(ctx->int_type, location, 0)
+                LLVMConstInt(ctx->int_type, 0, 0),       // Dereference struct pointer
+                LLVMConstInt(ctx->int_type, 1, 0),       // Access 'vertex_buffers' field (index 1)
+                LLVMConstInt(ctx->int_type, location, 0) // Access specific attribute index
             };
 
-            LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->ptr_type, ctx->env_arg, indices, 3, "vtx_slot");
+            LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg, indices, 3, "vtx_slot");
             LLVMValueRef buffer_ptr = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, slot_ptr, "vtx_ptr");
             
             set_val(ctx, res_id, buffer_ptr);
@@ -225,7 +219,8 @@ void handle_op_access_chain(JitContext* ctx, uint32_t res_id, uint32_t type_id, 
             MemberDecoNode* m = ctx->member_decorations[current_type_id];
             while (m) 
             {
-                if (m->member_index == (uint32_t)member_idx) {
+                if (m->member_index == (uint32_t)member_idx)
+                {
                     offset_bytes = m->offset;
                     break;
                 }

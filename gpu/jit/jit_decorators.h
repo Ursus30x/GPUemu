@@ -14,4 +14,5 @@ void handle_op_type_float(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_type_vector(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_member_decorate(JitContext* ctx, uint32_t* operands);
 void handle_op_type_matrix(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_op_entry_point(JitContext* ctx, uint32_t* operands, uint32_t operand_count);
 #endif
