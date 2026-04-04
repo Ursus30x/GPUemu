@@ -48,6 +48,11 @@ void handle_op_type_struct(JitContext* ctx, uint32_t res_id, uint32_t* member_ty
     ctx->type_info[res_id].member_count = count;
     ctx->type_info[res_id].member_types = malloc(sizeof(uint32_t) * count);
     memcpy(ctx->type_info[res_id].member_types, member_types, sizeof(uint32_t) * count);
+    
+    DEBUG_PRINT("Registered struct type ID %u with %u members: ", res_id, count);
+    for (int i = 0; i < count; i++)
+        DEBUG_PRINT("%u ", member_types[i]);
+    DEBUG_PRINT("\n");
 }
 
 void handle_op_type_void(JitContext* ctx, uint32_t res_id)

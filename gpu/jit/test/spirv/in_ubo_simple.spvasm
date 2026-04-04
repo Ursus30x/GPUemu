@@ -11,14 +11,23 @@
 
       %void = OpTypeVoid
       %float = OpTypeFloat 32
+      %int = OpTypeInt 32 1
       
       %_ptr_Private_float = OpTypePointer Private %float
       %_ptr_Input_float = OpTypePointer Input %float
+      
+      %ubo_struct = OpTypeStruct %float %float
+      %_ptr_Uniform_ubo_struct = OpTypePointer Uniform %ubo_struct
+      %_ptr_Uniform_float = OpTypePointer Uniform %float
 
       %const_2 = OpConstant %float 2.0
+      %const_0 = OpConstant %int 0
+      %const_1 = OpConstant %int 1
 
      OpDecorate %ubo Binding 0
      OpDecorate %ubo DescriptorSet 0
+     OpMemberDecorate %ubo_struct 0 Offset 0
+     OpMemberDecorate %ubo_struct 1 Offset 4
           
 
       %ft = OpTypeFunction %float
@@ -26,17 +35,18 @@
       %14 = OpLabel
 
       %f1 = OpVariable %_ptr_Private_float Private %const_2
-      %ubo = OpVariable %_ptr_Input_float Uniform
+      %ubo = OpVariable %_ptr_Uniform_ubo_struct Uniform
 
-      
-      
-      ; 4. Load the values from the variables
+      ; Load the values from the struct members
       %val1 = OpLoad %float %f1
-      %val2 = OpLoad %float %ubo
+      %ubo_member_x_ptr = OpAccessChain %_ptr_Uniform_float %ubo %const_0
+      %ubo_member_y_ptr = OpAccessChain %_ptr_Uniform_float %ubo %const_1
+      %val_x = OpLoad %float %ubo_member_x_ptr
+      %val_y = OpLoad %float %ubo_member_y_ptr
 
-      
-      ; 5. Perform the addition using the loaded values
-      %add_result = OpFAdd %float %val1 %val2
+      ; Perform the addition
+      %add_xy = OpFAdd %float %val_x %val_y
+      %add_result = OpFAdd %float %val1 %add_xy
       
       OpReturnValue %add_result
       OpFunctionEnd
