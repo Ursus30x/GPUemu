@@ -63,7 +63,7 @@ void read_in(FILE *in, ExecutionContext *ectx)
             buff[strlen(buff) - 1] = '\0'; 
             current_idx = atoi(buff);
             current_lane = 0;
-            ectx->uniform_buffers[current_idx] = malloc(sizeof(float) * SIMT_WIDTH);
+            ectx->uniform_buffers[current_idx] = malloc(sizeof(float) * SIMT_WIDTH * 2);
             state = IN_UBO;
             break;
         }
@@ -118,7 +118,15 @@ int main(int argc, char *argv[])
             fprintf(stderr, "Failed to open input file: %s\n", input_path);
             return 1;
         }
-        read_in(in_f, &ectx);
+
+        // Hardcode UBO struct values: {float x, float y} for each lane
+        // Lane 0: x=1.0, y=2.0; Lane 1: x=3.0, y=4.0; etc.
+        ectx.uniform_buffers[0] = malloc(sizeof(float) * SIMT_WIDTH * 2);
+        float ubo_data[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 
+                            9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 
+                            1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+        memcpy(ectx.uniform_buffers[0], ubo_data, sizeof(ubo_data));
+        //read_in(in_f, &ectx);
         fclose(in_f);
     }
     FILE* f = fopen(spirv_path, "rb");

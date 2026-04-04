@@ -149,7 +149,6 @@ void set_val(JitContext* ctx, uint32_t id, LLVMValueRef val)
 
 static inline void handle_op_return_value(JitContext* ctx, uint32_t* operands)
 {
-    LLVMDumpModule(ctx->module); // Debug dump before return
     LLVMValueRef vec_val = get_val(ctx, operands[0]);
     
     LLVMTypeRef vec_ptr_type = LLVMPointerType(ctx->vec_float_type, 0);
@@ -484,7 +483,6 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
                              LLVMAssemblyFile, &error);
 
 
-    LLVMDumpModule(ctx->module); // Debug: Dump the generated LLVM IR
     jitted_func_t my_func = (jitted_func_t)LLVMGetFunctionAddress(ctx->engine, "main_simt");
 
     for(uint32_t i=0; i<ctx->bound; i++) 
