@@ -50,7 +50,7 @@ echo ""
 echo "=== Creating Option ROM image ==="
 
 # FIX: Use ${BUILD_TYPE}_GCC5 to correctly expand the directory name
-./BaseTools/Source/C/bin/EfiRom -f 0x6969 -i 0x2137 -o ./Build/OptionRom.rom -e "./Build/OvmfX64/${BUILD_TYPE}_GCC5/X64/OptionRom.efi"
+./BaseTools/Source/C/bin/EfiRom -f 0x6969 -i 0x2137 -o ./Build/OptionRom.rom -e "./Build/OvmfX64/${BUILD_TYPE}_GCC/X64/OptionRom.efi"
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to create Option ROM image"

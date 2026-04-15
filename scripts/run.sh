@@ -26,4 +26,4 @@ fi
     -serial file:serial.log \
     -debugcon file:debug.log \
     -global isa-debugcon.iobase=0x402 \
-    -drive file=fat:rw:$CWD/edk2/Build/OvmfX64/${LAST_TYPE}_GCC5/X64,format=raw,media=disk
+    -drive file=fat:rw:$CWD/edk2/Build/OvmfX64/${LAST_TYPE}_GCC/X64,format=raw,media=disk
