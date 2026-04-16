@@ -404,4 +404,5 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 /* Uninitialize GPU device */
 static void pci_gpu_uninit(PCIDevice *pdev)
 {
+    msi_uninit(pdev);
 }
