@@ -45,6 +45,8 @@ This document describes the architecture of a custom emulated graphics card desi
 | 0x24   | FB_ADDR         | `framebuffer_vram_offset` | 4B | RW | Framebuffer memory offset in VRAM   |
 | 0x28   | GPU_TIME        | `gpu_time`          | 4B   | R   | GPU elapsed time counter (ms)       |
 | 0x2C   | ZBUFFER_ADDR    | `zbuffer_addr`      | 4B   | RW  | Z-buffer memory offset in VRAM      |
+| 0x30   | INT_STATUS      | `int_status`        | 4B   | RW1C| Pending interrupts (Write 1 to Clear)|
+| 0x34   | INT_MASK        | `int_mask`          | 4B   | RW  | Interrupt enable mask               |
 
 ### 2.2 GPU Modes
 
@@ -65,6 +67,7 @@ typedef enum {
 ### 2.3 MMIO Access Semantics
 
 - **Writes to RING_HEAD** trigger command processor immediately
+- **Writes to INT_STATUS** clear the corresponding bits (Acknowledge)
 - **All writes are word-aligned** (4-byte boundaries)
 - **Misaligned accesses** are rejected with error
 
@@ -1134,3 +1137,61 @@ However, applications **must**:
 - Respect maximum VRAM capacity (32 MB)
 
 ---
+## 13. Interrupt Management (MSI)
+
+### 13.1 Overview
+
+The GPU uses **Message Signaled Interrupts (MSI)** to notify the CPU of specific hardware events. This reduces CPU overhead by eliminating the need for continuous polling of the `RING_TAIL` register.
+
+### 13.2 Interrupt Registers
+
+#### **INT_STATUS (0x30) [Read / Write-1-to-Clear]**
+A 32-bit bitmask indicating which events have occurred.
+
+| Bit | Name | Description |
+|-----|------|-------------|
+| 0   | `GPU_INT_CMD_DONE` | Set when the command processor becomes idle (Head == Tail). |
+| 1-31| *Reserved* | Future use. |
+
+#### **INT_MASK (0x34) [Read / Write]**
+A 32-bit bitmask used to enable or disable the signaling of specific interrupts.
+
+- If a bit is `1`, the GPU will send an MSI message when the corresponding event occurs.
+- If a bit is `0`, the GPU will update `INT_STATUS` but will **not** trigger an interrupt signal.
+
+### 13.3 Interrupt Workflow (The Handshake)
+
+1. **Initialization:** The driver sets `INT_MASK` to enable desired interrupts (e.g., `0x01` for Command Done).
+2. **Execution:** The CPU submits commands and continues other work.
+3. **GPU Signal:** When the GPU finishes, it sets the `GPU_INT_CMD_DONE` bit in `INT_STATUS`.
+4. **MSI Trigger:** If the mask bit is enabled, the GPU sends an MSI message to the CPU.
+5. **Acknowledgment:** Upon receiving the interrupt, the driver reads `INT_STATUS` to identify the event and then writes that same value back to `INT_STATUS` to clear (Acknowledge) the interrupt.
+
+### 13.4 Simple example of interrupt in practice
+
+Example how does the interrupt work in GpuPresent:
+```cpp
+    1 EFI_STATUS GpuPresent(GOP_3D_PROTOCOL *This) {
+    2     // 1. Send the batch to VRAM and "Kick" the GPU by writing to RING_HEAD
+    3     GpuSubmitCmd(This);
+    4
+    5     // 2. WAIT for the Interrupt Status bit (Bit 0) to flip to 1
+    6     // The CPU is now "Spinning" or "Waiting" efficiently
+    7     while (!(GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_CMD_DONE)) {
+    8         gBS->Stall(10);
+    9     }
+   10
+   11     // 3. ACK the interrupt (Tell the GPU we saw the report)
+   12     GpuRingBufferAckInterrupt(GPU_INT_CMD_DONE);
+   13
+   14     return EFI_SUCCESS;
+   15 }
+```
+
+Which roughly equates to:
+```txt
+* START:    STATUS=0, MASK=1
+* GPU BUSY: STATUS=0, MASK=1
+* GPU DONE: STATUS=1, MASK=1 \\MSI Sent!
+* CPU ACK:  STATUS=0, MASK=1 \\Ready for the next frame
+```
