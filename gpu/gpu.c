@@ -215,6 +215,12 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case REG_ZBUFFER_ADDR:
          target_reg = &s->zbuffer_addr;
         break;
+    case REG_INT_ACK_ADDR:
+        s->int_status &= ~val;
+        return;
+    case REG_INT_MASK_ADDR:
+        target_reg = &s->int_mask;
+        break;
     case REG_GPU_TIME_ADDR:
         fprintf(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
         return;
