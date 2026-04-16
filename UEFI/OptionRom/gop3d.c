@@ -26,6 +26,9 @@ EFI_STATUS EFIAPI GpuInit(
     // Reset Ring Buffer to clean state
     GpuRingBufferClearCmdBuffer();
 
+    // Enable GPU interrupts
+    GpuRingBufferEnableInterrupts(TRUE);
+
     DEBUG((EFI_D_INFO, "GOP3D: Initialized.\n"));
     return EFI_SUCCESS;
 }
@@ -302,7 +305,16 @@ EFI_STATUS EFIAPI GpuPresent(
   )
 {
     GpuSubmitCmd(This);
-    GpuRingBufferWaitSpace(0); // Wait for idle (Sync)
+    
+    // Wait for the "Command Done" interrupt bit
+    while (!(GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_CMD_DONE)) {
+        if (GpuRingBufferIsIdle()) break;
+        gBS->Stall(10);
+    }
+
+    // Acknowledge the interrupt
+    GpuRingBufferAckInterrupt(GPU_INT_CMD_DONE);
+
     return EFI_SUCCESS;
 }
 

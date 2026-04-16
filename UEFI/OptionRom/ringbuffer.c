@@ -91,6 +91,11 @@ EFI_STATUS EFIAPI GpuRingBufferWaitSpace(IN UINT32 bytesNeeded)
     // Stall path: Wait for GPU
     UINT32 attempts = 0;
     while (GpuRingBufferGetFreeSpace() < bytesNeeded) {
+        // If we're waiting for completion, check if the interrupt bit is set
+        if (GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_CMD_DONE) {
+            GpuRingBufferAckInterrupt(GPU_INT_CMD_DONE);
+        }
+        
         gBS->Stall(10); 
         GpuReadRingTail();
 
@@ -170,6 +175,17 @@ BOOLEAN EFIAPI GpuRingBufferIsIdle()
 {
     GpuReadRingTail();
     return (gpuRingBuffer.ringTail == gpuRingBuffer.ringHead);
+}
+
+VOID EFIAPI GpuRingBufferEnableInterrupts(IN BOOLEAN Enable)
+{
+    UINT32 Mask = Enable ? GPU_INT_CMD_DONE : 0;
+    GpuMmioWrite32(REG_INT_MASK_ADDR, Mask);
+}
+
+VOID EFIAPI GpuRingBufferAckInterrupt(IN UINT32 Mask)
+{
+    GpuMmioWrite32(REG_INT_ACK_ADDR, Mask);
 }
 
 VOID EFIAPI GpuRingBufferPrintState()
