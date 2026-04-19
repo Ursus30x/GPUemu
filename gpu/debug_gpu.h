@@ -9,10 +9,10 @@ static void G_GNUC_UNUSED debug_dump_vertices(GpuState *gpu)
 {
     // Resolve the pointer using your macro
     Vec3 *vertices = VERTEX_TABLE(gpu);
-    
-    uint32_t count = gpu->vbo_config.size; 
 
-    DEBUG_PRINT("--- [DEBUG] VERTEX TABLE (Addr: %x, Count: %u) ---\n", 
+    uint32_t count = gpu->vbo_config.size;
+
+    DEBUG_PRINT("--- [DEBUG] VERTEX TABLE (Addr: %x, Count: %u) ---\n",
            gpu->vbo_config.addr, count);
 
     if (count == 0 || count > 1000) { // Sanity check
@@ -22,7 +22,7 @@ static void G_GNUC_UNUSED debug_dump_vertices(GpuState *gpu)
 
     for (uint32_t i = 0; i < count; i++) {
         // Print floats and Hex color
-        DEBUG_PRINT("  [%02u] X:%7.3f Y:%7.3f Z:%7.3f | Color: 0x%08X\n", 
+        DEBUG_PRINT("  [%02u] X:%7.3f Y:%7.3f Z:%7.3f | Color: 0x%08X\n",
                i, vertices[i].x, vertices[i].y, vertices[i].z, vertices[i].rgba);
     }
     DEBUG_PRINT("-------------------------------------------------------------\n");
@@ -31,10 +31,10 @@ static void G_GNUC_UNUSED debug_dump_vertices(GpuState *gpu)
 static void G_GNUC_UNUSED debug_dump_edges(GpuState *gpu)
 {
     Edge *edges = EDGES_TABLE(gpu);
-    
+
     uint32_t count = gpu->edge_config.size;
 
-    DEBUG_PRINT("--- [DEBUG] EDGE TABLE (Addr: %x, Count: %u) ---\n", 
+    DEBUG_PRINT("--- [DEBUG] EDGE TABLE (Addr: %x, Count: %u) ---\n",
            gpu->edge_config.addr, count);
 
     if (count == 0 || count > 1000) {
@@ -51,11 +51,11 @@ static void G_GNUC_UNUSED debug_dump_edges(GpuState *gpu)
 static void G_GNUC_UNUSED debug_dump_ubo(void *opaque)
 {
     GpuState *gpu = (GpuState*)opaque;
-    
-    uint32_t addr = gpu->uinform_config.addr; 
+
+    uint32_t addr = gpu->uinform_config.addr;
     uint32_t size = gpu->uinform_config.size;
     uint8_t *vram_base = (uint8_t*)gpu->vram_ptr;
-    
+
     // Guard against uninitialized config
     if (size == 0) {
         DEBUG_PRINT("--- [DEBUG] UBO DATA (Empty / Size 0) ---\n");
@@ -72,7 +72,7 @@ static void G_GNUC_UNUSED debug_dump_ubo(void *opaque)
 
         float v[4] = {0};
         uint32_t h[4] = {0};
-        
+
         for(int k=0; k<4; k++) {
             if (i + (k * 4) < size) {
                 v[k] = f_vals[k];
@@ -80,10 +80,10 @@ static void G_GNUC_UNUSED debug_dump_ubo(void *opaque)
             }
         }
 
-        DEBUG_PRINT("  [0x%03x] %8.3f %8.3f %8.3f %8.3f | %08X %08X %08X %08X\n", 
-            i, 
+        DEBUG_PRINT("  [0x%03x] %8.3f %8.3f %8.3f %8.3f | %08X %08X %08X %08X\n",
+            i,
             v[0], v[1], v[2], v[3],
-            h[0], h[1], h[2], h[3]    
+            h[0], h[1], h[2], h[3]
         );
     }
     DEBUG_PRINT("----------------------------------------------------------\n");

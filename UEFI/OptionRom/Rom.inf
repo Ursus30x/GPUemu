@@ -34,4 +34,4 @@
   gEfiDevicePathProtocolGuid                    # PROTOCOL BY_START
   gEfiPciIoProtocolGuid                         # PROTOCOL TO_START
   # Our GPU protocols
-  gGop3dProtocolGuid 
+  gGop3dProtocolGuid

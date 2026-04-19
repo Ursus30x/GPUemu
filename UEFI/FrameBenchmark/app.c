@@ -11,7 +11,7 @@
 #include <Library/BaseMemoryLib.h>
 #include <IndustryStandard/Acpi.h>
 #include <IndustryStandard/Pci.h>
-#include <Library/UefiBootServicesTableLib.h> 
+#include <Library/UefiBootServicesTableLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/TimerLib.h> // Required for high-resolution timing
 
@@ -56,14 +56,14 @@ static void BenchStop(BENCH_TIMER* Timer) {
  */
 static UINT64 BenchGetDurationMicroseconds(BENCH_TIMER* Timer) {
     UINT64 Delta = 0;
-    
+
     // Determine the difference based on timer direction
     if (Timer->StartTick > Timer->EndTick) {
          Delta = Timer->StartTick - Timer->EndTick;
     } else {
          Delta = Timer->EndTick - Timer->StartTick;
     }
-    
+
     return DivU64x64Remainder(MultU64x64(Delta, 1000000), Timer->Freq, NULL);
 }
 
@@ -83,18 +83,18 @@ VOID TestFrame(){
     // Cube Data
     Vec3 cube_vertices[] = {
         { -1.0f, -1.0f, -1.0f, 0xFFFF0000 }, {  1.0f, -1.0f, -1.0f, 0xFF00FF00 },
-        {  1.0f,  1.0f, -1.0f, 0xFF0000FF }, { -1.0f,  1.0f, -1.0f, 0xFFFFFF00 }, 
+        {  1.0f,  1.0f, -1.0f, 0xFF0000FF }, { -1.0f,  1.0f, -1.0f, 0xFFFFFF00 },
         { -1.0f, -1.0f,  1.0f, 0xFFFF00FF }, {  1.0f, -1.0f,  1.0f, 0xFF00FFFF },
-        {  1.0f,  1.0f,  1.0f, 0xFFFFFFFF }, { -1.0f,  1.0f,  1.0f, 0xFF808080 }  
+        {  1.0f,  1.0f,  1.0f, 0xFFFFFFFF }, { -1.0f,  1.0f,  1.0f, 0xFF808080 }
     };
-    
-    Edge cube_edges[] = { 
-        {0,1}, {1,2}, {2,3}, {3,0}, {4,5}, {5,6}, {6,7}, {7,4}, 
-        {0,4}, {1,5}, {2,6}, {3,7}, {5,3} 
+
+    Edge cube_edges[] = {
+        {0,1}, {1,2}, {2,3}, {3,0}, {4,5}, {5,6}, {6,7}, {7,4},
+        {0,4}, {1,5}, {2,6}, {3,7}, {5,3}
     };
-    
-    UINT32 IndexCount = (sizeof(cube_edges) / sizeof(Edge)) * 2; 
-    
+
+    UINT32 IndexCount = (sizeof(cube_edges) / sizeof(Edge)) * 2;
+
     // Define Timers
     BENCH_TIMER TotalTimer, StaticDataTimer, MvpTimer, CmdRecTimer, RenderTimer;
 
@@ -102,12 +102,12 @@ VOID TestFrame(){
     // TOTAL TIMER START
     BenchStart(&TotalTimer, L"Total Frame Time");
 
-    mGOP3D->GpuSetMode(mGOP3D, 1); 
+    mGOP3D->GpuSetMode(mGOP3D, 1);
 
     // STATIC DATA TIMER START
     BenchStart(&StaticDataTimer, L"Static Data Transfer");
     VRAMADDR hVBO, hIBO, hVS, hFS;
-    VRAMADDR hMVP1 = 0; 
+    VRAMADDR hMVP1 = 0;
 
     mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, cube_vertices, sizeof(cube_vertices), &hVBO);
     mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  cube_edges,    sizeof(cube_edges),    &hIBO);
@@ -120,7 +120,7 @@ VOID TestFrame(){
     BenchStart(&MvpTimer, L"Matrix Calc & Upload");
     Mat4 ry, rx, scale, trans, proj;
     Mat4 model1, mvp1;
-    
+
     Mat4_RotateY(0.0f, &ry);
     Mat4_RotateX(0.2f, &rx);
     Mat4_Scale(0.5f, &scale);
@@ -128,7 +128,7 @@ VOID TestFrame(){
     Mat4_Perspective(PI/3.0f, 640.0f/480.0f, 1.0f, 10.0f, &proj);
 
     Mat4_Mul(&ry, &rx, &model1);
-    Mat4_Mul(&scale, &model1, &model1); 
+    Mat4_Mul(&scale, &model1, &model1);
     Mat4_Mul(&trans, &model1, &model1);
     Mat4_Mul(&proj, &model1, &mvp1);
 
@@ -139,27 +139,27 @@ VOID TestFrame(){
     // COMMAND BUFFER RECORDING TIMER START
     BenchStart(&CmdRecTimer, L"Command Recording");
     mGOP3D->GpuCmdBegin(mGOP3D);
-    mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000); 
-    
+    mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+
     mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
     mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
     mGOP3D->GpuBindVBO(mGOP3D, hVBO, 8);
     mGOP3D->GpuBindIBO(mGOP3D, hIBO, 13);
 
-    mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(Mat4)); 
-    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount); 
-    
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(Mat4));
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount);
+
     mGOP3D->GpuCmdEnd(mGOP3D);
     BenchStop(&CmdRecTimer);
     // COMMAND BUFFER RECORDING TIMER END
 
     // SUBMISSION AND RENDER TIMER START
     BenchStart(&RenderTimer, L"Submit & Present");
-    mGOP3D->GpuPresent(mGOP3D);        
+    mGOP3D->GpuPresent(mGOP3D);
     BenchStop(&RenderTimer);
     // SUBMISSION AND RENDER TIMER END
 
-    mGOP3D->GpuSetMode(mGOP3D, 0); 
+    mGOP3D->GpuSetMode(mGOP3D, 0);
     BenchStop(&TotalTimer);
     // TOTAL TIMER END
 
@@ -167,7 +167,7 @@ VOID TestFrame(){
     mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
     mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
     mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
-    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);    
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);
 
     // --- Show Stats ---
     Print(L"\n========================================\n");
@@ -189,14 +189,14 @@ EFI_STATUS EFIAPI Test() {
     DEBUG((EFI_D_INFO, "Frame Benchmark Start\n"));
 
     Status = gBS->LocateProtocol(
-        &gEfiGraphicsOutputProtocolGuid, 
-        NULL, 
+        &gEfiGraphicsOutputProtocolGuid,
+        NULL,
         (VOID **)&mGraphicsOutput
     );
 
     Status = gBS->LocateProtocol(
-        &gGop3dProtocolGuid, 
-        NULL, 
+        &gGop3dProtocolGuid,
+        NULL,
         (VOID **)&mGOP3D
     );
 
@@ -221,13 +221,13 @@ EFI_STATUS EFIAPI Test() {
 EFI_STATUS EFIAPI FrameBenchmarkEntry(
     IN EFI_HANDLE ImageHandle,
     IN EFI_SYSTEM_TABLE *SystemTable) {
-        
+
     EFI_STATUS Status;
 
     Status = Test();
 
     ASSERT_EFI_ERROR(Status);
-    
+
     return Status;
 }
 

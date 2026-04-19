@@ -11,7 +11,7 @@ if [ -f "$MARKER_FILE" ]; then
     LAST_TYPE=$(cat "$MARKER_FILE")
 else
     # Default to DEBUG if file is missing (e.g. first run or cleaned)
-    LAST_TYPE="DEBUG" 
+    LAST_TYPE="DEBUG"
 fi
 
 ./qemu/build/qemu-system-x86_64 \

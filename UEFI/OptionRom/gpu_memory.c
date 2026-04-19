@@ -10,7 +10,7 @@ struct GpuMemoryAllocator gpuMemAllocator;
  * ------------------------------------------------------------------------- */
 
 BOOLEAN CanAlloc(
-    IN UINT32 startPage, 
+    IN UINT32 startPage,
     IN UINT32 pagesCount)
 {
     if (startPage + pagesCount > gpuMemAllocator.pageCount) {
@@ -29,7 +29,7 @@ BOOLEAN CanAlloc(
 
 VOID SetStatusPage(
     IN CONST UINT32 FromPage,
-    IN CONST UINT32 ToPage, 
+    IN CONST UINT32 ToPage,
     IN CONST BOOLEAN value)
 {
     for(UINT32 i = FromPage; i < ToPage; i++){
@@ -42,11 +42,11 @@ VOID SetStatusPage(
  * ------------------------------------------------------------------------- */
 
 EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
-    IN EFI_PCI_IO_PROTOCOL *PciIo, 
-    IN UINT32 VRAMsize, 
+    IN EFI_PCI_IO_PROTOCOL *PciIo,
+    IN UINT32 VRAMsize,
     IN VRAMADDR baseAddr)
 {
-    // Basic size info 
+    // Basic size info
     gpuMemAllocator.pageCount      = VRAMsize / PAGE_SIZE;
     gpuMemAllocator.totalMemSize   = VRAMsize;
 
@@ -58,11 +58,11 @@ EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
 #ifdef MEM_DEBUG
     gpuMemAllocator.allocationTags  = AllocateZeroPool(gpuMemAllocator.pageCount * sizeof(CHAR8*));
     if (!gpuMemAllocator.pageStatus || !gpuMemAllocator.pageAllocationSizes || !gpuMemAllocator.allocationTags) {
-        return EFI_OUT_OF_RESOURCES; 
+        return EFI_OUT_OF_RESOURCES;
     }
 #else
     if (!gpuMemAllocator.pageStatus || !gpuMemAllocator.pageAllocationSizes) {
-        return EFI_OUT_OF_RESOURCES; 
+        return EFI_OUT_OF_RESOURCES;
     }
 #endif
 
@@ -70,7 +70,7 @@ EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
 
     // PCI IO init
     gpuMemAllocator.PciIo          = PciIo;
-    gpuMemAllocator.VramBarIndex   = 1; 
+    gpuMemAllocator.VramBarIndex   = 1;
 
     return EFI_SUCCESS;
 }
@@ -88,7 +88,7 @@ VRAMADDR GpuAllocateMemImpl(IN UINT32 bytesToAlloc)
     while (pageCounter < gpuMemAllocator.pageCount) {
         if (gpuMemAllocator.pageStatus[pageCounter] == FALSE) {
             if (CanAlloc(pageCounter, pagesToAlloc)) {
-                
+
                 SetStatusPage(pageCounter, pageCounter + pagesToAlloc, TRUE);
                 gpuMemAllocator.pageAllocationSizes[pageCounter] = pagesToAlloc;
 
@@ -130,12 +130,12 @@ BOOLEAN GpuAllocateMemAtImpl(IN UINT32 bytesToAlloc, IN VRAMADDR addr)
 #endif
         return TRUE;
     }
-    
+
     return FALSE;
 }
 
 UINT32 GpuGetAllocatedSize(IN VRAMADDR addr)
-{    
+{
     UINT32 page = addr / PAGE_SIZE;
 
     return gpuMemAllocator.pageAllocationSizes[page] * PAGE_SIZE;
@@ -170,8 +170,8 @@ BOOLEAN GpuFreeMem(IN VRAMADDR addr)
  * ------------------------------------------------------------------------- */
 
 EFI_STATUS EFIAPI GpuVramWrite(
-    IN VRAMADDR DestAddr, 
-    IN VOID* SourcePtr, 
+    IN VRAMADDR DestAddr,
+    IN VOID* SourcePtr,
     IN UINT32 Size)
 {
     EFI_STATUS Status;
@@ -189,7 +189,7 @@ EFI_STATUS EFIAPI GpuVramWrite(
             EfiPciIoWidthUint32,
             gpuMemAllocator.VramBarIndex,
             DestAddr + i,
-            1, 
+            1,
             SourceBytes + i
         );
 
@@ -216,8 +216,8 @@ EFI_STATUS EFIAPI GpuVramWrite(
 }
 
 EFI_STATUS EFIAPI GpuVramRead(
-    IN VOID* DestPtr, 
-    IN VRAMADDR SourceAddr, 
+    IN VOID* DestPtr,
+    IN VRAMADDR SourceAddr,
     IN UINT32 Size)
 {
     EFI_STATUS Status;
@@ -262,13 +262,13 @@ EFI_STATUS EFIAPI GpuVramRead(
 }
 
 EFI_STATUS EFIAPI GpuVramSet(
-    IN VRAMADDR DestAddr, 
-    IN UINT8 Value, 
+    IN VRAMADDR DestAddr,
+    IN UINT8 Value,
     IN UINT32 Size)
 {
     EFI_STATUS Status;
     UINT32 i = 0;
-    
+
     // Create a 32-bit pattern
     UINT32 Pattern = (Value << 24) | (Value << 16) | (Value << 8) | Value;
 
@@ -334,7 +334,7 @@ EFI_STATUS EFIAPI GpuMmioWrite32(IN UINT32 Offset, IN UINT32 Value)
 UINT32 EFIAPI GpuMmioRead32(IN UINT32 Offset)
 {
     UINT32 Value = 0;
-    
+
     if (gpuMemAllocator.PciIo != NULL) {
         gpuMemAllocator.PciIo->Mem.Read(
             gpuMemAllocator.PciIo,
@@ -345,7 +345,7 @@ UINT32 EFIAPI GpuMmioRead32(IN UINT32 Offset)
             &Value
         );
     }
-    
+
     return Value;
 }
 
@@ -447,7 +447,7 @@ VOID EFIAPI GpuDebugPrintAllocatorStats(VOID)
     DEBUG ((EFI_D_INFO, "Total Memory:  %d Bytes (%d Pages)\n", totalBytes, gpuMemAllocator.pageCount));
     DEBUG ((EFI_D_INFO, "Used Memory:   %d Bytes (%d Pages)\n", usedBytes, usedPages));
     DEBUG ((EFI_D_INFO, "Free Memory:   %d Bytes (%d Pages)\n", freeBytes, freePages));
-    
+
     if (totalBytes > 0) {
         UINT32 percent = (usedBytes * 100) / totalBytes;
         DEBUG ((EFI_D_INFO, "Utilization:   %d%%\n", percent));
@@ -468,7 +468,7 @@ VOID EFIAPI GpuDebugDumpMemoryMap(VOID)
 
     // Iterate through pages + 1 (to handle the last block closure)
     for (i = 1; i <= gpuMemAllocator.pageCount; i++) {
-        
+
         BOOLEAN nextStatus = (i < gpuMemAllocator.pageCount) ? gpuMemAllocator.pageStatus[i] : !currentStatus;
         BOOLEAN splitBlock = FALSE;
 
@@ -485,15 +485,15 @@ VOID EFIAPI GpuDebugDumpMemoryMap(VOID)
 
         // If block ends or new one starts
         if (splitBlock) {
-            UINT32 endPage = i; 
+            UINT32 endPage = i;
             UINT32 count = endPage - startPage;
             UINT32 bytes = count * PAGE_SIZE;
-            
+
             VRAMADDR startAddr = startPage * PAGE_SIZE;
             VRAMADDR endAddr   = (endPage * PAGE_SIZE) - 1;
 
             CHAR8 *tagName = "";
-            
+
 #ifdef MEM_DEBUG
             // Handle Tag display safely (handles NULL or missing tags)
             if (currentStatus == TRUE) {
@@ -505,10 +505,10 @@ VOID EFIAPI GpuDebugDumpMemoryMap(VOID)
             }
 #endif
 
-            DEBUG ((EFI_D_INFO, "  [0x%08X] - [0x%08X] : %a (%10d Bytes) | %a\n", 
-                startAddr, 
-                endAddr, 
-                currentStatus ? "USED" : "FREE", 
+            DEBUG ((EFI_D_INFO, "  [0x%08X] - [0x%08X] : %a (%10d Bytes) | %a\n",
+                startAddr,
+                endAddr,
+                currentStatus ? "USED" : "FREE",
                 bytes,
                 tagName
             ));

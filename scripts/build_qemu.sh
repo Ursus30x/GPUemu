@@ -33,7 +33,7 @@ if [ "$BUILD_TYPE" != "$LAST_TYPE" ]; then
 
     # Run configure
     eval ./configure --target-list="x86_64-softmmu" $CONFIG_FLAGS
-    
+
     # Fix: Update the marker file ONLY after we have detected the change and configured
     echo "$BUILD_TYPE" > "$MARKER_FILE"
 else
