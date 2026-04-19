@@ -23,7 +23,7 @@ index 9180e88645..7ab59eae9e 100644
 +  OptionRom/Rom.inf
 +  DemoApp/DemoApp.inf
 +  FrameBenchmark/FrameBenchmark.inf
-+  
++
    #
    # SEC Phase modules
    #

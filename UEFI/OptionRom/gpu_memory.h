@@ -23,7 +23,7 @@ struct GpuMemoryAllocator {
 #endif
 
     VRAMADDR baseAddr;
-    
+
     // PCI IO vars
     EFI_PCI_IO_PROTOCOL *PciIo;
 
@@ -65,13 +65,13 @@ BOOLEAN GpuFreeMem(IN VRAMADDR addr);
 
 /*---------------- Read/Write Helper Functions ----------------*/
 
-// Copies data from host to VRAM 
+// Copies data from host to VRAM
 EFI_STATUS EFIAPI GpuVramWrite(IN VRAMADDR destAddr, IN VOID* sourcePtr, IN UINT32 size);
 
 // Copies data from VRAM to host
 EFI_STATUS EFIAPI GpuVramRead(IN VOID* destAddr, IN VRAMADDR sourcePtr, IN UINT32 size);
 
-// Clears/Sets given memory area with specified value 
+// Clears/Sets given memory area with specified value
 EFI_STATUS EFIAPI GpuVramSet(IN VRAMADDR DestAddr, IN UINT8 Value, IN UINT32 Size);
 
 

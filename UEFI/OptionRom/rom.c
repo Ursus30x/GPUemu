@@ -185,8 +185,8 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
     DEBUG ((EFI_D_ERROR, "Failed to get ParentDevicePath\n"));
     return Status;
   }
-    
-    
+
+
   // what even is this ACPI & why is it required? installing the proto fails otherwise
   ACPI_ADR_DEVICE_PATH      AcpiDeviceNode;
   ZeroMem (&AcpiDeviceNode, sizeof (ACPI_ADR_DEVICE_PATH));
@@ -271,14 +271,14 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
       Private->Handle,
       EFI_OPEN_PROTOCOL_BY_CHILD_CONTROLLER
       );
-    
+
   DEBUG ((EFI_D_INFO, "done1, status=%d\n", Status));
   if (EFI_ERROR (Status)) {
     DEBUG ((EFI_D_ERROR, "Failed to reference parent from child\n"));
     return Status;
   }
 
-  gBS->RestoreTPL(OldTpl); 
+  gBS->RestoreTPL(OldTpl);
 
   DEBUG ((EFI_D_INFO, "Driver installation done, status=%d\n", Status));
   return Status;
@@ -320,6 +320,6 @@ EFI_STATUS EFIAPI OptionRomEntry(
       );
 
   ASSERT_EFI_ERROR (Status);
-  
+
   return Status;
 }

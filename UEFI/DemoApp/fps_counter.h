@@ -4,7 +4,7 @@
 #include <Uefi.h>
 #include <Library/UefiLib.h>
 #include <Library/DebugLib.h>
-#include <Library/TimerLib.h> 
+#include <Library/TimerLib.h>
 
 static UINT32 gFpsFrameCount = 0;
 static UINT64 gFpsTotalTicks = 0;
@@ -13,20 +13,20 @@ static UINT64 gFpsTimerFreq  = 0;
 
 // Timer properties
 static BOOLEAN gFpsTimerCountsUp = TRUE;
-static UINT64  gFpsTimerMask     = 0xFFFFFFFFFFFFFFFFULL; 
+static UINT64  gFpsTimerMask     = 0xFFFFFFFFFFFFFFFFULL;
 
 
 static VOID FpsInitTimer() {
     UINT64 StartVal = 0;
     UINT64 EndVal   = 0;
-    
+
     gFpsTimerFreq = GetPerformanceCounterProperties(&StartVal, &EndVal);
-    
+
     if (gFpsTimerFreq == 0) gFpsTimerFreq = 1000000;
 
     if (EndVal > StartVal) {
         gFpsTimerCountsUp = TRUE;
-        gFpsTimerMask = EndVal; 
+        gFpsTimerMask = EndVal;
     } else {
         gFpsTimerCountsUp = FALSE;
         gFpsTimerMask = StartVal;

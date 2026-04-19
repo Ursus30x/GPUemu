@@ -18,10 +18,10 @@ void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
         gpu->pRegs[REG_PR].u32 = r;
         gpu->pRegs[REG_PG].u32 = g;
         gpu->pRegs[REG_PB].u32 = b;
-        exec_shader(gpu, gpu->fs_code_addr);     
+        exec_shader(gpu, gpu->fs_code_addr);
         color = (gpu->pRegs[REG_PR].u32 << 16) |
                 (gpu->pRegs[REG_PG].u32 << 8)  |
-                    gpu->pRegs[REG_PB].u32;         
+                    gpu->pRegs[REG_PB].u32;
     }
 
     FB(gpu)[y * GPU_FB_WIDTH + x] = color;
@@ -39,7 +39,7 @@ void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, u
     if (length == 0) length = 1;
     int step = 0;
 
-    for (;;) 
+    for (;;)
     {
         float t = (float)step / length;
 
@@ -75,7 +75,6 @@ void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, u
 
 uint8_t cmp_u32(uint32_t a, uint32_t b, uint8_t flag)
 {
-    
     switch (flag) {
         case C_FLAG_EQ: return a == b;
         case C_FLAG_NEQ: return a != b;
@@ -119,7 +118,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
     void *program_address = gpu->vram_ptr+program_offset;
     void *program_begin =program_address;
     int end = 1;
-    do{ 
+    do{
         Instr instr = *(Instr*)program_address;
         if(instr.cFlag == C_FLAG_ENABLE && gpu->cFlag != 1)
         {
@@ -128,7 +127,6 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
         }
         switch (instr.opcode)
         {
-        
         case INSTR_MOV:
         {
             if(instr.opType == OP_TYPE_MATRIX)
@@ -211,14 +209,13 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
         case INSTR_COL:
         {
-          
             Vec3Raw col = gpu->regs[instr.dest].vec3;
             gpu->pRegs[REG_PR].u32 = (uint32_t)(fmaxf(0.0f, fminf(1.0f, col.x)) * 255.0f);
             gpu->pRegs[REG_PG].u32 = (uint32_t)(fmaxf(0.0f, fminf(1.0f, col.y)) * 255.0f);
             gpu->pRegs[REG_PB].u32 = (uint32_t)(fmaxf(0.0f, fminf(1.0f, col.z)) * 255.0f);
             DEBUG_PRINT("COL VEC3: r=%u, g=%u, b=%u\n", gpu->pr, gpu->pg, gpu->pb);
             DEBUG_PRINT("COL VEC3: r=%f, g=%f, b=%f\n", col.x, col.y, col.z);
-            
+
             break;
         }
         case INSTR_ABS:
@@ -227,9 +224,9 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
             if(instr.opType == OP_TYPE_F32)
                 gpu->pRegs[instr.dest].f32 = fabsf(a.f32);
-            else 
+            else
                 gpu->pRegs[instr.dest].u32 = abs(a.u32);
-            
+
             DEBUG_PRINT("ABS: in=%u -> out=%u\n", a.u32, gpu->pRegs[instr.dest].u32);
             break;
         }
@@ -242,11 +239,11 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
             if(instr.opType == OP_TYPE_F32)
                 gpu->pRegs[instr.dest].f32 = a.f32 + (b.f32 - a.f32) * t.f32;
-            else 
+            else
                 gpu->pRegs[instr.dest].u32 = (int)((float)(a.u32 + (b.u32 - a.u32)) * t.f32);
-            
+
             DEBUG_PRINT("LERP: a=%f, b=%f, t=%f -> out=%f\n", a.f32, b.f32, t.f32, gpu->pRegs[instr.dest].f32);
-            
+
             break;
         }
         // a * (1 - weight) + b * weight
@@ -258,8 +255,8 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
             if(instr.opType == OP_TYPE_F32)
                 gpu->pRegs[instr.dest].f32 = a.f32 * (1.0 - w.f32)  + b.f32 * w.f32;
-            else 
-                gpu->pRegs[instr.dest].u32 = (int)(a.u32 * (1.0 - w.f32)  + b.u32 * w.f32);      
+            else
+                gpu->pRegs[instr.dest].u32 = (int)(a.u32 * (1.0 - w.f32)  + b.u32 * w.f32);
             DEBUG_PRINT("BLEND: a=%u, b=%u, w=%u -> out=%u\n", a.u32, b.u32, w.u32, gpu->pRegs[instr.dest].u32);
             break;
         }
@@ -301,7 +298,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             DEBUG_VAR InstrArg b_DBG = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
             ARITHMETIC_OP(*);
             if(instr.opType == OP_TYPE_U32)
-            {               
+            {
                 DEBUG_PRINT("MUL SCALAR: a=%u * b=%u -> dest=%u\n", a_DBG.u32, b_DBG.u32, gpu->pRegs[instr.dest].u32);
             }
             else
@@ -337,7 +334,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 DEBUG_PRINT("ADD VEC3: [%f,%f,%f] + %f -> [%f,%f,%f]\n", a.x, a.y, a.z, b.f32, res.x, res.y, res.z);
                 break;
             }
-            
+
             DEBUG_VAR InstrArg a_DBG = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
             DEBUG_VAR InstrArg b_DBG = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
             ARITHMETIC_OP(+);
@@ -382,7 +379,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 DEBUG_PRINT("SUB VEC3: [%f,%f,%f] - %f -> [%f,%f,%f]\n", a.x, a.y, a.z, b.f32, res.x, res.y, res.z);
                 break;
             }
-            
+
             DEBUG_VAR InstrArg a_DBG = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
             DEBUG_VAR InstrArg b_DBG = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
             ARITHMETIC_OP(-);
@@ -496,7 +493,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
             default:
                 break;
-            } 
+            }
             break;
         }
         case INSTR_CLAMP:
@@ -512,7 +509,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 else gpu->pRegs[instr.dest].f32 = val.f32;
                 DEBUG_PRINT("CLAMP F32: %f -> %f\n", val.f32, gpu->pRegs[instr.dest].f32);
             }
-            else 
+            else
             {
                 if(val.u32 < min.u32) gpu->pRegs[instr.dest].u32 = min.u32;
                 else if(val.u32 > max.u32) gpu->pRegs[instr.dest].u32 = max.u32;
@@ -528,11 +525,11 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             if(instr.opType == OP_TYPE_F32)
             {
                 gpu->pRegs[instr.dest].f32 = -a.f32;
-                DEBUG_PRINT("NEG F32: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);  
+                DEBUG_PRINT("NEG F32: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
             }
-            else 
+            else
             {
-                gpu->pRegs[instr.dest].u32 = (uint32_t)(-((int32_t)a.u32));   
+                gpu->pRegs[instr.dest].u32 = (uint32_t)(-((int32_t)a.u32));
                 DEBUG_PRINT("NEG U32: %u -> %u\n", a.u32, gpu->pRegs[instr.dest].u32);
             }
             break;
@@ -546,7 +543,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 gpu->pRegs[instr.dest].f32 = 1.0f / a.f32;
                 DEBUG_PRINT("RECIP F32: in=%f -> out=%f\n", a.f32, gpu->pRegs[instr.dest].f32);
             }
-            else 
+            else
             {
                 gpu->pRegs[instr.dest].u32 = (uint32_t)(1 / (float)(a.u32));
                 DEBUG_PRINT("RECIP U32: in=%u -> out=%u\n", a.u32, gpu->pRegs[instr.dest].u32);
@@ -570,9 +567,9 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 gpu->pRegs[instr.dest].f32 = fminf(a.f32, b.f32);
                 DEBUG_PRINT("MIN F32: %f, %f -> %f\n", a.f32, b.f32, gpu->pRegs[instr.dest].f32);
             }
-            else 
+            else
             {
-                gpu->pRegs[instr.dest].u32 = (a.u32 < b.u32) ? a.u32 : b.u32;   
+                gpu->pRegs[instr.dest].u32 = (a.u32 < b.u32) ? a.u32 : b.u32;
                 DEBUG_PRINT("MIN U32: %u, %u -> %u\n", a.u32, b.u32, gpu->pRegs[instr.dest].u32);
             }
             break;
@@ -587,9 +584,9 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 gpu->pRegs[instr.dest].f32 = fmaxf(a.f32, b.f32);
                 DEBUG_PRINT("MAX F32: %f, %f -> %f\n", a.f32, b.f32, gpu->pRegs[instr.dest].f32);
             }
-            else 
+            else
             {
-                gpu->pRegs[instr.dest].u32 = (a.u32 > b.u32) ? a.u32 : b.u32;  
+                gpu->pRegs[instr.dest].u32 = (a.u32 > b.u32) ? a.u32 : b.u32;
                 DEBUG_PRINT("MAX U32: %u, %u -> %u\n", a.u32, b.u32, gpu->pRegs[instr.dest].u32);
             }
             break;
@@ -602,10 +599,10 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
             if(instr.opType == OP_TYPE_F32)
                 gpu->pRegs[instr.dest].f32 = a.f32 * b.f32 + c.f32;
-            else 
-                gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) );  
+            else
+                gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) );
             DEBUG_PRINT("FMA: %u * %u + %u -> %u\n", a.u32, b.u32, c.u32, gpu->pRegs[instr.dest].u32);
-    
+
             break;
         }
         case INSTR_MAD:
@@ -616,8 +613,8 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
             if(instr.opType == OP_TYPE_F32)
                 gpu->pRegs[instr.dest].f32 = a.f32 * b.f32 + c.f32;
-            else 
-                gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) ); 
+            else
+                gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) );
            // DEBUG_PRINT("MAD: %u * %u + %u -> %u\n", a.u32, b.u32, c.u32, gpu->pRegs[instr.dest].u32);
             break;
         }
@@ -632,7 +629,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 else gpu->pRegs[instr.dest].f32 = val.f32;
                 DEBUG_PRINT("SAT F32: %f -> %f\n", val.f32, gpu->pRegs[instr.dest].f32);
             }
-            else 
+            else
             {
                 if((int)val.u32 < 0) gpu->pRegs[instr.dest].u32 = 0;
                 else if(val.u32 > 255) gpu->pRegs[instr.dest].u32 = 255;
@@ -672,8 +669,8 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
             if(instr.opType == OP_TYPE_F32)
                 gpu->pRegs[instr.dest].u32 = cmp_f32(a.f32, b.f32, instr.cFlag);
-            else 
-                gpu->pRegs[instr.dest].u32 = cmp_u32(a.u32, b.u32, instr.cFlag);   
+            else
+                gpu->pRegs[instr.dest].u32 = cmp_u32(a.u32, b.u32, instr.cFlag);
             DEBUG_PRINT("PCMP: in_a=%u, in_b=%u, flag=%u -> out=%u\n", a.u32, b.u32, instr.cFlag, gpu->pRegs[instr.dest].u32);
             break;
         }
@@ -688,7 +685,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
             DEBUG_PRINT("VEC3: x=%f, y=%f, z=%f\n", x.f32, y.f32, z.f32);
             break;
         }
-    
+
         case INSTR_LEN:
         {
             if(instr.opType == OP_TYPE_F32)
@@ -751,7 +748,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
                 else gpu->pRegs[instr.dest].f32 = 0.0f;
                 DEBUG_PRINT("SIGN F32: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
             }
-            else 
+            else
             {
                 int32_t val = (int32_t)a.u32;
                 if(val > 0) gpu->pRegs[instr.dest].u32 = 1;
@@ -779,7 +776,7 @@ void exec_shader(GpuState *gpu, uint32_t program_offset)
 
 }
 
-float edge_func(Vec3 a, Vec3 b, Vec3 c) 
+float edge_func(Vec3 a, Vec3 b, Vec3 c)
 {
     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
 }
@@ -791,30 +788,29 @@ void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
     Vec3 s[3];
     Vec4 v[3] = {v0, v1, v2};
 
-    for(int i = 0; i < 3; i++) 
+    for(int i = 0; i < 3; i++)
     {
         float w = (v[i].w < 0.1f) ? 0.1f : v[i].w;
         float inv_w = 1.0f / w;
-        
+
         float ndc_x = v[i].x * inv_w;
         float ndc_y = v[i].y * inv_w;
 
         s[i].x = (ndc_x + 1.0f) * 0.5f * width;
         s[i].y = (1.0f - (ndc_y + 1.0f) * 0.5f) * height;
-        s[i].z = inv_w; 
+        s[i].z = inv_w;
     }
 
-   
+
     float area = edge_func(s[0], s[1], s[2]);
-   // if (area >= 0) return; 
+   // if (area >= 0) return;
 
     int min_x = fmax(0, fmin(s[0].x, fmin(s[1].x, s[2].x)));
     int max_x = fmin(width-1, fmax(s[0].x, fmax(s[1].x, s[2].x)));
     int min_y = fmax(0, fmin(s[0].y, fmin(s[1].y, s[2].y)));
     int max_y = fmin(height-1, fmax(s[0].y, fmax(s[1].y, s[2].y)));
 
-   
-    for (int y = min_y; y <= max_y; y++) 
+    for (int y = min_y; y <= max_y; y++)
     {
         for (int x = min_x; x <= max_x; x++)
         {
@@ -826,7 +822,7 @@ void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
                 //float z_inv = w0 * s[0].z + w1 * s[1].z + w2 * s[2].z;
                 float z = w0 * (1.0f/s[0].z) + w1 * (1.0f/s[1].z) + w2 * (1.0f/s[2].z);
-                
+
                 if (z < Z_BUFFER(gpu)[y * width + x]) {
                     Z_BUFFER(gpu)[y * width + x] = z;
                     uint8_t r = (uint8_t)(w0 * GET_R(color.a_col) + w1 * GET_R(color.b_col) + w2 * GET_R(color.c_col));
@@ -848,10 +844,9 @@ void gpu_render_triangles(void *opaque)
     gpu->gpu_mode = GPU_MODE_IDLE;
     uint32_t triangle_size =  gpu->edge_config.size;
 
-        
     Vec3 *vertices = VERTEX_TABLE(gpu);
     Triangle *indices = TRIANGLES_TABLE(gpu);
-    for (int i = 0; i < triangle_size; i++) 
+    for (int i = 0; i < triangle_size; i++)
     {
             Vec4 v[3];
             v[0].x = vertices[indices[i].a].x;
@@ -870,7 +865,7 @@ void gpu_render_triangles(void *opaque)
             v[2].w = 1.0f;
 
             uint32_t colors[3] = {vertices[indices[i].a].rgba, vertices[indices[i].b].rgba, vertices[indices[i].c].rgba};
-            for(int j=0; j<3; j++) 
+            for(int j=0; j<3; j++)
             {
                 gpu->v_pos.right = v[j];
                 uint32_t color = colors[j];
@@ -880,11 +875,11 @@ void gpu_render_triangles(void *opaque)
                 gpu->pRegs[REG_PR].u32 = r;
                 gpu->pRegs[REG_PG].u32 = g;
                 gpu->pRegs[REG_PB].u32 = b;
-                exec_shader(gpu, gpu->vs_code_addr);     
+                exec_shader(gpu, gpu->vs_code_addr);
                 v[j] = gpu->v_out.right;
                 colors[j] = RGB_TO_UINT(
-                    (uint8_t)gpu->pRegs[REG_PR].u32, 
-                    (uint8_t)gpu->pRegs[REG_PG].u32, 
+                    (uint8_t)gpu->pRegs[REG_PR].u32,
+                    (uint8_t)gpu->pRegs[REG_PG].u32,
                     (uint8_t)gpu->pRegs[REG_PB].u32);
             }
             Col3 color = {
@@ -894,7 +889,7 @@ void gpu_render_triangles(void *opaque)
             };
             draw_triangle(v[0], v[1], v[2], color, gpu);
     }
-    
+
 
     gpu->gpu_mode = GPU_MODE_3D;
 }
@@ -917,22 +912,22 @@ void gpu_render_wireframe(void *opaque)
     uint32_t height =  gpu->height;
     uint32_t vertex_size = gpu->vbo_config.size;
     uint32_t edges_size =  gpu->edge_config.size;
-    DEBUG_PRINT("[GPU State] Width: %u, Height: %u, Vertex Size: %u, Edge Size: %u\n", 
-       gpu->width, 
-       gpu->height, 
-       gpu->vbo_config.size, 
+    DEBUG_PRINT("[GPU State] Width: %u, Height: %u, Vertex Size: %u, Edge Size: %u\n",
+       gpu->width,
+       gpu->height,
+       gpu->vbo_config.size,
        gpu->edge_config.size);
-        
+
     Vec3 *vertices = VERTEX_TABLE(gpu);
     Edge *edges = EDGES_TABLE(gpu);
-    
+
     uint32_t *px = malloc(sizeof(uint32_t)* vertex_size);
     uint32_t *py = malloc(sizeof(uint32_t)* vertex_size);
-    for(uint32_t i=0;i<vertex_size;i++) 
+    for(uint32_t i=0;i<vertex_size;i++)
     {
         Vec4 v = {vertices[i].x, vertices[i].y, vertices[i].z, 1.0f};
         gpu->v_pos.right = v;
-        
+
         uint32_t color = vertices[i].rgba;
         uint8_t r  = GET_R(color);
         uint8_t g  = GET_G(color);
@@ -941,11 +936,11 @@ void gpu_render_wireframe(void *opaque)
         gpu->pRegs[REG_PG].u32 = g;
         gpu->pRegs[REG_PB].u32 = b;
         //exec vertex shader
-        exec_shader(gpu, gpu->vs_code_addr);    
+        exec_shader(gpu, gpu->vs_code_addr);
 
         vertices[i].rgba = RGB_TO_UINT(
-            (uint8_t)gpu->pRegs[REG_PR].u32, 
-            (uint8_t)gpu->pRegs[REG_PG].u32, 
+            (uint8_t)gpu->pRegs[REG_PR].u32,
+            (uint8_t)gpu->pRegs[REG_PG].u32,
             (uint8_t)gpu->pRegs[REG_PB].u32);
 
         Vec4 tv = gpu->v_out.right;
@@ -956,20 +951,20 @@ void gpu_render_wireframe(void *opaque)
     }
     DEBUG_PRINT("[Render Frame] Drawing lines\n");
 
-    DEBUG_PRINT("[GPU State] px: %p, py: %p, vert: %p,\n", 
-       (void*)px, 
-       (void*)py, 
+    DEBUG_PRINT("[GPU State] px: %p, py: %p, vert: %p,\n",
+       (void*)px,
+       (void*)py,
        (void*)vertices
         );
-        
+
     for(uint32_t i=0;i<edges_size;i++)
     {
         Edge e = edges[i];
-        DEBUG_PRINT("[GPU State] px[e.a]: %u, py[e.a]: %u, px[e.b]: %u, py[e.b]: %u, e.a: %u, e.b %u\n", 
+        DEBUG_PRINT("[GPU State] px[e.a]: %u, py[e.a]: %u, px[e.b]: %u, py[e.b]: %u, e.a: %u, e.b %u\n",
             px[e.a], py[e.a], px[e.b], py[e.b], e.a, e.b);
         draw_line(gpu, px[e.a], py[e.a], px[e.b], py[e.b],  vertices[e.a].rgba, vertices[e.b].rgba);
     }
-    
+
     free(px);
     free(py);
     gpu->gpu_mode = GPU_MODE_3D;

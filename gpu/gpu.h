@@ -52,17 +52,16 @@
 
 
 typedef struct GpuState {
-    
     PCIDevice pdev;
     MemoryRegion mmiomem;         // BAR0: MMIO
     MemoryRegion vrammem;         // BAR1: VRAM
-    QemuConsole *con;             
+    QemuConsole *con;
     QEMUTimer *timer;
 
-    uint8_t *vram_ptr;            
+    uint8_t *vram_ptr;
 
 
-    uint32_t gpu_mode;            
+    uint32_t gpu_mode;
     uint32_t ring_buffer_head;
     uint32_t ring_buffer_tail;
     uint32_t ring_buffer_start;
@@ -72,7 +71,7 @@ typedef struct GpuState {
     uint32_t width;               // 0x18
     uint32_t height;              // 0x1C
     uint32_t framebuffer_vram_offset; // 0x20
-    uint32_t gpu_time;            // 0x24 
+    uint32_t gpu_time;            // 0x24
     uint32_t zbuffer_addr;            // 0x28
     uint32_t int_status;          // 0x30
     uint32_t int_mask;            // 0x34
@@ -81,17 +80,17 @@ typedef struct GpuState {
     GenericBufferConfig edge_config;
     GenericBufferConfig uinform_config;
 
-    Mat4 regs[REG_MAT_SIZE];        
+    Mat4 regs[REG_MAT_SIZE];
     Preg pRegs[REG_P_GEN_SIZE];
-                     
+
     // fragment pseudo regs
-    float px, py;                  
-    uint32_t pr, pg, pb;   
+    float px, py;
+    uint32_t pr, pg, pb;
     // vector pseudo regs
     Mat4 v_out;
     Mat4 v_pos;
-    
-    uint8_t cFlag;            
+
+    uint8_t cFlag;
 } GpuState;
 
 

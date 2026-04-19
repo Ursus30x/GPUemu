@@ -38,8 +38,8 @@ typedef enum {
 /**
  * Initializes the GPU driver state and PCI I/O.
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_INIT)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -47,8 +47,8 @@ EFI_STATUS
 /**
  * Cleans up resources and shuts down the GPU driver.
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_DESTROY)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -56,8 +56,8 @@ EFI_STATUS
 /**
  * Sets GPU mode (GOP/3D).
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_SET_MODE)(
   IN GOP_3D_PROTOCOL      *This,
   IN UINT32 Mode
@@ -66,8 +66,8 @@ EFI_STATUS
 /**
  * Resets the command buffer head/cursor, preparing for new commands.
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_CMD_BEGIN)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -75,8 +75,8 @@ EFI_STATUS
 /**
  * Finalizes the recording phase (adds debug markers/padding if needed).
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_CMD_END)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -100,8 +100,8 @@ EFI_STATUS
  * @param Size        Size in bytes to allocate and copy.
  * @param GpuAddress  [OUT] The resulting VRAM address of the uploaded buffer.
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_TRANSFER_BUFFER)(
   IN  GOP_3D_PROTOCOL     *This,
   IN  GOP_3D_BUFFER_TYPE  Type,
@@ -143,8 +143,8 @@ EFI_STATUS
  * @param Topology    Primitive type (Points, Lines, Triangles).
  * @param VertexCount Number of vertices (or indices if IBO is bound) to draw.
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_DRAW)(
   IN GOP_3D_PROTOCOL      *This,
   IN GOP_3D_TOPOLOGY      Topology,
@@ -155,8 +155,8 @@ EFI_STATUS
  * Clears the framebuffer.
  * @param Color       32-bit color value (0xAARRGGBB).
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_CLEAR_FRAME)(
   IN GOP_3D_PROTOCOL      *This,
   IN UINT32               Color
@@ -165,8 +165,8 @@ EFI_STATUS
 /**
  * Submits the recorded command buffer to the GPU (updates RING_HEAD).
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_SUBMIT_CMD)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -174,8 +174,8 @@ EFI_STATUS
 /**
  * Swaps buffers or flushes execution (Present).
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_PRESENT)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -186,7 +186,7 @@ EFI_STATUS
 struct GOP_3D_PROTOCOL {
   GOP_3D_INIT               GpuInit;
   GOP_3D_DESTROY            GpuDestroy;
-  
+
   GOP_3D_SET_MODE           GpuSetMode;
 
   GOP_3D_CMD_BEGIN          GpuCmdBegin;
@@ -198,7 +198,7 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_BIND_RESOURCE      GpuBindFragShader;
   GOP_3D_BIND_RESOURCE      GpuBindVertShader;
 
-  GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer; 
+  GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer;
   GOP_3D_UPDATE_BUFFER      GpuUpdateBuffer;
   GOP_3D_FREE_BUFFER        GpuFreeBuffer;
 

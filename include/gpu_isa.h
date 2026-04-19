@@ -10,9 +10,9 @@ typedef struct { uint32_t a, b, c; } Triangle;
 typedef struct { float x, y, z, w;  } Vec4;
 typedef struct {uint32_t a_col, b_col, c_col;} Col3;
 typedef union {
-    float m[4][4]; 
+    float m[4][4];
     float elements[16];
-    Vec4 rows[4]; 
+    Vec4 rows[4];
     Vec3Raw vec3;
     struct {
         Vec4 right;
@@ -32,13 +32,13 @@ typedef union {
 typedef enum {
     C_FLAG_UNUSED,
     C_FLAG_EQ,
-    C_FLAG_NEQ,    
-    C_FLAG_LT,     
-    C_FLAG_GT,     
-    C_FLAG_LTE,    
-    C_FLAG_GTE,    
-    C_FLAGS_NUM,   
-    C_FLAG_ENABLE, 
+    C_FLAG_NEQ,
+    C_FLAG_LT,
+    C_FLAG_GT,
+    C_FLAG_LTE,
+    C_FLAG_GTE,
+    C_FLAGS_NUM,
+    C_FLAG_ENABLE,
     C_FLAG_DISABLE,
 } CFlags;
 
@@ -59,41 +59,41 @@ typedef enum {
 } RegsP;
 
 typedef enum {
-    REG_M0, 
-    REG_M1, 
-    REG_M2, 
-    REG_M3, 
-    REG_M4, 
-    REG_M5, 
-    REG_M6, 
-    REG_M7, 
+    REG_M0,
+    REG_M1,
+    REG_M2,
+    REG_M3,
+    REG_M4,
+    REG_M5,
+    REG_M6,
+    REG_M7,
     REG_M_IN
 } RegsM;
 
 
 typedef enum {
-    INSTR_MOV = 0,  
-    INSTR_MUL,  
-    INSTR_ROTX, 
-    INSTR_ROTY, 
-    INSTR_IDENT, 
-    INSTR_TRANS, 
-    INSTR_MVP,   
-    INSTR_EXIT,  
-    INSTR_CMP,   
-    INSTR_ADD,   
-    INSTR_SUB,   
-    INSTR_DIV,   
-    INSTR_MOD,    
-    INSTR_COL,    
-    INSTR_FSAN,   
-    INSTR_BLEND,  
-    INSTR_LERP,   
-    INSTR_ABS,   
-    INSTR_SQRT,   
-    INSTR_SIN,    
-    INSTR_COS,    
-    INSTR_CAST,  
+    INSTR_MOV = 0,
+    INSTR_MUL,
+    INSTR_ROTX,
+    INSTR_ROTY,
+    INSTR_IDENT,
+    INSTR_TRANS,
+    INSTR_MVP,
+    INSTR_EXIT,
+    INSTR_CMP,
+    INSTR_ADD,
+    INSTR_SUB,
+    INSTR_DIV,
+    INSTR_MOD,
+    INSTR_COL,
+    INSTR_FSAN,
+    INSTR_BLEND,
+    INSTR_LERP,
+    INSTR_ABS,
+    INSTR_SQRT,
+    INSTR_SIN,
+    INSTR_COS,
+    INSTR_CAST,
     INSTR_LDU,
     INSTR_JMP,
     INSTR_AND,
@@ -102,7 +102,7 @@ typedef enum {
     INSTR_NOT,
     INSTR_PCMP,
     //ADD INSTRUCTIONS
-    INSTR_NORM, 
+    INSTR_NORM,
     INSTR_MIN,
     INSTR_MAX,
     INSTR_CLAMP,   // min(max(x,a),b)
@@ -125,8 +125,8 @@ typedef enum {
 
 typedef enum {
     ARG_TYPE_IMM,
-    ARG_TYPE_REG,   
-    ARG_TYPE_DATA  
+    ARG_TYPE_REG,
+    ARG_TYPE_DATA
 } ArgType;
 
 typedef enum {

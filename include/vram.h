@@ -16,33 +16,33 @@ typedef enum {
 } DataType;
 
 typedef struct {
-    uint32_t addr;          
-    uint32_t size;             
-    DataType element_type;     
+    uint32_t addr;
+    uint32_t size;
+    DataType element_type;
 } GenericBufferConfig;
 
 
 typedef struct {
-    DataType data_type;        
-    uint32_t offset; 
+    DataType data_type;
+    uint32_t offset;
 } AttributeMap;
 
 typedef struct __attribute__((packed)) {
     DataType data_type;
-    uint32_t offset_in_buffer; 
+    uint32_t offset_in_buffer;
 } ShaderResourceMap;
 
 
 
 typedef struct __attribute__((packed)) {
-    uint32_t shader_type;       
+    uint32_t shader_type;
     uint32_t num_instructions;
-    
+
     uint32_t num_uniforms;
-    ShaderResourceMap uniform_map[MAX_UNIFORMS_PER_SHADER]; 
-    
+    ShaderResourceMap uniform_map[MAX_UNIFORMS_PER_SHADER];
+
     uint32_t num_attributes;
-    AttributeMap attribute_map[MAX_ATTRIBUTES_PER_SHADER]; 
+    AttributeMap attribute_map[MAX_ATTRIBUTES_PER_SHADER];
 
 } Shader_Header;
 
@@ -55,8 +55,8 @@ typedef struct
 
 
 typedef enum {
-    CMD_NOOP               = 0x00, 
-    CMD_DRAW_PRIMITIVE     = 0x01, 
+    CMD_NOOP               = 0x00,
+    CMD_DRAW_PRIMITIVE     = 0x01,
     CMD_SET_STATE          = 0x02,
     CMD_CLEAR_FRAMEBUFFER  = 0x03,
 } CommandOpcode;
@@ -64,9 +64,9 @@ typedef enum {
 
 typedef enum {
     STATE_ID_VBO_CONFIG = 1,
-    STATE_ID_EDGE_CONFIG,   
+    STATE_ID_EDGE_CONFIG,
     STATE_ID_UNIFORM_CONFIG,
-    STATE_ID_VERTEX_SHADER_PTR,    
+    STATE_ID_VERTEX_SHADER_PTR,
     STATE_ID_FRAGMENT_SHADER_PTR
 } StateID;
 
@@ -79,19 +79,19 @@ typedef enum {
 
 
 typedef struct __attribute__((packed)) {
-    PrimitiveType type;         
+    PrimitiveType type;
 } DrawPrimitivePayload;
 
 typedef struct __attribute__((packed)) {
-    StateID state_id; 
-    
+    StateID state_id;
+
     union {
         GenericBufferConfig buffer_config;
         struct __attribute__((packed)) {
-            uint32_t vs_addr;             
+            uint32_t vs_addr;
             uint32_t fs_addr;
         } shader_ptrs;
-        
+
     } value;
 } SetStatePayload;
 
@@ -106,7 +106,7 @@ typedef struct __attribute__((packed)) {
         DrawPrimitivePayload draw;
         SetStatePayload state;
         ClearFramebufferPayload clear;
-        uint32_t raw_data[8]; 
+        uint32_t raw_data[8];
     } payload;
 } Command;
 
@@ -116,11 +116,11 @@ typedef struct __attribute__((packed)) {
 
 #define CMD_BEGIN() \
     uint32_t current_offset = 0; \
-    size_t cmd_size = sizeof(Command); 
+    size_t cmd_size = sizeof(Command);
 
 #define CMD_DBG_END(offset) \
     gpu->ring_buffer_head = offset + current_offset;\
-    gpu->ring_buffer_tail = offset; 
+    gpu->ring_buffer_tail = offset;
 
 #define CMD_CLEAR_FB(ring_buffer_base) \
 { \

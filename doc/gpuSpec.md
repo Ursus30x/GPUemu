@@ -54,7 +54,7 @@ This document describes the architecture of a custom emulated graphics card desi
 typedef enum {
     GPU_MODE_GOP,   // Graphics Output Protocol (BIOS framebuffer)
     GPU_MODE_3D,    // 3D rendering pipeline
-    GPU_MODE_IDLE   // Idle 
+    GPU_MODE_IDLE   // Idle
 } GpuMode;
 ```
 
@@ -1049,13 +1049,13 @@ mGOP3D->GpuSetMode(mGOP3D, 1);  // Enable 3D
 
 // 2. Upload static assets (once)
 VRAMADDR hVBO, hIBO, hVS, hFS;
-mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, 
+mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex,
                           vertices, sizeof(vertices), &hVBO);
-mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex, 
+mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,
                           indices, sizeof(indices), &hIBO);
-mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, 
+mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode,
                           shader_vs, sizeof(shader_vs), &hVS);
-mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, 
+mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode,
                           shader_fs, sizeof(shader_fs), &hFS);
 
 // 3. Render loop
@@ -1064,25 +1064,25 @@ while (!done) {
     Mat4 mvp = ComputeTransformation();
     VRAMADDR hMVP;
     if (first_frame) {
-        mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, 
+        mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform,
                                   &mvp, sizeof(mvp), &hMVP);
     } else {
-        mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, 
+        mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform,
                                 &mvp, sizeof(mvp), &hMVP);
     }
 
     // Record frame
     mGOP3D->GpuCmdBegin(mGOP3D);
     mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
-    
+
     mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(shader_vs));
     mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(shader_fs));
     mGOP3D->GpuBindVBO(mGOP3D, hVBO, vertex_count);
     mGOP3D->GpuBindIBO(mGOP3D, hIBO, index_count);
     mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(mvp));
-    
+
     mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, index_count);
-    
+
     mGOP3D->GpuCmdEnd(mGOP3D);
     mGOP3D->GpuSubmitCmd(mGOP3D);
     mGOP3D->GpuPresent(mGOP3D);
