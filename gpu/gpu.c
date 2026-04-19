@@ -159,6 +159,14 @@ static void process_ring_buffer(GpuState *s)
             s->ring_buffer_tail = rb_start;
         }
     }
+
+    /* Signal completion via interrupt */
+    if (s->int_mask & GPU_INT_CMD_DONE) {
+        s->int_status |= GPU_INT_CMD_DONE;
+        if (msi_enabled(PCI_DEVICE(s))) {
+            msi_notify(PCI_DEVICE(s), 0);
+        }
+    }
 }
 
 static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
@@ -206,6 +214,12 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         break;
     case REG_ZBUFFER_ADDR:
          target_reg = &s->zbuffer_addr;
+        break;
+    case REG_INT_ACK_ADDR:
+        s->int_status &= ~val;
+        return;
+    case REG_INT_MASK_ADDR:
+        target_reg = &s->int_mask;
         break;
     case REG_GPU_TIME_ADDR:
         fprintf(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
@@ -274,6 +288,12 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case REG_ZBUFFER_ADDR:
         reg_val = s->zbuffer_addr;
+        break;
+    case REG_INT_STATUS_ADDR:
+        reg_val = s->int_status;
+        break;
+    case REG_INT_MASK_ADDR:
+        reg_val = s->int_mask;
         break;
     default:
         fprintf(stderr, "GPU MMIO READ: Unhandled base offset 0x%" PRIx64 "\n", base_addr);
@@ -376,10 +396,13 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->width = 640;
     gpu->gpu_mode = GPU_MODE_GOP;
     gpu->framebuffer_vram_offset = 0x0000000;
-    
+
+    /* Initialize MSI */
+    msi_init(pdev, 0, 1, true, false, errp);
 }
 
 /* Uninitialize GPU device */
 static void pci_gpu_uninit(PCIDevice *pdev)
 {
+    msi_uninit(pdev);
 }

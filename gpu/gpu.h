@@ -74,6 +74,8 @@ typedef struct GpuState {
     uint32_t framebuffer_vram_offset; // 0x20
     uint32_t gpu_time;            // 0x24 
     uint32_t zbuffer_addr;            // 0x28
+    uint32_t int_status;          // 0x30
+    uint32_t int_mask;            // 0x34
 
     GenericBufferConfig vbo_config;
     GenericBufferConfig edge_config;
