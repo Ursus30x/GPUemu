@@ -12,24 +12,34 @@
 #define GPU_CMD_SIZE  0x1000      /* BAR0 command size */
 
 /* MMIO Register Offsets */
-#define REG_GPU_MODE_ADDR              0x0
-#define REG_RING_BUFFER_HEAD_ADDR      0x4
-#define REG_RING_BUFFER_TAIL_ADDR      0x8
-#define REG_RING_BUFFER_START_ADDR     0xC
-#define REG_RING_BUFFER_END_ADDR       0x10
-#define REG_VERTEX_SHADER_ADDR         0x14
-#define REG_FRAGMENT_SHADER_ADDR       0x18
-#define REG_FB_WIDTH_ADDR              0x1c
-#define REG_FB_HEIGHT_ADDR             0x20
-#define REG_FRAMEBUFFER_ADDR           0x24
-#define REG_GPU_TIME_ADDR              0x28
-#define REG_ZBUFFER_ADDR               0x2C
-#define REG_INT_STATUS_ADDR            0x30
-#define REG_INT_ACK_ADDR               0x30
-#define REG_INT_MASK_ADDR              0x34
+#define REG_GPU_MODE_ADDR               0x0
+#define REG_RING_BUFFER_HEAD_ADDR       0x4
+#define REG_RING_BUFFER_TAIL_ADDR       0x8
+#define REG_RING_BUFFER_START_ADDR      0xC
+#define REG_RING_BUFFER_END_ADDR        0x10
+#define REG_VERTEX_SHADER_ADDR          0x14
+#define REG_FRAGMENT_SHADER_ADDR        0x18
+#define REG_FB_WIDTH_ADDR               0x1c
+#define REG_FB_HEIGHT_ADDR              0x20
+#define REG_FRAMEBUFFER_ADDR            0x24
+#define REG_GPU_TIME_ADDR               0x28
+#define REG_ZBUFFER_ADDR                0x2C
+#define REG_INT_STATUS_ADDR             0x30
+#define REG_INT_ACK_ADDR                0x30
+#define REG_INT_MASK_ADDR               0x34
+#define REG_DMA_HOST_ADDR               0x38
+#define REG_DMA_VRAM_ADDR               0x3C
+#define REG_DMA_SIZE_ADDR               0x40
+#define REG_DMA_CMD_ADDR                0x44
 
 /* Interrupt Bits */
-#define GPU_INT_CMD_DONE               (1 << 0)
+#define GPU_INT_CMD_DONE                (1 << 0)
+#define GPU_INT_DMA_DONE                (1 << 1)
+
+/* DMA Bits */
+#define GPU_DMA_CMD_START               (1 << 0)
+#define GPU_DMA_CMD_TO_VRAM             (0 << 1) // 0: System -> VRAM
+#define GPU_DMA_CMD_FROM_VRAM           (1 << 1) // 1: VRAM -> System
 
 typedef enum {
     GPU_MODE_GOP,
