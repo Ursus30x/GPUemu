@@ -24,6 +24,12 @@
 #define REG_FRAMEBUFFER_ADDR           0x24
 #define REG_GPU_TIME_ADDR              0x28
 #define REG_ZBUFFER_ADDR               0x2C
+#define REG_INT_STATUS_ADDR            0x30
+#define REG_INT_ACK_ADDR               0x30
+#define REG_INT_MASK_ADDR              0x34
+
+/* Interrupt Bits */
+#define GPU_INT_CMD_DONE               (1 << 0)
 
 typedef enum {
     GPU_MODE_GOP,

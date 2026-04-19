@@ -65,6 +65,12 @@ EFI_STATUS EFIAPI GpuRingBufferWaitSpace(IN UINT32 bytesNeeded);
 // Returns TRUE if Ring Head == Ring Tail (GPU has finished all commands).
 BOOLEAN EFIAPI GpuRingBufferIsIdle();
 
+// Enables or disables GPU interrupts
+VOID EFIAPI GpuRingBufferEnableInterrupts(IN BOOLEAN Enable);
+
+// Acknowledges pending interrupts
+VOID EFIAPI GpuRingBufferAckInterrupt(IN UINT32 Mask);
+
 // Returns the amount of free space (in bytes) currently available in the VRAM Ring Buffer.
 UINT32 EFIAPI GpuRingBufferGetFreeSpace();
 
