@@ -34,6 +34,8 @@ ln -sf "$CWD/gpu/math3d.h" "$CWD/qemu/hw/misc/math3d.h"
 ln -sf "$CWD/include/gpu_isa.h" "$CWD/qemu/hw/misc/gpu_isa.h"
 ln -sf "$CWD/include/gpu_hw.h" "$CWD/qemu/hw/misc/gpu_hw.h"
 ln -sf "$CWD/include/vram.h" "$CWD/qemu/hw/misc/vram.h"
+ln -sf "$CWD/gpu/utils.h" "$CWD/qemu/hw/misc/utils.h"
+
 
 # Apply config patches
 git apply "$CWD/gpu/qemu.patch"

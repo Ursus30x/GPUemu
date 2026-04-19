@@ -4,6 +4,7 @@
 #include "math3d.h"
 #include "renderer.h"
 #include "debug_gpu.h"
+#include "utils.h"
 
 DECLARE_INSTANCE_CHECKER(GpuState, GPU, TYPE_PCI_GPU_DEVICE);
 
@@ -169,6 +170,46 @@ static void process_ring_buffer(GpuState *s)
     }
 }
 
+static void handle_dma(GpuState *s)
+{
+    PCIDevice *pdev = PCI_DEVICE(s);
+
+    // Check if bus mastering is enabled
+    if (!(pdev->config[PCI_COMMAND] & PCI_COMMAND_MASTER)) {
+        fprintf(stderr, "GPU DMA: Error: Driver attempted DMA while Bus Mastering is disabled!\n");
+        return;
+    }
+
+    const uint8_t direction = GET_BIT(s->dma_cmd, 1);
+    const uint32_t host_addr = s->dma_addr;
+    const uint32_t vram_offset = s->dma_vram;
+    const uint32_t size = s->dma_size;
+
+    if (vram_offset + size > GPU_VRAM_SIZE) {
+        fprintf(stderr, "GPU DMA: Error: Transfer exceeds VRAM size!\n");
+        return;
+    }
+
+    if (direction == GPU_DMA_CMD_FROM_VRAM)
+    {
+        DEBUG_PRINT("GPU DMA: VRAM(0x%x) -> Host(0x%x), size 0x%x\n", vram_offset, host_addr, size);
+        pci_dma_write(pdev, host_addr, s->vram_ptr + vram_offset, size);
+    }
+    else if(direction == GPU_DMA_CMD_TO_VRAM){
+        DEBUG_PRINT("GPU DMA: Host(0x%x) -> VRAM(0x%x), size 0x%x\n", host_addr, vram_offset, size);
+        pci_dma_read(pdev, host_addr, s->vram_ptr + vram_offset, size);
+    }
+
+    s->int_status |= GPU_INT_DMA_DONE;
+
+    // Notify host with interrupt if unmasked
+    if (s->int_mask & GPU_INT_DMA_DONE) {
+        if (msi_enabled(pdev)) {
+            msi_notify(pdev, 0);
+        }
+    }
+}
+
 static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
 {
     GpuState *s = (GpuState *)opaque;
@@ -178,6 +219,7 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
 
     uint32_t *target_reg = NULL;
     uint8_t trigger_command_processor = 0;
+    uint8_t trigger_dma = 0;
 
     switch (base_addr)
     {
@@ -213,13 +255,26 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         target_reg = &s->framebuffer_vram_offset;
         break;
     case REG_ZBUFFER_ADDR:
-         target_reg = &s->zbuffer_addr;
+        target_reg = &s->zbuffer_addr;
         break;
     case REG_INT_ACK_ADDR:
         s->int_status &= ~val;
         return;
     case REG_INT_MASK_ADDR:
         target_reg = &s->int_mask;
+        break;
+    case REG_DMA_HOST_ADDR:
+        target_reg = &s->dma_addr;
+        break;
+    case REG_DMA_VRAM_ADDR:
+        target_reg = &s->dma_vram;
+        break;
+    case REG_DMA_SIZE_ADDR:
+        target_reg = &s->dma_size;
+        break;
+    case REG_DMA_CMD_ADDR:
+        target_reg = &s->dma_cmd;
+        trigger_dma = 1;
         break;
     case REG_GPU_TIME_ADDR:
         fprintf(stderr, "GPU MMIO WRITE: Warning: Attempted write to read-only GPU_TIME at 0x%" PRIx64 "\n", addr);
@@ -245,6 +300,15 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         {
             DEBUG_PRINT("\n[GPU TRIGGER] Detected write to RING_HEAD (0x04). Launching command processor...\n");
             process_ring_buffer(s);
+        }
+        if (trigger_dma && IS_BIT_SET(*target_reg, GPU_DMA_CMD_START))
+        {
+            DEBUG_PRINT("\n[GPU TRIGGER] DMA_CMD START detected. Launching DMA transfer...\n");
+            handle_dma(s);
+
+            // Reset start bit
+            *target_reg &= ~GPU_DMA_CMD_START;
+            DEBUG_PRINT("[GPU TRIGGER] DMA finished. CMD register reset to 0x%x\n", *target_reg);
         }
     }
 }
@@ -294,6 +358,18 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case REG_INT_MASK_ADDR:
         reg_val = s->int_mask;
+        break;
+    case REG_DMA_HOST_ADDR:
+        reg_val = s->dma_addr;
+        break;
+    case REG_DMA_VRAM_ADDR:
+        reg_val = s->dma_vram;
+        break;
+    case REG_DMA_SIZE_ADDR:
+        reg_val = s->dma_size;
+        break;
+    case REG_DMA_CMD_ADDR:
+        reg_val = s->dma_cmd;
         break;
     default:
         fprintf(stderr, "GPU MMIO READ: Unhandled base offset 0x%" PRIx64 "\n", base_addr);
