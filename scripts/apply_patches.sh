@@ -8,7 +8,7 @@ CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
 #################### COMMON ####################
 ################################################
 
-git submodule init 
+git submodule init
 git submodule update --recursive
 
 rm -f .last_build_type
@@ -50,7 +50,7 @@ git restore .
 git clean -qfdx
 
 # Build stuff nedeed for edk2 to build project
-git submodule init 
+git submodule init
 git submodule update --recursive
 
 make -C BaseTools
@@ -58,7 +58,7 @@ make -C BaseTools
 # Remove old driver symlinks/files for driver implementation
 rm -f "$CWD/edk2/OptionRom"
 rm -f "$CWD/edk2/DemoApp"
-rm -f "$CWD/edk2/FrameBenchmark" 
+rm -f "$CWD/edk2/FrameBenchmark"
 rm -f "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
 rm -f "$CWD/edk2/OptionRom/gpu_isa.h"
 rm -f "$CWD/edk2/OptionRom/gpu_hw.h"

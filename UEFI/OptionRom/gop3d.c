@@ -10,7 +10,7 @@
 
 #include "ringbuffer.h"
 #include "gpu_memory.h"
-#include "vram.h" 
+#include "vram.h"
 
 
 #define RING_BUFFER_SIZE (1 << 16) // 64KB
@@ -43,7 +43,7 @@ EFI_STATUS EFIAPI GpuDestroy(
     }
 
     GpuRingBufferClearCmdBuffer();
-    
+
     DEBUG((EFI_D_INFO, "GOP3D: Destroyed.\n"));
     return EFI_SUCCESS;
 }
@@ -91,10 +91,10 @@ EFI_STATUS EFIAPI GpuBindResourceGeneric(
     Command cmd;
     cmd.opcode = CMD_SET_STATE;
     cmd.payload.state.state_id = StateId;
-    
+
     GenericBufferConfig conf;
     conf.addr = Address;
-    conf.size = Size;  
+    conf.size = Size;
     conf.element_type = ElementType;
 
     cmd.payload.state.value.buffer_config = conf;
@@ -105,16 +105,16 @@ EFI_STATUS EFIAPI GpuBindResourceGeneric(
 EFI_STATUS EFIAPI GpuBindVBO(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
-  IN UINT32 Size             
+  IN UINT32 Size
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_VBO_CONFIG, GpuAddress, Size,D_TYPE_VEC3); 
+    return GpuBindResourceGeneric(STATE_ID_VBO_CONFIG, GpuAddress, Size,D_TYPE_VEC3);
 }
 
 EFI_STATUS EFIAPI GpuBindIBO(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
-  IN UINT32 Size             
+  IN UINT32 Size
   )
 {
     return GpuBindResourceGeneric(STATE_ID_EDGE_CONFIG, GpuAddress, Size, D_TYPE_VEC2);
@@ -123,7 +123,7 @@ EFI_STATUS EFIAPI GpuBindIBO(
 EFI_STATUS EFIAPI GpuBindUBO(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
-  IN UINT32 Size           
+  IN UINT32 Size
   )
 {
     return GpuBindResourceGeneric(STATE_ID_UNIFORM_CONFIG, GpuAddress, Size, D_TYPE_MAT4);
@@ -132,7 +132,7 @@ EFI_STATUS EFIAPI GpuBindUBO(
 EFI_STATUS EFIAPI GpuBindVertShader(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
-  IN UINT32 Size              
+  IN UINT32 Size
   )
 {
     Command cmd;
@@ -153,7 +153,7 @@ EFI_STATUS EFIAPI GpuBindFragShader(
     cmd.opcode = CMD_SET_STATE;
     cmd.payload.state.state_id = STATE_ID_FRAGMENT_SHADER_PTR;
     cmd.payload.state.value.shader_ptrs.fs_addr = GpuAddress;
-    
+
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
@@ -180,7 +180,7 @@ EFI_STATUS EFIAPI GpuTransferBuffer(
     else if (Type == Gop3dBufferTypeShaderCode) Tag = "SHADER";
 
     (VOID)Tag; // Suppress "unused variable" error if debug is disabled
-    
+
     // Allocate VRAM
     VRAMADDR Addr = GpuAllocateMem(Size, Tag);
     if (Addr == 0) {
@@ -265,7 +265,7 @@ EFI_STATUS EFIAPI GpuClearFrame(
     Command cmd;
     cmd.opcode = CMD_CLEAR_FRAMEBUFFER;
     cmd.payload.clear.options = 0b11; // Clear Color + Depth
-    
+
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
@@ -276,7 +276,7 @@ EFI_STATUS EFIAPI GpuDraw(
   )
 {
     PrimitiveType primType = PRIMITIVE_TYPE_TRIANGLES;
-    
+
     if (Topology == Gop3dTopologyLines) {
         primType = PRIMITIVE_TYPE_LINES;
     } else if (Topology == Gop3dTopologyPoints) {
@@ -285,7 +285,7 @@ EFI_STATUS EFIAPI GpuDraw(
     Command cmd;
     cmd.opcode = CMD_DRAW_PRIMITIVE;
     cmd.payload.draw.type = primType;
-    
+
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
@@ -305,7 +305,7 @@ EFI_STATUS EFIAPI GpuPresent(
   )
 {
     GpuSubmitCmd(This);
-    
+
     // Wait for the "Command Done" interrupt bit
     while (!(GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_CMD_DONE)) {
         if (GpuRingBufferIsIdle()) break;
@@ -322,33 +322,33 @@ EFI_STATUS EFIAPI GpuPresent(
  * Protocol Setup
  * ------------------------------------------------------------------------- */
 
-EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private) 
+EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
 {
   DEBUG((DEBUG_INFO, "GOP3D: Setting up GOP3D protocol\n"));
 
   GpuRingBufferInit(RING_BUFFER_SIZE);
-  
+
   // Link Implementation to Protocol Pointers
   Private->Gop3dProtocol.GpuInit           = GpuInit;
   Private->Gop3dProtocol.GpuDestroy        = GpuDestroy;
   Private->Gop3dProtocol.GpuSetMode        = GpuSetMode;
-  
+
   Private->Gop3dProtocol.GpuCmdBegin       = GpuCmdBegin;
   Private->Gop3dProtocol.GpuCmdEnd         = GpuCmdEnd;
-  
+
   Private->Gop3dProtocol.GpuBindVBO        = GpuBindVBO;
   Private->Gop3dProtocol.GpuBindIBO        = GpuBindIBO;
   Private->Gop3dProtocol.GpuBindUBO        = GpuBindUBO;
   Private->Gop3dProtocol.GpuBindVertShader = GpuBindVertShader;
   Private->Gop3dProtocol.GpuBindFragShader = GpuBindFragShader;
-  
+
   Private->Gop3dProtocol.GpuTransferBuffer = GpuTransferBuffer;
   Private->Gop3dProtocol.GpuUpdateBuffer   = GpuUpdateBuffer;
   Private->Gop3dProtocol.GpuFreeBuffer     = GpuFreeBuffer;
 
   Private->Gop3dProtocol.GpuClearFrame     = GpuClearFrame;
   Private->Gop3dProtocol.GpuDraw           = GpuDraw;
-  
+
   Private->Gop3dProtocol.GpuSubmitCmd      = GpuSubmitCmd;
   Private->Gop3dProtocol.GpuPresent        = GpuPresent;
 

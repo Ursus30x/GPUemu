@@ -122,7 +122,7 @@ static void process_ring_buffer(GpuState *s)
     // 1. Read Dynamic Configuration directly from State
     uint32_t rb_start = s->ring_buffer_start;
     uint32_t rb_end   = s->ring_buffer_end;
-    uint32_t head     = s->ring_buffer_head; 
+    uint32_t head     = s->ring_buffer_head;
 
     // 2. Safety: Driver hasn't initialized registers yet
     if (rb_start == 0 || rb_end <= rb_start) {
@@ -132,7 +132,7 @@ static void process_ring_buffer(GpuState *s)
     // 3. Dynamic Bounds Check (Anti-Segfault)
     // If tail is outside valid range (e.g. after driver restart), reset it.
     if (s->ring_buffer_tail < rb_start || s->ring_buffer_tail >= rb_end) {
-        DEBUG_PRINT("[GPU ERROR] Tail (0x%x) out of bounds [0x%x - 0x%x]. Resetting to Start.\n", 
+        DEBUG_PRINT("[GPU ERROR] Tail (0x%x) out of bounds [0x%x - 0x%x]. Resetting to Start.\n",
             s->ring_buffer_tail, rb_start, rb_end);
         s->ring_buffer_tail = rb_start;
     }
@@ -194,7 +194,7 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case REG_RING_BUFFER_START_ADDR:
         target_reg = &s->ring_buffer_start;
         break;
-    case REG_RING_BUFFER_END_ADDR: 
+    case REG_RING_BUFFER_END_ADDR:
         target_reg = &s->ring_buffer_end;
         break;
     case REG_VERTEX_SHADER_ADDR:
