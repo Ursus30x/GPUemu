@@ -35,6 +35,9 @@ This launches QEMU with our device as a video output and links the `Build` direc
 
 You can enter this directory from the UEFI shell by typing `FS0:` in the UEFI shell terminal.
 
+<img width="640" height="480" alt="gpu-test" src="https://github.com/user-attachments/assets/7f997a02-8cee-4be2-8ce5-7e9d8b3ab094" />
+
+
 ## Documentation
 
 Architectural specifications and choices are documented in `/docs`.
