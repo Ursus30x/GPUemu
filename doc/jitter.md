@@ -105,59 +105,65 @@ Status: 20/20
 
 The JIT compiler uses an SIMT (Single Instruction Multiple Threads) vector backend with a width of **16 lanes** (`SIMT_WIDTH = 16`).
 
-#### Float (Scalar)
-A single float value is broadcast to all 16 lanes:
-
+#### Float 
 ```
 Type: <16 x float>
 Memory layout:
-  [float0][float0][float0]...[float0]  (16 copies of the same value)
-  └─ 16 lanes, each with identical float value
+  [value][value][value]...[value]  
+  └─ 16 lanes
   
 Size: 64 bytes (16 floats × 4 bytes/float)
 Alignment: 64 bytes
+
 ```
 
 **C equivalent:**
 ```c
 typedef struct {
-    float lane[16];  // All lanes contain same value
+    float lane[16];  // ALL lanes contain the SAME value
 } SimtFloat;
 ```
 
 ---
 
 #### Vector (e.g., vec3, vec4)
-A vector with N components, where each component is a separate SIMT vector replicated across all 16 lanes.
+A vector with N components, where each component is a SIMT vector with values across the 16 lanes.
 
 ```
-Type: [N x <16 x float>]  (Array of N vectors, each with 16 lanes)
+Type: [N x <16 x float>]  (Array of N components, each with 16 lanes)
 
 Memory layout for vec3:
-  Component 0 (X):  [x0_l0][x0_l1][x0_l2]...[x0_l15]  (64 bytes)
-                     ↑ lane 0, lane 1, lane 2... lane 15 of component X
+  Component 0 (X):  [1.0][1.1][1.2]...[2.5]  (64 bytes)
+                     ↑ lane 0, 1, 2... 15 of component X
   
-  Component 1 (Y):  [y0_l0][y0_l1][y0_l2]...[y0_l15]  (64 bytes)
-                     ↑ lane 0, lane 1, lane 2... lane 15 of component Y
+  Component 1 (Y):  [2.0][2.1][2.2]...[3.5]  (64 bytes)
+                     ↑ lane 0, 1, 2... 15 of component Y
   
-  Component 2 (Z):  [z0_l0][z0_l1][z0_l2]...[z0_l15]  (64 bytes)
-                     ↑ lane 0, lane 1, lane 2... lane 15 of component Z
+  Component 2 (Z):  [3.0][3.1][3.2]...[4.5]  (64 bytes)
+                     ↑ lane 0, 1, 2... 15 of component Z
   
 Total: 3 × 64 = 192 bytes
 
-Key insight: Each component value is duplicated across all 16 lanes for parallel execution
+Key insight: Each component stores 16 values, one per lane for parallel execution
+
+Example: vec3 across 16 lanes
+  Lane 0: vec3(1.0, 2.0, 3.0)
+  Lane 1: vec3(1.1, 2.1, 3.1)
+  Lane 2: vec3(1.2, 2.2, 3.2)
+  ...
+  Lane 15: vec3(2.5, 3.5, 4.5)
 ```
 
 **C equivalent:**
 ```c
 typedef struct {
-    float lane[16];  // One component across 16 lanes
+    float lane[16];  // One component: 16 values across lanes
 } SimtFloat;
 
 typedef struct {
-    SimtFloat x;     // Component 0 (64 bytes)
-    SimtFloat y;     // Component 1 (64 bytes)
-    SimtFloat z;     // Component 2 (64 bytes)
+    SimtFloat x;     // Component 0 (64 bytes, 16 X values)
+    SimtFloat y;     // Component 1 (64 bytes, 16 Y values)
+    SimtFloat z;     // Component 2 (64 bytes, 16 Z values)
 } vec3;
 // Total: 3 * 64 = 192 bytes
 
@@ -170,36 +176,39 @@ typedef struct {
 ---
 
 #### Matrix (e.g., mat3x3 = 3 columns × 3 rows)
-A matrix is stored as an array of **column vectors**. Each column is an array of `<16 x float>` SIMT vectors.
+A matrix is stored as an array of **column vectors**. Each matrix element has values across lanes.
 
 ```
 Type: [NumCols x [NumRows x <16 x float>]]
 
 Memory layout for mat3 (3 columns, 3 rows):
   Column 0 (bytes 0-191):
-    Row 0:  [m[0][0]_l0] [m[0][0]_l1] ... [m[0][0]_l15]  (64 bytes)
-            ↑ Matrix element [row=0, col=0] across 16 lanes
+    Row 0:  [1.0][1.5][2.0]...[7.5]  (64 bytes)
+            ↑ Matrix element [row=0, col=0] across lanes 0-15
     
-    Row 1:  [m[1][0]_l0] [m[1][0]_l1] ... [m[1][0]_l15]  (64 bytes)
-            ↑ Matrix element [row=1, col=0] across 16 lanes
+    Row 1:  [2.0][2.5][3.0]...[8.5]  (64 bytes)
+            ↑ Matrix element [row=1, col=0] across lanes 0-15
     
-    Row 2:  [m[2][0]_l0] [m[2][0]_l1] ... [m[2][0]_l15]  (64 bytes)
-            ↑ Matrix element [row=2, col=0] across 16 lanes
+    Row 2:  [3.0][3.5][4.0]...[9.5]  (64 bytes)
+            ↑ Matrix element [row=2, col=0] across lanes 0-15
   
   Column 1 (bytes 192-383):  (same structure, 192 bytes)
   Column 2 (bytes 384-575):  (same structure, 192 bytes)
   
 Total: 3 columns * 3 rows * 64 = 576 bytes
 
-Memory address layout:
-  Base address:  [ Col0_Row0 | Col0_Row1 | Col0_Row2 | Col1_Row0 | Col1_Row1 | Col1_Row2 | Col2_Row0 | Col2_Row1 | Col2_Row2 ]
-                 [  64 bytes | 64 bytes  | 64 bytes  | 64 bytes  | 64 bytes  | 64 bytes  | 64 bytes  | 64 bytes  | 64 bytes  ]
+Example: mat3 across 16 lanes
+  Lane 0:  mat3(1.0, 2.0, 3.0, ...)
+  Lane 1:  mat3(1.5, 2.5, 3.5, ...)
+  Lane 2:  mat3(2.0, 3.0, 4.0, ...)
+  ...
+  Lane 15: mat3(7.5, 8.5, 9.5, ...)
 ```
 
 **C equivalent:**
 ```c
 typedef struct {
-    float lane[16];
+    float lane[16];  // 16 values
 } SimtFloat;
 
 typedef struct {
@@ -220,68 +229,63 @@ typedef struct {
 } mat4;
 ```
 
-**Column-major storage order:**
-- Matrices follow **GLSL convention**: columns are primary, rows secondary
-- `mat[col][row]` in GLSL code corresponds to `col[col].row[row].lane[...]` in memory
-- This is ideal for matrix-vector multiplication where we iterate over columns
-- Cache-friendly when accessing column vectors sequentially
-
-
 ---
 
 #### Memory Layout Summary Table
 
-| Type | LLVM Type | C Equivalent | Size (bytes) | Layout Details |
-|------|-----------|--------------|--------------|----------------|
-| float | `<16 x float>` | `float[16]` | 64 | 16 identical scalar copies across lanes |
-| vec2 | `[2 x <16 x float>]` | `struct { SimtFloat x, y; }` | 128 | 2 components, each replicated 16× |
-| vec3 | `[3 x <16 x float>]` | `struct { SimtFloat x, y, z; }` | 192 | 3 components, each replicated 16× |
-| vec4 | `[4 x <16 x float>]` | `struct { SimtFloat x, y, z, w; }` | 256 | 4 components, each replicated 16× |
-| mat2 | `[2 x [2 x <16 x float>]]` | `mat2_column[2]` | 256 | 2 cols × 2 rows × 64 = 256 bytes |
-| mat3 | `[3 x [3 x <16 x float>]]` | `mat3_column[3]` | 576 | 3 cols × 3 rows × 64 = 576 bytes |
-| mat4 | `[4 x [4 x <16 x float>]]` | `mat4_column[4]` | 1024 | 4 cols × 4 rows × 64 = 1024 bytes |
+| Type | LLVM Type | C Equivalent | Size (bytes) | Lane Values |
+|------|-----------|--------------|--------------|-------------|
+| float | `<16 x float>` | `float[16]` | 64 | Same value across all 16 lanes (broadcast) |
+| vec2 | `[2 x <16 x float>]` | `struct { SimtFloat x, y; }` | 128 | 2 components × 16 values per component |
+| vec3 | `[3 x <16 x float>]` | `struct { SimtFloat x, y, z; }` | 192 | 3 components × 16 values per component |
+| vec4 | `[4 x <16 x float>]` | `struct { SimtFloat x, y, z, w; }` | 256 | 4 components × 16 values per component |
+| mat2 | `[2 x [2 x <16 x float>]]` | `mat2_column[2]` | 256 | 2 cols × 2 rows × 16 values per element |
+| mat3 | `[3 x [3 x <16 x float>]]` | `mat3_column[3]` | 576 | 3 cols × 3 rows × 16 values per element |
+| mat4 | `[4 x [4 x <16 x float>]]` | `mat4_column[4]` | 1024 | 4 cols × 4 rows × 16 values per element |
 
 ---
 
 #### Key Characteristics
 
-- **Lane-major layout**: Each scalar value exists in 16 copies across the lanes for SIMT execution
+- **Scalars: Broadcast identical**: Each scalar value is replicated identically across all 16 lanes
+- **Composites: Independent per lane**: Vector/matrix components store 16 values, one per lane for parallel SIMT execution
+- **Lane independence**: Each lane computes with its own data values
 - **Component-wise storage**: Vector components are stored as separate SIMT arrays, not interleaved
 - **Column-major matrices**: Matrices use column-primary ordering (standard GLSL convention)
 - **Array-of-vectors representation**: Composites (vectors/matrices) are LLVM arrays containing SIMT vectors
 - **64-byte alignment**: All SIMT vectors are 64-byte aligned for cache efficiency
-- **Broadcast operations**: Scalar constants are automatically broadcast to all 16 lanes via `LLVMConstVector()`
-- **Memory efficiency**: A single operation processes 16 work items simultaneously across all lanes
+- **Memory efficiency**: A single operation processes 16 independent work items simultaneously across all lanes
 - **Cache locality**: Column-major storage aligns with typical GPU memory access patterns
 
 #### Data Access Patterns
 
-**Scalar access:**
+**Scalar access (all lanes identical):**
 ```c
-// Access x-component, lane 3
-result = vector.x.lane[3];  // Get component X from lane 3
+// Access scalar, any lane (all contain same value)
+result = scalar.lane[3];  // Same as scalar.lane[0], lane[1], etc.
 ```
 
-**Vector component extraction:**
+**Vector component extraction (16 values per component):**
 ```c
-// Extract all lanes for one component
-SimtFloat x_component = vector.x;  // All 16 lanes of X component
+// Extract X component across all 16 lanes
+SimtFloat x_component = vector.x;  // 16 X values from lanes 0-15
 ```
 
-**Matrix element access:**
+**Matrix element access (16 values per element):**
 ```c
 // Access matrix[row][col], lane 5
 float value = matrix.col[col].row[row].lane[5];
-// Byte offset: col*192 + row*64 + 5*4
+float other = matrix.col[col].row[row].lane[3];
+// Byte offset: col*192 + row*64 + lane*4
 ```
 
-**Component broadcast:**
+**Scalar broadcast:**
 ```c
-// When a scalar is used in a vector operation
+// When a scalar is used in a vector operation, it's broadcast
 float scalar = 2.0f;
 SimtFloat broadcasted;
 for (int i = 0; i < 16; i++)
-    broadcasted.lane[i] = scalar;  // All lanes get same value
+    broadcasted.lane[i] = scalar;  // ALL lanes get the SAME value
 ```
 
 **Masked operations** (from `jit_mem.c: build_masked_store`):
