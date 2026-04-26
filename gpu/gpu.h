@@ -80,6 +80,10 @@ typedef struct GpuState {
     uint32_t dma_size;                  // 0x40
     uint32_t dma_cmd;                   // 0x44
 
+    // Bottom Halves for asynchronous processing
+    QEMUBH *dma_bh;
+    QEMUBH *cmd_bh;
+
     GenericBufferConfig vbo_config;
     GenericBufferConfig edge_config;
     GenericBufferConfig uinform_config;

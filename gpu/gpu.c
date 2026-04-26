@@ -13,6 +13,22 @@ static void gpu_class_init(ObjectClass *class, const void *data);
 static void pci_gpu_realize(PCIDevice *pdev, Error **errp);
 static void pci_gpu_uninit(PCIDevice *pdev);
 static void vga_update_display(void *opaque);
+static void handle_dma(GpuState *s);
+static void process_ring_buffer(GpuState *s);
+
+/* Bottom Half Callbacks */
+static void gpu_dma_bh_cb(void *opaque)
+{
+    GpuState *s = opaque;
+    handle_dma(s);
+    s->dma_cmd &= ~GPU_DMA_CMD_START;
+}
+
+static void gpu_cmd_bh_cb(void *opaque)
+{
+    GpuState *s = opaque;
+    process_ring_buffer(s);
+}
 
 type_init(pci_gpu_register_types)
 
@@ -310,17 +326,13 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         DEBUG_PRINT("GPU MMIO WRITE: 0x%lx written to 0x%" PRIx64 " (size %u). New reg value: 0x%x\n", val, addr, size, *target_reg);
         if (trigger_command_processor)
         {
-            DEBUG_PRINT("\n[GPU TRIGGER] Detected write to RING_HEAD (0x04). Launching command processor...\n");
-            process_ring_buffer(s);
+            DEBUG_PRINT("\n[GPU TRIGGER] Detected write to RING_HEAD (0x04). Scheduling command processor BH...\n");
+            qemu_bh_schedule(s->cmd_bh);
         }
         if (trigger_dma && (*target_reg & GPU_DMA_CMD_START))
         {
-            DEBUG_PRINT("\n[GPU TRIGGER] DMA_CMD START detected. Launching DMA transfer...\n");
-            handle_dma(s);
-
-            // Reset start bit
-            *target_reg &= ~GPU_DMA_CMD_START;
-            DEBUG_PRINT("[GPU TRIGGER] DMA finished. CMD register reset to 0x%x\n", *target_reg);
+            DEBUG_PRINT("\n[GPU TRIGGER] DMA_CMD START detected. Scheduling DMA transfer BH...\n");
+            qemu_bh_schedule(s->dma_bh);
         }
     }
 }
@@ -487,10 +499,17 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 
     /* Initialize MSI */
     msi_init(pdev, 0, 1, true, false, errp);
+
+    /* Initialize Bottom Halves */
+    gpu->dma_bh = qemu_bh_new(gpu_dma_bh_cb, gpu);
+    gpu->cmd_bh = qemu_bh_new(gpu_cmd_bh_cb, gpu);
 }
 
 /* Uninitialize GPU device */
 static void pci_gpu_uninit(PCIDevice *pdev)
 {
+    GpuState *gpu = GPU(pdev);
+    qemu_bh_delete(gpu->dma_bh);
+    qemu_bh_delete(gpu->cmd_bh);
     msi_uninit(pdev);
 }
