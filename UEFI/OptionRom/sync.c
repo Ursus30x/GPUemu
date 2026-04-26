@@ -13,8 +13,6 @@ EFI_STATUS EFIAPI GpuDmaSync(VOID)
 
     // Check if GPU is finished with DMA
     while (!(GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_DMA_DONE)) {
-        // Safety check to prevent deadlocks
-        // if (SomethingWentWrong) return EFI_DEVICE_ERROR;
         gBS->Stall(10);
     }
 

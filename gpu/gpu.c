@@ -63,6 +63,49 @@ static void update_32bit_register(uint32_t *target_ptr, hwaddr offset_in_word, u
     *target_ptr |= ((uint32_t)val & data_mask) << (offset_in_word * 8);
 }
 
+static void handle_dma(GpuState *s)
+{
+    PCIDevice *pdev = PCI_DEVICE(s);
+
+    // Check if bus mastering is enabled
+    if (!(pdev->config[PCI_COMMAND] & PCI_COMMAND_MASTER)) {
+        fprintf(stderr, "GPU DMA: Error: Driver attempted DMA while Bus Mastering is disabled!\n");
+        return;
+    }
+
+    // Read MMIO registers
+    const uint8_t direction = (s->dma_cmd >> 1) & 1;
+    const uint32_t host_addr = s->dma_addr;
+    const uint32_t vram_offset = s->dma_vram;
+    const uint32_t size = s->dma_size;
+
+
+    if (vram_offset + size > GPU_VRAM_SIZE) {
+        fprintf(stderr, "GPU DMA: Error: Transfer exceeds VRAM size!\n");
+        return;
+    }
+
+    // Determine transfer direction
+    if (direction == GPU_DMA_CMD_FROM_VRAM)
+    {
+        DEBUG_PRINT("GPU DMA: VRAM(0x%x) -> Host(0x%x), size 0x%x\n", vram_offset, host_addr, size);
+        pci_dma_write(pdev, host_addr, s->vram_ptr + vram_offset, size);
+    }
+    else if(direction == GPU_DMA_CMD_TO_VRAM){
+        DEBUG_PRINT("GPU DMA: Host(0x%x) -> VRAM(0x%x), size 0x%x\n", host_addr, vram_offset, size);
+        pci_dma_read(pdev, host_addr, s->vram_ptr + vram_offset, size);
+    }
+
+    s->int_status |= GPU_INT_DMA_DONE;
+
+    // Notify host with interrupt if unmasked
+    if (s->int_mask & GPU_INT_DMA_DONE) {
+        if (msi_enabled(pdev)) {
+            msi_notify(pdev, 0);
+        }
+    }
+}
+
 static void execute_command(GpuState *gpu, Command *cmd)
 {
     switch (cmd->opcode)
@@ -103,6 +146,16 @@ static void execute_command(GpuState *gpu, Command *cmd)
             break;
         }
         break;
+
+    case CMD_DMA_TRANSFER:
+        DEBUG_PRINT("[CMD] Queued DMA Transfer\n");
+        gpu->dma_addr = cmd->payload.dma.host_addr;
+        gpu->dma_vram = cmd->payload.dma.vram_offset;
+        gpu->dma_size = cmd->payload.dma.size;
+        gpu->dma_cmd  = cmd->payload.dma.cmd;
+        handle_dma(gpu);
+        break;
+
     case CMD_DRAW_PRIMITIVE:
         if(cmd->payload.draw.type == PRIMITIVE_TYPE_LINES)
             wireframe_3d_mode(gpu);
@@ -165,49 +218,6 @@ static void process_ring_buffer(GpuState *s)
         s->int_status |= GPU_INT_CMD_DONE;
         if (msi_enabled(PCI_DEVICE(s))) {
             msi_notify(PCI_DEVICE(s), 0);
-        }
-    }
-}
-
-static void handle_dma(GpuState *s)
-{
-    PCIDevice *pdev = PCI_DEVICE(s);
-
-    // Check if bus mastering is enabled
-    if (!(pdev->config[PCI_COMMAND] & PCI_COMMAND_MASTER)) {
-        fprintf(stderr, "GPU DMA: Error: Driver attempted DMA while Bus Mastering is disabled!\n");
-        return;
-    }
-
-    // Read MMIO registers
-    const uint8_t direction = (s->dma_cmd >> 1) & 1;
-    const uint32_t host_addr = s->dma_addr;
-    const uint32_t vram_offset = s->dma_vram;
-    const uint32_t size = s->dma_size;
-
-
-    if (vram_offset + size > GPU_VRAM_SIZE) {
-        fprintf(stderr, "GPU DMA: Error: Transfer exceeds VRAM size!\n");
-        return;
-    }
-
-    // Determine transfer direction
-    if (direction == GPU_DMA_CMD_FROM_VRAM)
-    {
-        DEBUG_PRINT("GPU DMA: VRAM(0x%x) -> Host(0x%x), size 0x%x\n", vram_offset, host_addr, size);
-        pci_dma_write(pdev, host_addr, s->vram_ptr + vram_offset, size);
-    }
-    else if(direction == GPU_DMA_CMD_TO_VRAM){
-        DEBUG_PRINT("GPU DMA: Host(0x%x) -> VRAM(0x%x), size 0x%x\n", host_addr, vram_offset, size);
-        pci_dma_read(pdev, host_addr, s->vram_ptr + vram_offset, size);
-    }
-
-    s->int_status |= GPU_INT_DMA_DONE;
-
-    // Notify host with interrupt if unmasked
-    if (s->int_mask & GPU_INT_DMA_DONE) {
-        if (msi_enabled(pdev)) {
-            msi_notify(pdev, 0);
         }
     }
 }

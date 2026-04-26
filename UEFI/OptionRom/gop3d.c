@@ -318,9 +318,8 @@ EFI_STATUS EFIAPI GpuPresent(
     // If there's recorded commands, submit them
     GpuSubmitCmd(This);
 
-    // Instead of stalling every frame, we just return.
-    // The NEXT frame's GpuSubmitCmd will call GpuCmdSync()
-    // if the GPU hasn't finished this one yet.
+    // Later there will be handling of multi-buffering, right now its a frontend for command submition
+
     return EFI_SUCCESS;
 }
 
