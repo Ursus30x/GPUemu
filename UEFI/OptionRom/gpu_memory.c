@@ -1,5 +1,6 @@
 #include <Library/UefiLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <Library/UefiBootServicesTableLib.h> // gBS
 #include "gpu_memory.h"
 
 // Definition of the global allocator instance
@@ -211,6 +212,50 @@ EFI_STATUS EFIAPI GpuVramWrite(
         if (EFI_ERROR(Status)) return Status;
         i += sizeof(UINT8);
     }
+
+    return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI GpuDmaWrite(
+    IN VRAMADDR DestAddr,
+    IN VOID*    SourcePtr,
+    IN UINT32   Size)
+{
+    EFI_STATUS Status;
+    EFI_PCI_IO_PROTOCOL_OPERATION Operation = EfiPciIoOperationBusMasterRead;
+    UINTN NumberOfBytes = Size;
+    EFI_PHYSICAL_ADDRESS DeviceAddress;
+    VOID *Mapping;
+
+    if (gpuMemAllocator.PciIo == NULL) return EFI_NOT_READY;
+
+    Status = gpuMemAllocator.PciIo->Map(
+        gpuMemAllocator.PciIo,
+        Operation,
+        SourcePtr,
+        &NumberOfBytes,
+        &DeviceAddress,
+        &Mapping
+    );
+    if (EFI_ERROR(Status)) return Status;
+
+    // Setup DMA registers
+    GpuMmioWrite32(REG_DMA_HOST_ADDR, (UINT32)DeviceAddress);
+    GpuMmioWrite32(REG_DMA_VRAM_ADDR, DestAddr);
+    GpuMmioWrite32(REG_DMA_SIZE_ADDR, Size);
+
+    // Kick DMA command
+    GpuMmioWrite32(REG_DMA_CMD_ADDR, GPU_DMA_CMD_START | GPU_DMA_CMD_TO_VRAM);
+
+    // Wait for completion
+    while (!(GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_DMA_DONE)) {
+        gBS->Stall(10);
+    }
+
+    GpuMmioWrite32(REG_INT_ACK_ADDR, GPU_INT_DMA_DONE);
+
+    // Unmap allocated memory
+    gpuMemAllocator.PciIo->Unmap(gpuMemAllocator.PciIo, Mapping);
 
     return EFI_SUCCESS;
 }

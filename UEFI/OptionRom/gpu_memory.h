@@ -68,6 +68,9 @@ BOOLEAN GpuFreeMem(IN VRAMADDR addr);
 // Copies data from host to VRAM
 EFI_STATUS EFIAPI GpuVramWrite(IN VRAMADDR destAddr, IN VOID* sourcePtr, IN UINT32 size);
 
+// Copies data from host to VRAM using DMA
+EFI_STATUS EFIAPI GpuDmaWrite(IN VRAMADDR destAddr, IN VOID* sourcePtr, IN UINT32 size);
+
 // Copies data from VRAM to host
 EFI_STATUS EFIAPI GpuVramRead(IN VOID* destAddr, IN VRAMADDR sourcePtr, IN UINT32 size);
 

@@ -4,7 +4,6 @@
 #include "math3d.h"
 #include "renderer.h"
 #include "debug_gpu.h"
-#include "utils.h"
 
 DECLARE_INSTANCE_CHECKER(GpuState, GPU, TYPE_PCI_GPU_DEVICE);
 
@@ -174,16 +173,17 @@ static void handle_dma(GpuState *s)
 {
     PCIDevice *pdev = PCI_DEVICE(s);
 
-    // Check if bus mastering is enabled
+    // Realistic check: is Bus Mastering enabled in the PCI Command Register?
     if (!(pdev->config[PCI_COMMAND] & PCI_COMMAND_MASTER)) {
         fprintf(stderr, "GPU DMA: Error: Driver attempted DMA while Bus Mastering is disabled!\n");
         return;
     }
 
-    const uint8_t direction = GET_BIT(s->dma_cmd, 1);
+    const uint8_t direction = (s->dma_cmd >> 1) & 1;
     const uint32_t host_addr = s->dma_addr;
     const uint32_t vram_offset = s->dma_vram;
     const uint32_t size = s->dma_size;
+
 
     if (vram_offset + size > GPU_VRAM_SIZE) {
         fprintf(stderr, "GPU DMA: Error: Transfer exceeds VRAM size!\n");
@@ -301,7 +301,7 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
             DEBUG_PRINT("\n[GPU TRIGGER] Detected write to RING_HEAD (0x04). Launching command processor...\n");
             process_ring_buffer(s);
         }
-        if (trigger_dma && IS_BIT_SET(*target_reg, GPU_DMA_CMD_START))
+        if (trigger_dma && (*target_reg & GPU_DMA_CMD_START))
         {
             DEBUG_PRINT("\n[GPU TRIGGER] DMA_CMD START detected. Launching DMA transfer...\n");
             handle_dma(s);

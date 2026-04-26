@@ -58,7 +58,7 @@ typedef enum {
     CMD_NOOP               = 0x00,
     CMD_DRAW_PRIMITIVE     = 0x01,
     CMD_SET_STATE          = 0x02,
-    CMD_CLEAR_FRAMEBUFFER  = 0x03,
+    CMD_CLEAR_FRAMEBUFFER  = 0x03
 } CommandOpcode;
 
 

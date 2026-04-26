@@ -139,7 +139,8 @@ EFI_STATUS EFIAPI GpuRingBufferFlush()
         if (EFI_ERROR(Status)) return Status;
     }
 
-    GpuVramWrite(gpuRingBuffer.ringHead, gpuRingBuffer.cmdBatchBufferPtr, bytesToWrite);
+    // Use DMA to transfer the command batch to VRAM
+    GpuDmaWrite(gpuRingBuffer.ringHead, gpuRingBuffer.cmdBatchBufferPtr, bytesToWrite);
     gpuRingBuffer.ringHead += bytesToWrite;
 
     // Wrap logic for perfect alignment
@@ -179,7 +180,7 @@ BOOLEAN EFIAPI GpuRingBufferIsIdle()
 
 VOID EFIAPI GpuRingBufferEnableInterrupts(IN BOOLEAN Enable)
 {
-    UINT32 Mask = Enable ? GPU_INT_CMD_DONE : 0;
+    UINT32 Mask = Enable ? (GPU_INT_CMD_DONE | GPU_INT_DMA_DONE) : 0;
     GpuMmioWrite32(REG_INT_MASK_ADDR, Mask);
 }
 
