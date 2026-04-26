@@ -173,12 +173,13 @@ static void handle_dma(GpuState *s)
 {
     PCIDevice *pdev = PCI_DEVICE(s);
 
-    // Realistic check: is Bus Mastering enabled in the PCI Command Register?
+    // Check if bus mastering is enabled
     if (!(pdev->config[PCI_COMMAND] & PCI_COMMAND_MASTER)) {
         fprintf(stderr, "GPU DMA: Error: Driver attempted DMA while Bus Mastering is disabled!\n");
         return;
     }
 
+    // Read MMIO registers
     const uint8_t direction = (s->dma_cmd >> 1) & 1;
     const uint32_t host_addr = s->dma_addr;
     const uint32_t vram_offset = s->dma_vram;
@@ -190,6 +191,7 @@ static void handle_dma(GpuState *s)
         return;
     }
 
+    // Determine transfer direction
     if (direction == GPU_DMA_CMD_FROM_VRAM)
     {
         DEBUG_PRINT("GPU DMA: VRAM(0x%x) -> Host(0x%x), size 0x%x\n", vram_offset, host_addr, size);

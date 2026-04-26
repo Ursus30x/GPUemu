@@ -2,6 +2,7 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h> // gBS
 #include "gpu_memory.h"
+#include "sync.h"
 
 // Definition of the global allocator instance
 struct GpuMemoryAllocator gpuMemAllocator;
@@ -45,7 +46,8 @@ VOID SetStatusPage(
 EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
     IN EFI_PCI_IO_PROTOCOL *PciIo,
     IN UINT32 VRAMsize,
-    IN VRAMADDR baseAddr)
+    IN VRAMADDR baseAddr,
+    IN GPU_DMA_FENCE *Fence)
 {
     // Basic size info
     gpuMemAllocator.pageCount      = VRAMsize / PAGE_SIZE;
@@ -71,6 +73,7 @@ EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
 
     // PCI IO init
     gpuMemAllocator.PciIo          = PciIo;
+    gpuMemAllocator.Fence          = Fence;
     gpuMemAllocator.VramBarIndex   = 1;
 
     return EFI_SUCCESS;
@@ -224,38 +227,32 @@ EFI_STATUS EFIAPI GpuDmaWrite(
     EFI_STATUS Status;
     EFI_PCI_IO_PROTOCOL_OPERATION Operation = EfiPciIoOperationBusMasterRead;
     UINTN NumberOfBytes = Size;
-    EFI_PHYSICAL_ADDRESS DeviceAddress;
-    VOID *Mapping;
 
-    if (gpuMemAllocator.PciIo == NULL) return EFI_NOT_READY;
+    if (gpuMemAllocator.PciIo == NULL || gpuMemAllocator.Fence == NULL) return EFI_NOT_READY;
 
+    // Ensure prevoius DMA completion
+    GpuDmaSync();
+
+    // Map requested buffer
     Status = gpuMemAllocator.PciIo->Map(
         gpuMemAllocator.PciIo,
         Operation,
         SourcePtr,
         &NumberOfBytes,
-        &DeviceAddress,
-        &Mapping
+        &gpuMemAllocator.Fence->DeviceAdress,
+        &gpuMemAllocator.Fence->MapPtr
     );
     if (EFI_ERROR(Status)) return Status;
 
-    // Setup DMA registers
-    GpuMmioWrite32(REG_DMA_HOST_ADDR, (UINT32)DeviceAddress);
+    gpuMemAllocator.Fence->DmaBusy = TRUE;
+
+    // Set DMA MMIO registers
+    GpuMmioWrite32(REG_DMA_HOST_ADDR, (UINT32)gpuMemAllocator.Fence->DeviceAdress);
     GpuMmioWrite32(REG_DMA_VRAM_ADDR, DestAddr);
     GpuMmioWrite32(REG_DMA_SIZE_ADDR, Size);
 
-    // Kick DMA command
+    // Kick the DMA transfer
     GpuMmioWrite32(REG_DMA_CMD_ADDR, GPU_DMA_CMD_START | GPU_DMA_CMD_TO_VRAM);
-
-    // Wait for completion
-    while (!(GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_DMA_DONE)) {
-        gBS->Stall(10);
-    }
-
-    GpuMmioWrite32(REG_INT_ACK_ADDR, GPU_INT_DMA_DONE);
-
-    // Unmap allocated memory
-    gpuMemAllocator.PciIo->Unmap(gpuMemAllocator.PciIo, Mapping);
 
     return EFI_SUCCESS;
 }

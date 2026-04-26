@@ -26,6 +26,7 @@ struct GpuMemoryAllocator {
 
     // PCI IO vars
     EFI_PCI_IO_PROTOCOL *PciIo;
+    GPU_DMA_FENCE       *Fence;
 
     UINT8  MmioBarIndex;
     UINT8  VramBarIndex;
@@ -38,7 +39,7 @@ extern struct GpuMemoryAllocator gpuMemAllocator;
 /*---------------- Memory Management Macros & Declarations ----------------*/
 
 // Initalizes gpuMemAllocator and maps out vram buffer
-EFI_STATUS EFIAPI GpuMemoryAllocatorInit(IN EFI_PCI_IO_PROTOCOL *PciIo, IN UINT32 VRAMsize, IN VRAMADDR baseAddr);
+EFI_STATUS EFIAPI GpuMemoryAllocatorInit(IN EFI_PCI_IO_PROTOCOL *PciIo, IN UINT32 VRAMsize, IN VRAMADDR baseAddr, IN GPU_DMA_FENCE *Fence);
 
 #ifdef MEM_DEBUG
     // DEBUG VERSION: Passes 'Tag' to implementation

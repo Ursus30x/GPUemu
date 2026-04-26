@@ -14,6 +14,7 @@
   gop3d.c
   gpu_memory.c
   ringbuffer.c
+  sync.c
 
 [Packages]
   MdePkg/MdePkg.dec
