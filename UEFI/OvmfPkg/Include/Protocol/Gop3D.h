@@ -18,6 +18,14 @@ typedef struct GOP_3D_PROTOCOL GOP_3D_PROTOCOL;
 
 typedef UINT32 VRAMADDR;
 
+// Global DMA fence
+typedef struct{
+  BOOLEAN               DmaBusy;
+  BOOLEAN               CmdBusy;
+  VOID                  *MapPtr;
+  EFI_PHYSICAL_ADDRESS  DeviceAdress;
+} GPU_DMA_FENCE;
+
 // Needed to distinguish buffer types during Transfer
 typedef enum {
   Gop3dBufferTypeVertex,

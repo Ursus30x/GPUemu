@@ -1,6 +1,8 @@
 #include <Library/UefiLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <Library/UefiBootServicesTableLib.h> // gBS
 #include "gpu_memory.h"
+#include "sync.h"
 
 // Definition of the global allocator instance
 struct GpuMemoryAllocator gpuMemAllocator;
@@ -44,7 +46,8 @@ VOID SetStatusPage(
 EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
     IN EFI_PCI_IO_PROTOCOL *PciIo,
     IN UINT32 VRAMsize,
-    IN VRAMADDR baseAddr)
+    IN VRAMADDR baseAddr,
+    IN GPU_DMA_FENCE *Fence)
 {
     // Basic size info
     gpuMemAllocator.pageCount      = VRAMsize / PAGE_SIZE;
@@ -70,6 +73,7 @@ EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
 
     // PCI IO init
     gpuMemAllocator.PciIo          = PciIo;
+    gpuMemAllocator.Fence          = Fence;
     gpuMemAllocator.VramBarIndex   = 1;
 
     return EFI_SUCCESS;
@@ -211,6 +215,44 @@ EFI_STATUS EFIAPI GpuVramWrite(
         if (EFI_ERROR(Status)) return Status;
         i += sizeof(UINT8);
     }
+
+    return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI GpuDmaWrite(
+    IN VRAMADDR DestAddr,
+    IN VOID*    SourcePtr,
+    IN UINT32   Size)
+{
+    EFI_STATUS Status;
+    EFI_PCI_IO_PROTOCOL_OPERATION Operation = EfiPciIoOperationBusMasterRead;
+    UINTN NumberOfBytes = Size;
+
+    if (gpuMemAllocator.PciIo == NULL || gpuMemAllocator.Fence == NULL) return EFI_NOT_READY;
+
+    // Ensure prevoius DMA completion
+    GpuDmaSync();
+
+    // Map requested buffer
+    Status = gpuMemAllocator.PciIo->Map(
+        gpuMemAllocator.PciIo,
+        Operation,
+        SourcePtr,
+        &NumberOfBytes,
+        &gpuMemAllocator.Fence->DeviceAdress,
+        &gpuMemAllocator.Fence->MapPtr
+    );
+    if (EFI_ERROR(Status)) return Status;
+
+    gpuMemAllocator.Fence->DmaBusy = TRUE;
+
+    // Set DMA MMIO registers
+    GpuMmioWrite32(REG_DMA_HOST_ADDR, (UINT32)gpuMemAllocator.Fence->DeviceAdress);
+    GpuMmioWrite32(REG_DMA_VRAM_ADDR, DestAddr);
+    GpuMmioWrite32(REG_DMA_SIZE_ADDR, Size);
+
+    // Kick the DMA transfer
+    GpuMmioWrite32(REG_DMA_CMD_ADDR, GPU_DMA_CMD_START | GPU_DMA_CMD_TO_VRAM);
 
     return EFI_SUCCESS;
 }

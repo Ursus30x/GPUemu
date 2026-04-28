@@ -61,20 +61,24 @@ typedef struct GpuState {
     uint8_t *vram_ptr;
 
 
-    uint32_t gpu_mode;
-    uint32_t ring_buffer_head;
-    uint32_t ring_buffer_tail;
-    uint32_t ring_buffer_start;
-    uint32_t ring_buffer_end;
-    uint32_t vs_code_addr;        // 0x10
-    uint32_t fs_code_addr;        // 0x14
-    uint32_t width;               // 0x18
-    uint32_t height;              // 0x1C
-    uint32_t framebuffer_vram_offset; // 0x20
-    uint32_t gpu_time;            // 0x24
-    uint32_t zbuffer_addr;            // 0x28
-    uint32_t int_status;          // 0x30
-    uint32_t int_mask;            // 0x34
+    uint32_t gpu_mode;                  // 0x00
+    uint32_t ring_buffer_head;          // 0x04
+    uint32_t ring_buffer_tail;          // 0x08
+    uint32_t ring_buffer_start;         // 0x0C
+    uint32_t ring_buffer_end;           // 0x10
+    uint32_t vs_code_addr;              // 0x14
+    uint32_t fs_code_addr;              // 0x18
+    uint32_t width;                     // 0x1C
+    uint32_t height;                    // 0x20
+    uint32_t framebuffer_vram_offset;   // 0x24
+    uint32_t gpu_time;                  // 0x28
+    uint32_t zbuffer_addr;              // 0x2C
+    uint32_t int_status;                // 0x30
+    uint32_t int_mask;                  // 0x34
+    uint32_t dma_addr;                  // 0x38
+    uint32_t dma_vram;                  // 0x3C
+    uint32_t dma_size;                  // 0x40
+    uint32_t dma_cmd;                   // 0x44
 
     GenericBufferConfig vbo_config;
     GenericBufferConfig edge_config;

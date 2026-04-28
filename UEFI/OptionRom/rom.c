@@ -158,7 +158,7 @@ EFI_STATUS EFIAPI GpuVideoControllerDriverStart (
   DEBUG (( EFI_D_INFO, "VRAM is at %x and is %x long\n", Resources->AddrRangeMin, Resources->AddrLen));
 
   // Initalize memory allocator
-  GpuMemoryAllocatorInit(Private->PciIo, Resources->AddrLen, Resources->AddrRangeMin);
+  GpuMemoryAllocatorInit(Private->PciIo, Resources->AddrLen, Resources->AddrRangeMin, &Private->DmaFence);
 
   // Allocate framebuffer
   GpuAllocateMemAt(

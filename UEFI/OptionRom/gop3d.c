@@ -11,6 +11,7 @@
 #include "ringbuffer.h"
 #include "gpu_memory.h"
 #include "vram.h"
+#include "sync.h"
 
 
 #define RING_BUFFER_SIZE (1 << 16) // 64KB
@@ -188,7 +189,7 @@ EFI_STATUS EFIAPI GpuTransferBuffer(
     }
 
     // Transfer Data (CPU -> VRAM)
-    EFI_STATUS Status = GpuVramWrite(Addr, HostData, Size);
+    EFI_STATUS Status = GpuDmaWrite(Addr, HostData, Size);
     if (EFI_ERROR(Status)) {
         GpuFreeMem(Addr);
         return Status;
@@ -215,7 +216,7 @@ EFI_STATUS EFIAPI GpuUpdateBuffer(
 
     // If existing buffer is large enough, just overwrite it
     if (OldSize >= Size) {
-        return GpuVramWrite(OldAddr, HostData, Size);
+        return GpuDmaWrite(OldAddr, HostData, Size);
     }
 
     // If updated size is bigger, try to allocate new buffer first
@@ -297,23 +298,27 @@ EFI_STATUS EFIAPI GpuSubmitCmd(
     DEBUG((DEBUG_INFO, "Mem Dump after command submition\n"));
     GpuDebugDumpMemoryMap();
 #endif
-    return GpuRingBufferFlush();
+
+    // Ensure previous batch is done before kicking new one
+    GpuCmdSync();
+
+    EFI_STATUS Status = GpuRingBufferFlush();
+    if (!EFI_ERROR(Status)) {
+        GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
+        Private->DmaFence.CmdBusy = TRUE;
+    }
+
+    return Status;
 }
 
 EFI_STATUS EFIAPI GpuPresent(
   IN GOP_3D_PROTOCOL *This
   )
 {
+    // If there's recorded commands, submit them
     GpuSubmitCmd(This);
 
-    // Wait for the "Command Done" interrupt bit
-    while (!(GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_CMD_DONE)) {
-        if (GpuRingBufferIsIdle()) break;
-        gBS->Stall(10);
-    }
-
-    // Acknowledge the interrupt
-    GpuRingBufferAckInterrupt(GPU_INT_CMD_DONE);
+    // Later there will be handling of multi-buffering, right now its a frontend for command submition
 
     return EFI_SUCCESS;
 }

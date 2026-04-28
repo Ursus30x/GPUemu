@@ -59,6 +59,7 @@ typedef enum {
     CMD_DRAW_PRIMITIVE     = 0x01,
     CMD_SET_STATE          = 0x02,
     CMD_CLEAR_FRAMEBUFFER  = 0x03,
+    CMD_DMA_TRANSFER       = 0x04,
 } CommandOpcode;
 
 
@@ -100,12 +101,20 @@ typedef struct __attribute__((packed)) {
 } ClearFramebufferPayload;
 
 typedef struct __attribute__((packed)) {
+    uint32_t host_addr;
+    uint32_t vram_offset;
+    uint32_t size;
+    uint32_t cmd;
+} DmaTransferPayload;
+
+typedef struct __attribute__((packed)) {
     CommandOpcode opcode;
 
     union {
         DrawPrimitivePayload draw;
         SetStatePayload state;
         ClearFramebufferPayload clear;
+        DmaTransferPayload dma;
         uint32_t raw_data[8];
     } payload;
 } Command;
