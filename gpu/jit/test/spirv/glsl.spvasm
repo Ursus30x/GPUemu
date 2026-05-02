@@ -8,6 +8,12 @@
                OpMemoryModel Logical GLSL450
                OpEntryPoint Vertex %main "main" %result
                OpSource GLSL 450
+               OpName %main "main"
+               OpName %result "result"
+               OpName %Params "Params"
+               OpMemberName %Params 0 "x"
+               OpMemberName %Params 1 "y"
+               OpName %ubo "ubo"
                OpDecorate %result Location 0
                OpDecorate %Params Block
                OpMemberDecorate %Params 0 Offset 0
@@ -16,8 +22,6 @@
                OpDecorate %ubo DescriptorSet 0
        %void = OpTypeVoid
           %3 = OpTypeFunction %void
-       %main = OpFunction %void None %3
-       %5 = OpLabel
       %float = OpTypeFloat 32
 %_ptr_Output_float = OpTypePointer Output %float
      %result = OpVariable %_ptr_Output_float Output
@@ -29,6 +33,8 @@
 %_ptr_Uniform_float = OpTypePointer Uniform %float
       %int_1 = OpConstant %int 1
     %float_2 = OpConstant %float 2
+       %main = OpFunction %void None %3
+          %5 = OpLabel
          %15 = OpAccessChain %_ptr_Uniform_float %ubo %int_0
          %16 = OpLoad %float %15
          %18 = OpAccessChain %_ptr_Uniform_float %ubo %int_1
