@@ -63,7 +63,7 @@ void read_in(FILE *in, ExecutionContext *ectx)
             buff[strlen(buff) - 1] = '\0'; 
             current_idx = atoi(buff);
             current_lane = 0;
-            ectx->uniform_buffers[current_idx] = malloc(sizeof(float) * SIMT_WIDTH * 2);
+            ectx->binding_buffers[current_idx] = malloc(sizeof(float) * SIMT_WIDTH * 2);
             state = IN_UBO;
             break;
         }
@@ -72,14 +72,14 @@ void read_in(FILE *in, ExecutionContext *ectx)
             buff[strlen(buff) - 1] = '\0';
             current_idx = atoi(buff);
             current_lane = 0;
-            ectx->vertex_buffers[current_idx] = malloc(sizeof(float) * SIMT_WIDTH);
+            ectx->location_in_buffers[current_idx] = malloc(sizeof(float) * SIMT_WIDTH);
             state = IN_VBO;
             break;
         }
         case IN_UBO:
         {
             float x = atof(buff);
-            float *ubo = ectx->uniform_buffers[current_idx];
+            float *ubo = ectx->binding_buffers[current_idx];
             ubo[current_lane] = x;
             current_lane++;
             break;
@@ -87,7 +87,7 @@ void read_in(FILE *in, ExecutionContext *ectx)
         case IN_VBO:
         {
             float x = atof(buff);
-            float *vbo = ectx->vertex_buffers[current_idx];
+            float *vbo = ectx->location_in_buffers[current_idx];
             vbo[current_lane] = x;
             current_lane++;
             break;
@@ -103,13 +103,16 @@ int main(int argc, char *argv[])
 {
     if(argc < 3) 
     {
-        fprintf(stderr, "Usage: %s <spirv_binary> <output_file>  <input_file>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <spirv_binary> <output_file> <input_file>\n", argv[0]);
         return 1;
     }
+    
     const char* spirv_path = argv[1];
     const char* output_path = argv[2];
     const char* input_path = argv[3];
+    
     ExecutionContext ectx = {0};
+    
     if(argc == 4) 
     {
         FILE* in_f = fopen(input_path, "r");
@@ -119,16 +122,19 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        // Hardcode UBO struct values: {float x, float y} for each lane
-        // Lane 0: x=1.0, y=2.0; Lane 1: x=3.0, y=4.0; etc.
-        ectx.uniform_buffers[0] = malloc(sizeof(float) * SIMT_WIDTH * 2);
+        // FIX 1: Use aligned_alloc(64) instead of malloc for UBO data!
+        // Your LLVM IR uses 'align 64' for vector loads. Standard malloc will crash here.
+        ectx.binding_buffers[0] = aligned_alloc(64, sizeof(float) * SIMT_WIDTH * 2);
+        
         float ubo_data[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 
-                            9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 
+                            9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f, 
+                            1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 
                             1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
-        memcpy(ectx.uniform_buffers[0], ubo_data, sizeof(ubo_data));
-        //read_in(in_f, &ectx);
+                            
+        memcpy(ectx.binding_buffers[0], ubo_data, sizeof(ubo_data));
         fclose(in_f);
     }
+    
     FILE* f = fopen(spirv_path, "rb");
     if (!f)
     {
@@ -138,6 +144,7 @@ int main(int argc, char *argv[])
     fseek(f, 0, SEEK_END);
     size_t file_size = ftell(f);
     fseek(f, 0, SEEK_SET);
+    
     uint32_t* spirv_code = malloc(file_size);
     if (fread(spirv_code, 1, file_size, f) != (size_t)file_size)
     {
@@ -150,20 +157,41 @@ int main(int argc, char *argv[])
 
     printf("SPIR-V file '%s' loaded successfully (%zu bytes)\n", spirv_path, file_size);
     printf("Compiling SPIR-V to native code...\n");
+    
     JitContext ctx = {0};
     init_jit(&ctx);
-    jitted_func_t my_func = jit_compile_spirv( &ctx, spirv_code, file_size / 4);
-     // Align the buffer to 64 bytes for AVX-512 compatibility
+    jitted_func_t my_func = jit_compile_spirv(&ctx, spirv_code, file_size / 4);
+    
+    // Allocate Output 1 (Written to by the shader)
     float *output = aligned_alloc(64, sizeof(float) * SIMT_WIDTH);
     memset(output, 0, sizeof(float) * SIMT_WIDTH);
-    // float input_data[SIMT_WIDTH] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f,  9.0f, 10.0f, 11.0f, 12.0f , 13.0f , 14.0f , 15.0f, 16.0f  };
-    // exec_ctx.uniform_buffers[0] = input_data;
-    my_func(&ectx, output);
+    
+    // Allocate Output 2 (Not written to by this specific shader pass)
+    float *output2 = aligned_alloc(64, sizeof(float) * SIMT_WIDTH);
+    
+    // FIX 2: Zero out the memory so it doesn't print OS garbage!
+    memset(output2, 0, sizeof(float) * SIMT_WIDTH);
 
+    ectx.location_in_buffers[0] = output2;
+    ectx.location_out_buffers[0] = output;
+
+    // Patch the global JIT memory with our host memory
+    ExecutionContext *jit_ctx = get_ectx_from_mcjit(&ctx);
+    memcpy(jit_ctx, &ectx, sizeof(ExecutionContext));
+    
+    // Execute the JIT compiled function
+    my_func();
+
+
+    // Print the actual calculated results
     printf("Execution Results:\n");
-    for(int i=0; i<SIMT_WIDTH; i++) printf(" Lane %d: %f\n", i, output[i]);
+    for(int i = 0; i < SIMT_WIDTH; i++) 
+    {
+        printf(" Lane %d: %f\n", i, output[i]);
+    }
+    
     free_jit(&ctx);
-    printf("Compilation finished'\n");
+    printf("Compilation finished\n");
     
     float expected_output[SIMT_WIDTH];
 
@@ -171,6 +199,7 @@ int main(int argc, char *argv[])
     if (!out_f)
     {
         fprintf(stderr, "Failed to open output file: %s\n", output_path);
+        free(spirv_code);
         return 1;
     }
     
@@ -178,20 +207,24 @@ int main(int argc, char *argv[])
     {
         fscanf(out_f, "%f", &expected_output[i]);
     }
+    
     free(spirv_code);
     fclose(out_f);
+    
+    // Validate results
     for(uint32_t i = 0; i < SIMT_WIDTH; i++)
     {
-        if(fabs(output[i] - expected_output[i]) > epsilon) 
+        if(fabs(output[i] - expected_output[i]) > epsilon) // Make sure 'epsilon' is defined
         {
             printf("Test failed at lane %d: Expected %f, Got %f\n", i, expected_output[i], output[i]);
-            for(uint32_t i = 0; i < SIMT_WIDTH; i++)
+            for(uint32_t j = 0; j < SIMT_WIDTH; j++)
             {
-                printf(" Lane %d: Expected %f, Got %f\n", i, expected_output[i], output[i]);
+                printf(" Lane %d: Expected %f, Got %f\n", j, expected_output[j], output[j]);
             }
             return 1;
         }
     }
+    
     printf("Test passed! Output matches expected results.\n");
     return 0;
 }

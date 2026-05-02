@@ -8,6 +8,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+
+#include <llvm-c/Core.h>
+#include <llvm-c/Analysis.h>
+#include <llvm-c/Target.h>
+
+#include <llvm-c/Orc.h>    
+#include <llvm-c/LLJIT.h>   
 #include <llvm-c/Core.h>
 #include <llvm-c/ExecutionEngine.h>
 #include <llvm-c/Target.h>
@@ -18,13 +25,20 @@
 #define SIMT_WIDTH 16
 #define MAX_BINDINGS 8
 #define MAX_ATTRIBUTES 8
+#define MAX_GLOBALS 32
 
 typedef struct {
-    void* uniform_buffers[MAX_BINDINGS]; 
-    void* vertex_buffers[MAX_ATTRIBUTES];
-    uint32_t vertex_stride[MAX_ATTRIBUTES];
-    uint32_t base_vertex_index;
+    void* binding_buffers[MAX_BINDINGS]; 
+    void* location_in_buffers[MAX_ATTRIBUTES];
+    void* location_out_buffers[MAX_ATTRIBUTES];
+
 } ExecutionContext;
+
+typedef struct {
+    uint32_t res_id;
+    uint32_t storage_class;
+    int32_t binding_or_loc;
+} GlobalResolution;
 
 typedef struct {
     int32_t descriptor_set;
@@ -64,25 +78,30 @@ typedef struct ShaderInfo {
 } ShaderInfo;
 
 
+
 struct JitContext{
     uint32_t bound;
     uint8_t* type_kind_map;
     
     LLVMValueRef* id_val_map; 
 
-    SpvDecoInfo* decorations;           // ID -> Decorations
-    MemberDecoNode** member_decorations;// ID -> List of Member Decorations
-    SpvTypeInfo* type_info;             // ID -> Type Structure Info
-    
+    SpvDecoInfo* decorations;
+    MemberDecoNode** member_decorations;
+    SpvTypeInfo* type_info;
+
+    GlobalResolution globals[MAX_GLOBALS];
+    uint32_t global_count;
+
     LLVMContextRef context;
     LLVMModuleRef module;
     LLVMBuilderRef builder;
-    LLVMExecutionEngineRef engine;
+    LLVMOrcLLJITRef jit;
     LLVMValueRef func;
     LLVMValueRef out_ptr_arg;
     LLVMValueRef env_arg;     
-
-
+    LLVMExecutionEngineRef engine;
+    LLVMBasicBlockRef current_block;
+    
     LLVMValueRef emask;
 
     LLVMValueRef lane_ids;    
@@ -94,13 +113,15 @@ struct JitContext{
     LLVMTypeRef int8_type;
     LLVMTypeRef ptr_type;
     LLVMTypeRef exec_ctx_type;
-    
+
+    LLVMOrcThreadSafeContextRef ts_ctx;
+
     AluHandler glsl_handlers[82];
 
     ShaderInfo shader_info;
     
 };
-typedef void* (*jitted_func_t)(ExecutionContext*, void*);
+typedef void* (*jitted_func_t)(void);
 
 
 LLVMValueRef get_val(JitContext* ctx, uint32_t id);
@@ -112,4 +133,5 @@ void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef
 void init_jit(JitContext* ctx);
 void free_jit(JitContext* ctx);
 LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id);
+ExecutionContext* get_ectx_from_mcjit(JitContext *ctx);
 #endif

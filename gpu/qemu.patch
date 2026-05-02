@@ -26,7 +26,7 @@ index b1d8d8e5d2..feea70f9aa 100644
 +llvm_dep = dependency('llvm',
 +  version: '>=15',
 +  method: 'config-tool',
-+  modules: ['core', 'mcjit', 'native', 'executionengine'],
++  modules: ['core', 'orcjit', 'native', 'executionengine'],
 +  required: true
 +)
 +system_ss.add(when: 'CONFIG_GPU', if_true: [files('math3d.c', 'renderer.c', 'jit_decorators.c', 'jit_mem.c', 'jit_flow.c', 'jit_alu.c', 'jit.c', 'gpu.c'), llvm_dep])

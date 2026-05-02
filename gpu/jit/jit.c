@@ -152,7 +152,8 @@ static inline void handle_op_return_value(JitContext* ctx, uint32_t* operands)
     LLVMValueRef vec_val = get_val(ctx, operands[0]);
     
     LLVMTypeRef vec_ptr_type = LLVMPointerType(ctx->vec_float_type, 0);
-    LLVMValueRef bitcast_ptr = LLVMBuildBitCast(ctx->builder, ctx->out_ptr_arg, vec_ptr_type, "vec_ptr_cast");
+    LLVMValueRef out_ptr_arg = LLVMBuildExtractValue(ctx->builder, ctx->env_arg, 2, 0);
+    LLVMValueRef bitcast_ptr = LLVMBuildBitCast(ctx->builder, out_ptr_arg, vec_ptr_type, "vec_ptr_cast");
     
     build_masked_store(ctx, vec_val, bitcast_ptr, ctx->emask);
     
@@ -394,7 +395,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
     ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
 
-    DEBUG_PRINT("--- Starting JIT Compilation (LLVM Vector Backend) ---\n");
+    DEBUG_PRINT("--- Starting JIT Compilation (LLVM ORC Backend) ---\n");
 
 
     LLVMValueRef values[SIMT_WIDTH];
@@ -440,10 +441,12 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         jit_emit_instr(ctx, opcode, res_id, type_id, operands, op_count);
         p += inst_word_count;
     }
+    
     char *error = NULL;
     
     LLVMVerifyModule(ctx->module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
+    LLVMDumpModule(ctx->module);
 
 
     char* triple = LLVMGetDefaultTargetTriple(); 
@@ -498,6 +501,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
 }
 void init_jit(JitContext* ctx)
 {
+
     char *error = NULL;
     LLVMInitializeNativeTarget();
     LLVMInitializeNativeAsmPrinter();
@@ -507,38 +511,42 @@ void init_jit(JitContext* ctx)
     ctx->module = LLVMModuleCreateWithNameInContext("spirv_vector_module", ctx->context);
     ctx->builder = LLVMCreateBuilderInContext(ctx->context);
 
-    // Build ExecutionContext struct type
-    // struct ExecutionContext {
-    //     uint8_t* uniform_buffers[MAX_BINDINGS];     // field 0
-    //     uint8_t* vertex_buffers[MAX_ATTRIBUTES];    // field 1
-    //     uint32_t vertex_stride[MAX_ATTRIBUTES];     // field 2
-    //     uint32_t base_vertex_index;                 // field 3
-    // };
     LLVMTypeRef ptr_i8 = LLVMPointerType(LLVMInt8TypeInContext(ctx->context), 0);
-    LLVMTypeRef i32_type = LLVMInt32TypeInContext(ctx->context);
-    
-    LLVMTypeRef uniform_buf_type = LLVMArrayType(ptr_i8, MAX_BINDINGS);
-    LLVMTypeRef vertex_buf_type = LLVMArrayType(ptr_i8, MAX_ATTRIBUTES);
-    LLVMTypeRef vertex_stride_type = LLVMArrayType(i32_type, MAX_ATTRIBUTES);
-    
-    LLVMTypeRef field_types[] = {
-        uniform_buf_type,
-        vertex_buf_type,
-        vertex_stride_type,
-        i32_type
+
+    LLVMTypeRef field_types[] =
+    {
+        LLVMArrayType(ptr_i8, MAX_BINDINGS),
+        LLVMArrayType(ptr_i8, MAX_ATTRIBUTES),
+        LLVMArrayType(ptr_i8, MAX_ATTRIBUTES)
     };
-    
-    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, field_types, 4, 0);
 
+    ctx->exec_ctx_type =
+        LLVMStructTypeInContext(ctx->context, field_types, 3, 0);
 
+    ctx->env_arg =
+        LLVMAddGlobal(ctx->module, ctx->exec_ctx_type, "ectx");
+
+    LLVMSetInitializer(ctx->env_arg, LLVMConstNull(ctx->exec_ctx_type));
+    LLVMSetLinkage(ctx->env_arg, LLVMExternalLinkage);
     if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 
     {
         DEBUG_PRINT("Failed to create execution engine: %s\n", error);
     }
+
 }
+ExecutionContext* get_ectx_from_mcjit(JitContext *ctx)
+{
+   uint64_t addr = LLVMGetGlobalValueAddress(ctx->engine, "ectx");
+
+    if (!addr)
+        return NULL;
+
+    return (ExecutionContext*)(uintptr_t)addr;
+}
+
 void free_jit(JitContext* ctx)
 {
     LLVMDisposeBuilder(ctx->builder);
-    LLVMDisposeExecutionEngine(ctx->engine);
+    LLVMOrcDisposeLLJIT(ctx->jit);
     LLVMContextDispose(ctx->context);
 }

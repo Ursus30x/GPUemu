@@ -7,85 +7,86 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
 {
     uint32_t storage_class = operands[0];
     SpvDecoInfo* deco = &ctx->decorations[res_id];
-
+    
+    // Always map the type ID so we know what this variable represents later
     ctx->type_kind_map[res_id] = (uint8_t)type_id;
 
-    if (storage_class == SpvStorageClassUniform || storage_class == SpvStorageClassStorageBuffer) 
+    // --- CASE A: GLOBAL SCOPE (Module Level) ---
+    // We cannot emit LLVM instructions (GEP/Load/Alloca) here because there is no function.
+    if (ctx->func == NULL) 
     {
-        int32_t binding = deco->binding;
-        if (binding >= 0 && binding < MAX_BINDINGS) 
+        // Add to our "Pending Globals" list to be resolved inside the main function prologue
+        if (ctx->global_count < MAX_GLOBALS) 
         {
-            LLVMValueRef indices[] = {
-                LLVMConstInt(ctx->int_type, 0, 0),       // Dereference struct pointer
-                LLVMConstInt(ctx->int_type, 0, 0),       // Access 'uniform_buffers' field (index 0)
-                LLVMConstInt(ctx->int_type, binding, 0)  // Access specific binding index
-            };
-
-            LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg, indices, 3, "ubo_slot");
-            LLVMValueRef buffer_ptr = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, slot_ptr, "ubo_ptr");
+            uint32_t idx = ctx->global_count++;
+            ctx->globals[idx].res_id = res_id;
+            ctx->globals[idx].storage_class = storage_class;
             
-            set_val(ctx, res_id, buffer_ptr);
-        } 
+            // Store binding for Uniforms/Buffers, Location for Inputs/Outputs
+            if (storage_class == SpvStorageClassUniform || storage_class == SpvStorageClassStorageBuffer)
+                ctx->globals[idx].binding_or_loc = deco->binding;
+            else
+                ctx->globals[idx].binding_or_loc = deco->location;
+        }
         else 
         {
-            set_val(ctx, res_id, LLVMConstNull(ctx->ptr_type));
+            DEBUG_PRINT("Error: Exceeded MAX_PENDING_GLOBALS\n");
         }
-    } 
-    else if (storage_class == SpvStorageClassInput)
-    {
-        int32_t location = deco->location;
-        if (location >= 0 && location < MAX_ATTRIBUTES) 
-        {
-            LLVMValueRef indices[] = {
-                LLVMConstInt(ctx->int_type, 0, 0),       // Dereference struct pointer
-                LLVMConstInt(ctx->int_type, 1, 0),       // Access 'vertex_buffers' field (index 1)
-                LLVMConstInt(ctx->int_type, location, 0) // Access specific attribute index
-            };
-
-            LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg, indices, 3, "vtx_slot");
-            LLVMValueRef buffer_ptr = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, slot_ptr, "vtx_ptr");
-            
-            set_val(ctx, res_id, buffer_ptr);
-        } 
-        else 
-        {
-            set_val(ctx, res_id, LLVMConstNull(ctx->ptr_type));
-        }
+        return;
     }
-    else if (storage_class == SpvStorageClassFunction || storage_class == SpvStorageClassPrivate) 
+
+    // --- CASE B: FUNCTION SCOPE (Inside a Function) ---
+    // If we are already inside a function, we can emit instructions immediately.
+    if (storage_class == SpvStorageClassFunction || storage_class == SpvStorageClassPrivate) 
     {
+        LLVMTypeRef type = map_spv_to_llvm_type(ctx, type_id);
+        LLVMValueRef alloca_inst = LLVMBuildAlloca(ctx->builder, type, "local_var");
+        LLVMSetAlignment(alloca_inst, 64);
+        
+        // Handle optional Initializer (OpVariable %type %storage [%initializer])
         if (opCount > 1) 
         {
             uint32_t init_id = operands[1];
-            LLVMValueRef init_val = ctx->id_val_map[init_id]; 
-            LLVMTypeRef type = LLVMTypeOf(init_val);
-            LLVMValueRef alloca_inst = LLVMBuildAlloca(ctx->builder, type, "local_var");
-            LLVMSetAlignment(alloca_inst, 64);
-            set_val(ctx, res_id, alloca_inst);
+            LLVMValueRef init_val = ctx->id_val_map[init_id];
             if (init_val != NULL) 
             {
                 LLVMBuildStore(ctx->builder, init_val, alloca_inst);
-            } 
-            else 
-            {
-                DEBUG_PRINT("Warning: Initializer %u not found for variable %u\n", init_id, res_id);
             }
         }
-        else 
+        
+        set_val(ctx, res_id, alloca_inst);
+    }
+    else if (storage_class == SpvStorageClassUniform || storage_class == SpvStorageClassStorageBuffer ||
+             storage_class == SpvStorageClassInput || storage_class == SpvStorageClassOutput)
+    {
+        // If a variable with these classes is defined inside a function (rare but possible in some SPIR-V),
+        // we resolve it immediately from the context argument.
+        
+        uint32_t field_idx = 0;
+        int32_t offset = 0;
+
+        if (storage_class == SpvStorageClassUniform) { field_idx = 0; offset = deco->binding; }
+        else if (storage_class == SpvStorageClassInput) { field_idx = 1; offset = deco->location; }
+        else if (storage_class == SpvStorageClassOutput) { field_idx = 2; offset = deco->location; }
+
+        if (offset >= 0) 
         {
-            LLVMTypeRef type = map_spv_to_llvm_type(ctx, type_id);
-            LLVMValueRef alloca_inst = LLVMBuildAlloca(ctx->builder,type, "local_var");
-            LLVMSetAlignment(alloca_inst, 64);
-            set_val(ctx, res_id, alloca_inst);
+            LLVMValueRef indices[] = {
+                LLVMConstInt(ctx->int_type, 0, 0),
+                LLVMConstInt(ctx->int_type, field_idx, 0),
+                LLVMConstInt(ctx->int_type, offset, 0)
+            };
+
+            LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg, indices, 3, "res_slot");
+            LLVMValueRef actual_ptr = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, slot_ptr, "res_ptr");
+            set_val(ctx, res_id, actual_ptr);
         }
     }
     else 
     {
-        DEBUG_PRINT("Warning: Unhandled Storage Class %u\n", storage_class);
-        set_val(ctx, res_id, LLVMConstNull(ctx->ptr_type));
+        DEBUG_PRINT("Warning: Unhandled Storage Class %u in function scope\n", storage_class);
     }
 }
-
 
 static LLVMValueRef build_recursive_load(JitContext *ctx, LLVMTypeRef type, LLVMValueRef ptr) 
 {
