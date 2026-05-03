@@ -276,16 +276,29 @@ void handle_op_access_chain(JitContext* ctx, uint32_t res_id, uint32_t type_id, 
             uint32_t struct_type_info = ptr_type_info->base_type_id;
             LLVMValueRef offset_vec_vals[16]; // max struct members 
           
-            MemberDecoNode*m = ctx->member_decorations[struct_type_info];
-            uint32_t j = 0;
-            while (m)
+            MemberDecoNode* m = ctx->member_decorations[struct_type_info];
+            LLVMValueRef offset;
+            if (m == NULL)
             {
-                offset_vec_vals[j] = LLVMConstInt(i64_type, m->offset * SIMT_WIDTH, 0);
-                j++;
-                m = m->next;
+                idx_val = LLVMBuildZExt(ctx->builder, idx_val, i64_type, "idx64");
+
+                uint32_t size = get_spv_type_size(info->opcode);
+                LLVMValueRef simt_size = LLVMConstInt(i64_type, SIMT_WIDTH*size, 0);
+                offset = LLVMBuildMul(ctx->builder, simt_size, idx_val, "index");
+            } 
+            else 
+            {
+                uint32_t j = 0;
+                while (m)
+                {
+                    offset_vec_vals[j] = LLVMConstInt(i64_type, m->offset * SIMT_WIDTH, 0);
+                    j++;
+                    m = m->next;
+                }
+                LLVMValueRef offset_vec = LLVMConstVector(offset_vec_vals, j);
+                offset = LLVMBuildExtractElement(ctx->builder, offset_vec, idx_val, "struct_off");
             }
-            LLVMValueRef offset_vec = LLVMConstVector(offset_vec_vals, j);
-            LLVMValueRef offset = LLVMBuildExtractElement(ctx->builder, offset_vec, idx_val, "struct_off");
+           
 
             idx_val = LLVMBuildZExt(ctx->builder, idx_val, i64_type, "idx64");
             
