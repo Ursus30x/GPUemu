@@ -12,7 +12,6 @@ void handle_op_type_function(JitContext* ctx, uint32_t res_id, uint32_t* operand
 void resolve_pending_globals(JitContext* ctx) 
 {
     LLVMValueRef ectx_global = LLVMGetNamedGlobal(ctx->module, "ectx");
-    
     LLVMValueRef ectx_ptr = ectx_global; 
 
     for (uint32_t i = 0; i < ctx->global_count; i++) 
