@@ -1,6 +1,6 @@
 #version 450
 
-layout(location = 0) out float result;
+layout(location = 0) out vec3 result;
 
 layout(set = 0, binding = 0) uniform Params {
     vec3 x;
@@ -8,6 +8,5 @@ layout(set = 0, binding = 0) uniform Params {
 } ubo;
 
 void main() {
-    vec3 r = ubo.x + ubo.y;
-    result = r.x;
+    result = ubo.x + ubo.y;
 }
