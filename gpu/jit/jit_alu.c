@@ -39,13 +39,43 @@ void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     
     set_val(ctx, res_id, vec_val);
 }
+LLVMValueRef vec_mat_helper(JitContext* ctx, LLVMValueRef a, LLVMValueRef b, LLVMMatFunc_t func, const char* name)
+{
+    LLVMTypeRef vec_type = LLVMTypeOf(a);
+    uint32_t num_elements = LLVMGetArrayLength(vec_type);
 
+    LLVMValueRef res = LLVMGetUndef(vec_type);
+    for (uint32_t i = 0; i < num_elements; i++) 
+    {
+        LLVMValueRef a_elem = LLVMBuildExtractValue(ctx->builder, a, i, "a_elem");
+        LLVMValueRef b_elem = LLVMBuildExtractValue(ctx->builder, b, i, "b_elem");
+        
+        LLVMValueRef operation_result = func(ctx->builder, a_elem, b_elem, name);
+        res = LLVMBuildInsertValue(ctx->builder, res, operation_result, i, "pack_comp");
+
+    }
+    return res;
+}
+LLVMValueRef mat_operation_helper(JitContext* ctx, LLVMValueRef a, LLVMValueRef b, LLVMMatFunc_t func, const char* name)
+{
+    LLVMValueRef res = NULL;
+    
+    uint8_t is_vector = LLVMGetTypeKind(LLVMTypeOf(a)) == LLVMArrayTypeKind;
+    
+    if (is_vector)
+    {
+        res = vec_mat_helper(ctx, a, b, func, name);
+    }
+    else
+    {
+       res = func(ctx->builder, a, b, name);
+    }
+}
 void handle_op_fadd(JitContext* ctx, uint32_t res_id, uint32_t* operands) 
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
-    
-    LLVMValueRef res = LLVMBuildFAdd(ctx->builder, lhs, rhs, "v_fadd");
+    LLVMValueRef res = mat_operation_helper(ctx, lhs, rhs, LLVMBuildFAdd, "add");
     set_val(ctx, res_id, res);
 }
 
@@ -53,7 +83,7 @@ void handle_op_fmul(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
-    LLVMValueRef res = LLVMBuildFMul(ctx->builder, lhs, rhs, "v_fmul");
+    LLVMValueRef res = mat_operation_helper(ctx, lhs, rhs, LLVMBuildFMul, "mul");
     set_val(ctx, res_id, res);
 }
 
@@ -61,14 +91,14 @@ void handle_op_fdiv(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
-    LLVMValueRef res = LLVMBuildFDiv(ctx->builder, lhs, rhs, "v_fdiv");
+    LLVMValueRef res = mat_operation_helper(ctx, lhs, rhs, LLVMBuildFDiv, "div");
     set_val(ctx, res_id, res);
 }
 void handle_op_fsub(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
-    LLVMValueRef res = LLVMBuildFSub(ctx->builder, lhs, rhs, "v_fsub");
+    LLVMValueRef res = mat_operation_helper(ctx, lhs, rhs, LLVMBuildFSub, "sub");
     set_val(ctx, res_id, res);
 }
 void handle_op_fneg(JitContext* ctx, uint32_t res_id, uint32_t* operands)
