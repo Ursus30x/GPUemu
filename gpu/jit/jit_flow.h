@@ -7,4 +7,6 @@ void handle_op_type_function(JitContext* ctx, uint32_t res_id, uint32_t* operand
 void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands);
 void handle_op_label(JitContext* ctx, uint32_t res_id);
 
+void resolve_pending_globals(JitContext* ctx);
+
 #endif 

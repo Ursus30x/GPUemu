@@ -1,4 +1,5 @@
 #include "jit_decorators.h"
+#include "debug_gpu.h"
 
 void handle_op_decorate(JitContext* ctx, uint32_t* operands, int op_count) 
 {
@@ -149,7 +150,7 @@ static uint32_t spirv_string_word_length(const char* str)
 void handle_op_entry_point(JitContext* ctx, uint32_t* operands, uint32_t operand_count)
 {
     uint32_t execution_model = operands[0];
-    uint32_t entry_point_id  = operands[1];
+    G_GNUC_UNUSED uint32_t entry_point_id  = operands[1];
 
     const char* name = (const char*)&operands[2];
 

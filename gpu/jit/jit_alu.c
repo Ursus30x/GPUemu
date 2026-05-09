@@ -1,6 +1,8 @@
 #include "jit_alu.h"
 #include "glsl_std_450.h"
 #include <llvm-c/Core.h>
+#include "debug_gpu.h"
+
 #define CREATE_CONST_VEC(name, val) \
     for(int i = 0; i < SIMT_WIDTH; i++) scalars[i] = LLVMConstReal(f32_type, val); \
     LLVMValueRef name = LLVMConstVector(scalars, SIMT_WIDTH);
