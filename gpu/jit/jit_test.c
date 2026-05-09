@@ -1,8 +1,8 @@
+#include "test.h"
 #include "jit.h"
 #include <stdio.h> 
 #include <stdlib.h>
 #include <math.h>
-#include "test.h"
 
 const float epsilon = 1e-6f;
 

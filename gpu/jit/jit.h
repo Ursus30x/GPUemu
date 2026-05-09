@@ -1,9 +1,6 @@
 #ifndef JIT_H
 #define JIT_H
-
-#define DEBUG_PRINT(...) printf(__VA_ARGS__)
 #define G_GNUC_UNUSED  __attribute__ ((__unused__))
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -124,14 +121,17 @@ struct JitContext{
 typedef void* (*jitted_func_t)(void);
 
 
-LLVMValueRef get_val(JitContext* ctx, uint32_t id);
-
+void jit_call_printf(JitContext* ctx, const char* fmt, LLVMValueRef* args, unsigned num_args);
+void jit_call_printf_simt(JitContext* ctx, const char* fmt, LLVMValueRef vec_val);
 void set_val(JitContext* ctx, uint32_t id, LLVMValueRef val);
 void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count);
-jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_count);
 void build_masked_store(JitContext* ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask);
 void init_jit(JitContext* ctx);
 void free_jit(JitContext* ctx);
+
+jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_count);
+
+LLVMValueRef get_val(JitContext* ctx, uint32_t id);
 LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id);
 ExecutionContext* get_ectx_from_mcjit(JitContext *ctx);
 #endif

@@ -4,6 +4,7 @@
 #include "jit_flow.h"
 #include "jit_mem.h"
 #include <llvm-c/Transforms/PassBuilder.h>
+#include "debug_gpu.h"
 
 static void debug_print_single_deco(uint32_t id, SpvDecoInfo* d)
 {
@@ -79,7 +80,7 @@ static void G_GNUC_UNUSED debug_dump_member_decorations(JitContext* ctx)
    Type Info Debug
    ============================================================ */
 
-static const char* G_GNUC_UNUSED spv_opcode_to_string(SpvOp op)
+G_GNUC_UNUSED static const char*  spv_opcode_to_string(SpvOp op)
 {
     switch (op)
     {
@@ -158,6 +159,83 @@ static inline void handle_op_return_value(JitContext* ctx, uint32_t* operands)
     build_masked_store(ctx, vec_val, bitcast_ptr, ctx->emask);
     
     LLVMBuildRetVoid(ctx->builder);
+}
+/*
+ Exaple usage:
+    {
+        LLVMValueRef float_val = LLVMConstReal(ctx->float_type, 42.0);
+        LLVMValueRef args2[] = { float_val };
+        jit_call_printf(ctx, "Example float: %f\n", args2, 1);
+    }
+*/
+void jit_call_printf(JitContext* ctx, const char* fmt, LLVMValueRef* args, unsigned num_args)
+{
+    // Get or add printf function to module
+    LLVMValueRef printf_func = LLVMGetNamedFunction(ctx->module, "printf");
+    if (!printf_func) 
+    {
+        LLVMTypeRef printf_decl_arg_types[] = { LLVMPointerType(LLVMInt8TypeInContext(ctx->context), 0) };
+        LLVMTypeRef printf_decl_type = LLVMFunctionType(
+            LLVMInt32TypeInContext(ctx->context), printf_decl_arg_types, 1, 1
+        );
+        printf_func = LLVMAddFunction(ctx->module, "printf", printf_decl_type);
+    }
+
+    // Build format string
+    LLVMValueRef fmt_str = LLVMBuildGlobalStringPtr(ctx->builder, fmt, "fmt");
+    
+    // Prepare call arguments: format string + user args, converting floats to doubles
+    LLVMValueRef* call_args = malloc((num_args + 1) * sizeof(LLVMValueRef));
+    LLVMTypeRef* arg_types = malloc((num_args + 1) * sizeof(LLVMTypeRef));
+    
+    call_args[0] = fmt_str;
+    arg_types[0] = LLVMPointerType(LLVMInt8TypeInContext(ctx->context), 0);
+    
+    for (unsigned i = 0; i < num_args; ++i)
+    {
+        LLVMTypeRef arg_type = LLVMTypeOf(args[i]);
+        // Convert float to double for printf
+        if (LLVMGetTypeKind(arg_type) == LLVMFloatTypeKind)
+        {
+            call_args[i + 1] = LLVMBuildFPExt(ctx->builder, args[i], LLVMDoubleTypeInContext(ctx->context), "f2d");
+            arg_types[i + 1] = LLVMDoubleTypeInContext(ctx->context);
+        }
+        else
+        {
+            call_args[i + 1] = args[i];
+            arg_types[i + 1] = arg_type;
+        }
+    }
+
+    LLVMTypeRef printf_type = LLVMFunctionType(
+        LLVMInt32TypeInContext(ctx->context), arg_types, num_args + 1, 1
+    );
+    
+    LLVMBuildCall2(ctx->builder, printf_type, printf_func, call_args, num_args + 1, "");
+    
+    free(call_args);
+    free(arg_types);
+}
+// Print all SIMT_WIDTH elements of a vector in compact format: [1.0 2.0 3.0 ...]
+void jit_call_printf_simt(JitContext* ctx, const char* fmt, LLVMValueRef vec_val)
+{
+    jit_call_printf(ctx, "[", NULL, 0);
+    
+    for (unsigned lane = 0; lane < SIMT_WIDTH; lane++)
+    {
+        LLVMValueRef elem = LLVMBuildExtractValue(ctx->builder, vec_val, lane, "simt_elem");
+        LLVMValueRef args[] = { elem };
+        
+        char fmt_with_sep[256];
+        if (lane == 0)
+            snprintf(fmt_with_sep, sizeof(fmt_with_sep), "%s", fmt);
+        else
+            snprintf(fmt_with_sep, sizeof(fmt_with_sep), " %s", fmt);
+        
+        jit_call_printf(ctx, fmt_with_sep, args, 1);
+    }
+    
+    jit_call_printf(ctx, "]\n", NULL, 0);
 }
 
 void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count) 
@@ -364,6 +442,7 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
             return NULL;
     }
 }
+
 jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_count) 
 {   
     uint32_t* p = binary + 5;
@@ -395,9 +474,8 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
     ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
 
+
     DEBUG_PRINT("--- Starting JIT Compilation (LLVM ORC Backend) ---\n");
-
-
     LLVMValueRef values[SIMT_WIDTH];
     for (size_t i = 0; i < SIMT_WIDTH; i++)
     {
@@ -405,7 +483,8 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     }
     ctx->emask = LLVMConstVector(values, SIMT_WIDTH);
  
-
+    // Example usage: print a float constant (e.g., 42.0f)
+   
     while (p < end) 
     {
         uint32_t instruction = p[0];
@@ -442,6 +521,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         p += inst_word_count;
     }
     
+
     char *error = NULL;
         LLVMDumpModule(ctx->module);
 
@@ -500,6 +580,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
    
     return my_func;
 }
+
 void init_jit(JitContext* ctx)
 {
 

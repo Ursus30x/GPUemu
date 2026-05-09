@@ -1,4 +1,5 @@
 #include "jit_mem.h"
+#include "debug_gpu.h"
 
 
 //handle_op_variable: Maps SPIR-V variables to physical resources or local memory.
@@ -232,7 +233,7 @@ void handle_op_access_chain(JitContext* ctx, uint32_t res_id, uint32_t type_id, 
             if (LLVMIsConstant(idx_val)) 
             {
                 member_idx = LLVMConstIntGetZExtValue(idx_val);
-                DEBUG_PRINT("  Struct member index: %llu\n", member_idx);
+                DEBUG_PRINT("  Struct member index: %lu\n", member_idx);
             }
             else
             {
@@ -247,7 +248,7 @@ void handle_op_access_chain(JitContext* ctx, uint32_t res_id, uint32_t type_id, 
                 if (m->member_index == (uint32_t)member_idx)
                 {
                     offset_bytes = m->offset;
-                    DEBUG_PRINT("  Found member %llu decoration: offset=%d bytes\n", member_idx, offset_bytes);
+                    DEBUG_PRINT("  Found member %lu decoration: offset=%d bytes\n", member_idx, offset_bytes);
                     break;
                 }
                 m = m->next;

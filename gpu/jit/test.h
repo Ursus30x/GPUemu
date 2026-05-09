@@ -1,3 +1,5 @@
+#define JIT
+#include "debug_gpu.h"
 #include  "jit.h"
 typedef enum Type {
     I32,
