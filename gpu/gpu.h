@@ -1,3 +1,4 @@
+#define GPUEPU
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/units.h"

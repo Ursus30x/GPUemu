@@ -1,6 +1,10 @@
+#ifdef GPUEPU
 #include "gpu.h"
+#endif
+#ifdef JIT
 #include "jit.h"
-#define DEBUG
+#endif
+//#define DEBUG
 #define DEBUG_VAR __attribute__((unused))
 #ifdef DEBUG
   #define DEBUG_PRINT(...) printf(__VA_ARGS__)
@@ -91,8 +95,8 @@ static void G_GNUC_UNUSED debug_dump_ubo(void *opaque)
 }
 
 #else
-  #define DEBUG_PRINT(...) ;
-
+  #define DEBUG_PRINT(...) {}
+#ifdef GPUEPU
 __attribute__((unused))
 static void debug_dump_vertices(GpuState *gpu){}
 
@@ -101,5 +105,6 @@ static void debug_dump_edges(GpuState *gpu){}
 
 __attribute__((unused))
 static void debug_dump_ubo(void *opaque){}
+#endif
 
 #endif

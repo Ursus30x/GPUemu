@@ -77,9 +77,11 @@ ln -sf "$CWD/gpu/gen/glsl_std_450.h" "$CWD/gpu/jit/glsl_std_450.h"
 git apply "$CWD/gpu/qemu.patch"
 
 
-cd "$CWD/qemu/jit"
+cd "$CWD/gpu/jit"
+
+
 make
-cd "$CWD/qemu/jit/test"
+cd "$CWD/gpu/jit/test"
 python3 test.py
 
 
