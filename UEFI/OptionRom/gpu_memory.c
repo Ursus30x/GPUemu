@@ -49,6 +49,9 @@ EFI_STATUS EFIAPI GpuMemoryAllocatorInit(
     IN VRAMADDR baseAddr,
     IN GPU_DMA_FENCE *Fence)
 {
+    GpuCmdSync();
+    GpuDmaSync();
+
     // Basic size info
     gpuMemAllocator.pageCount      = VRAMsize / PAGE_SIZE;
     gpuMemAllocator.totalMemSize   = VRAMsize;
@@ -569,3 +572,40 @@ VOID EFIAPI GpuDebugDumpMemoryMap(VOID)
     }
     DEBUG ((EFI_D_INFO, "-------------------------------------------------------------------------\n\n"));
 }
+
+typedef struct {
+    UINT32 Offset;
+    CHAR8  *Name;
+    } MMIO_REG_DEF;
+
+    VOID EFIAPI GpuDebugDumpMmio(VOID)
+    {
+    static const MMIO_REG_DEF Regs[] = {
+        { REG_GPU_MODE_ADDR,          "GPU_MODE" },
+        { REG_RING_BUFFER_HEAD_ADDR,  "RING_HEAD" },
+        { REG_RING_BUFFER_TAIL_ADDR,  "RING_TAIL" },
+        { REG_RING_BUFFER_START_ADDR, "RING_START" },
+        { REG_RING_BUFFER_END_ADDR,   "RING_END" },
+        { REG_VERTEX_SHADER_ADDR,     "VS_PTR" },
+        { REG_FRAGMENT_SHADER_ADDR,   "FS_PTR" },
+        { REG_FB_WIDTH_ADDR,          "FB_WIDTH" },
+        { REG_FB_HEIGHT_ADDR,         "FB_HEIGHT" },
+        { REG_FRAMEBUFFER_ADDR,       "FB_ADDR" },
+        { REG_GPU_TIME_ADDR,          "GPU_TIME" },
+        { REG_ZBUFFER_ADDR,           "ZBUFFER" },
+        { REG_INT_STATUS_ADDR,        "INT_STATUS" },
+        { REG_INT_MASK_ADDR,          "INT_MASK" },
+        { REG_DMA_HOST_ADDR,          "DMA_HOST" },
+        { REG_DMA_VRAM_ADDR,          "DMA_VRAM" },
+        { REG_DMA_SIZE_ADDR,          "DMA_SIZE" },
+        { REG_DMA_CMD_ADDR,           "DMA_CMD" },
+    };
+    UINT32 NumRegs = sizeof(Regs) / sizeof(Regs[0]);
+
+    DEBUG ((EFI_D_INFO, "\n=== GPU MMIO DUMP ===\n"));
+    for (UINT32 i = 0; i < NumRegs; i++) {
+        UINT32 Val = GpuMmioRead32(Regs[i].Offset);
+        DEBUG ((EFI_D_INFO, "  [0x%02X] %-15a : 0x%08X\n", Regs[i].Offset, Regs[i].Name, Val));
+    }
+    DEBUG ((EFI_D_INFO, "=====================\n\n"));
+    }

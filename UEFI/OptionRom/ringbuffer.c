@@ -1,6 +1,7 @@
 #include "ringbuffer.h"
 #include "gpu_memory.h"
 #include "gpu_hw.h"
+#include "sync.h"
 #include <Library/UefiBootServicesTableLib.h> // gBS
 
 struct GpuRingBuffer gpuRingBuffer;
@@ -8,6 +9,9 @@ struct GpuRingBuffer gpuRingBuffer;
 EFI_STATUS EFIAPI GpuRingBufferInit(
     IN UINT32   RingSize)
 {
+    // Ensure that command buffer processing is idle
+    GpuCmdSync();
+
     gpuRingBuffer.bufferSize = RingSize;
 
     // Allocate VRAM
@@ -141,6 +145,10 @@ EFI_STATUS EFIAPI GpuRingBufferFlush()
 
     // Use DMA to transfer the command batch to VRAM
     GpuDmaWrite(gpuRingBuffer.ringHead, gpuRingBuffer.cmdBatchBufferPtr, bytesToWrite);
+
+    // WAIT FOR DMA TO FINISH - to not read stale/corrupted commands
+    GpuDmaSync();
+
     gpuRingBuffer.ringHead += bytesToWrite;
 
     // Wrap logic for perfect alignment

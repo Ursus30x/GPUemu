@@ -294,11 +294,6 @@ EFI_STATUS EFIAPI GpuSubmitCmd(
   IN GOP_3D_PROTOCOL *This
   )
 {
-#ifdef MEM_DEBUG
-    DEBUG((DEBUG_INFO, "Mem Dump after command submition\n"));
-    GpuDebugDumpMemoryMap();
-#endif
-
     // Ensure previous batch is done before kicking new one
     GpuCmdSync();
 
@@ -307,6 +302,13 @@ EFI_STATUS EFIAPI GpuSubmitCmd(
         GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
         Private->DmaFence.CmdBusy = TRUE;
     }
+
+#ifdef MEM_DEBUG
+    DEBUG((DEBUG_INFO, "Mem Dump after command submition\n"));
+    GpuDebugDumpMemoryMap();
+    GpuDebugDumpMmio();
+#endif
+
 
     return Status;
 }

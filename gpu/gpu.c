@@ -188,50 +188,52 @@ static void execute_command(GpuState *gpu, Command *cmd)
 
 static void process_ring_buffer(GpuState *s)
 {
-    // 1. Read Dynamic Configuration directly from State
+    // Read state of the ring buffer regs
     uint32_t rb_start = s->ring_buffer_start;
     uint32_t rb_end   = s->ring_buffer_end;
     uint32_t head     = s->ring_buffer_head;
+    uint32_t tail     = s->ring_buffer_tail;
 
-    // 2. Safety: Driver hasn't initialized registers yet
+    // Check if ring buffer is initalized
     if (rb_start == 0 || rb_end <= rb_start) {
         return;
     }
 
-    // 3. Dynamic Bounds Check (Anti-Segfault)
-    // If tail is outside valid range (e.g. after driver restart), reset it.
-    if (s->ring_buffer_tail < rb_start || s->ring_buffer_tail >= rb_end) {
+    // Check if rb is within bounds (sanity check)
+    if (tail < rb_start || tail >= rb_end) {
         DEBUG_PRINT("[GPU ERROR] Tail (0x%x) out of bounds [0x%x - 0x%x]. Resetting to Start.\n",
-            s->ring_buffer_tail, rb_start, rb_end);
-        s->ring_buffer_tail = rb_start;
+            tail, rb_start, rb_end);
+        tail = rb_start;
     }
 
-    // 4. Idle Check
-    if (head == s->ring_buffer_tail) {
+    // If both head and tail are at the same address then rb is idle
+    if (head == tail) {
         return;
     }
 
-    // 5. Processing Loop
-    while (s->ring_buffer_tail != head)
+    // Process commands
+    while (tail != head)
     {
-        uint8_t *cmd_ptr = s->vram_ptr + s->ring_buffer_tail;
+        uint8_t *cmd_ptr = s->vram_ptr + tail;
         Command *cmd = (Command *)cmd_ptr;
 
         execute_command(s, cmd);
 
-        s->ring_buffer_tail += sizeof(Command);
+        tail += sizeof(Command);
 
         // --- DYNAMIC WRAP LOGIC ---
-        // Wrap exactly at the configured End address
-        if (s->ring_buffer_tail >= rb_end) {
+        if (tail >= rb_end) {
             DEBUG_PRINT("[GPU CMD] Buffer End Reached. Wrapping to 0x%x\n", rb_start);
-            s->ring_buffer_tail = rb_start;
+            tail = rb_start;
         }
     }
 
-    /* Signal completion via interrupt */
+    // Update the shared register ONLY once we are finished
+    s->ring_buffer_tail = tail;
+    s->int_status |= GPU_INT_CMD_DONE;
+
+    // Notify via MSI
     if (s->int_mask & GPU_INT_CMD_DONE) {
-        s->int_status |= GPU_INT_CMD_DONE;
         if (msi_enabled(PCI_DEVICE(s))) {
             msi_notify(PCI_DEVICE(s), 0);
         }
@@ -355,6 +357,12 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case REG_RING_BUFFER_TAIL_ADDR:
         reg_val = s->ring_buffer_tail;
+        break;
+    case REG_RING_BUFFER_START_ADDR:
+        reg_val = s->ring_buffer_start;
+        break;
+    case REG_RING_BUFFER_END_ADDR:
+        reg_val = s->ring_buffer_end;
         break;
     case REG_VERTEX_SHADER_ADDR:
         reg_val = s->vs_code_addr;
