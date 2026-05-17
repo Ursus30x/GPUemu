@@ -2,6 +2,29 @@
 #define RENDERER
 #include "gpu.h"
 
+
+#ifndef NUM_RENDER_THREADS
+#define NUM_RENDER_THREADS 16
+#endif
+
+typedef struct {
+    Vec4 pos;
+    uint32_t color;
+} TransformedVertex;
+
+typedef struct {
+    GpuState *orig_gpu;
+    uint32_t start_idx;
+    uint32_t end_idx;
+    uint32_t *px;
+    uint32_t *py;
+    TransformedVertex *transformed_vertices;
+    uint32_t triangle_size;
+    uint32_t start_y;
+    uint32_t end_y;
+} RenderThreadArgs;
+
+
 #define GET_R(color) (uint8_t)(((color) >> 16) & 0xFF)
 #define GET_G(color) (uint8_t)(((color) >> 8) & 0xFF)
 #define GET_B(color) (uint8_t)((color) & 0xFF)
