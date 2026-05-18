@@ -593,6 +593,8 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     // Allocate internal shadow buffer (fixed size for simplicity)
     gpu->internal_fb = g_malloc0(1024 * 1024 * 4); 
     qemu_thread_create(&gpu->refresh_thread, "gpu-refresh-thread", gpu_refresh_thread_worker, gpu, QEMU_THREAD_JOINABLE);
+
+    init_thread_pool();
 }
 
 /* Uninitialize GPU device */

@@ -4,11 +4,13 @@ This document explains the high-performance, multithreaded architecture implemen
 
 ## High-Level Architecture Overview
 
-The renderer transitions from a slow, single-threaded pipeline to a highly efficient Dual-Pass Parallel Architecture. It successfully solves the two classic bottlenecks of software rasterizers:
+The renderer transitions from a slow, single-threaded pipeline to a highly efficient Dual-Pass Parallel Architecture managed by a persistent QEMU Thread Pool. This design successfully solves the two classic bottlenecks of software rasterizers:
 
 - Shader Register Clashing: Virtualized by creating isolated GpuState copies on each worker thread's local stack.
 
 - Memory Overlap (Race Conditions): Handled by dividing the screen vertically into non-overlapping horizontal scanline bands (lock-free/atomic-free rasterization).
+
+- Thread Lifecycle Overhead: Solved by spawning threads exactly once at initialization. Workers sleep on a condition variable and wake up instantly when new work is dispatched, completely eliminating per-frame OS thread creation overhead.
 
 ```mermaid
 graph TD
@@ -19,9 +21,29 @@ graph TD
     Pass2 --> Sync2[pthread_join: Frame Finalized]
     Sync2 --> Free[Free Vertex Cache]
     Free --> End([Frame Rendered & GPU Idle])
-
-
 ```
+
+## The QEMU Thread Pool & Task Dispatcher
+
+Instead of spawning and tearing down pthread threads on every single render pass, the engine uses QEMU Threads (QemuThread, QemuMutex, QemuCond) to orchestrate work dynamically.
+
+### Synchronization State Machine
+
+The coordination between the main thread and the workers depends on a state machine built with three primary synchronization primitives:
+
+* g_pool_mutex: Guards thread pool properties (g_current_task, g_completed_workers, and g_work_generation).
+
+* g_pool_cond: Broadcasts work state changes to idle worker threads.
+
+* g_main_cond: Signaled by the last completing worker to notify and wake up the blocked main rendering thread.
+
+### The Generation Counter Safeguard
+
+To avoid spurious wakeups or race conditions (where a worker thread might wake up and think there is new work when it is actually looking at a stale task), GPU track a g_work_generation counter:
+
+Each task dispatch increments g_work_generation.
+
+Workers store a local_generation and block until g_work_generation is strictly greater than their local copy. This guarantees that workers only execute once per dispatched task phase.
 
 ## PASS 1: Parallel Vertex Shading & Virtualization
 
@@ -112,7 +134,7 @@ graph TD
 
 *The Workload*: Every thread is assigned a vertical screen range ($start\_y$ to $end\_y$).
 
-*Broadcasting Triangles*: Every thread loops through the entire index table of triangles. However, inside draw_triangle_band(), we compute the triangle's bounding box and intersect it with the thread's horizontal band:
+*Broadcasting Triangles*: Every thread loops through the entire index table of triangles. However, inside draw_triangle_band(), GPU compute the triangle's bounding box and intersect it with the thread's horizontal band:
 
 
 $$min\_y = \max(band\_min\_y, \min(y_0, y_1, y_2))$$
