@@ -2,32 +2,46 @@
 #include <sys/wait.h>
 #include <time.h>
 
-// TEST(simple_vs, "out/simple_vs.spv", {
-//     CREATE_SIMT_VEC3(aPos, SPLAT(1.0), SPLAT(2.0), SPLAT(3.0));
-//     PRINT_VEC3("aPos:\n", aPos);
-//     BIND_IN_LOCATION(0, aPos);
-//     RUN_JIT();
-//     GET_GL_POS();
-//     PRINT_VEC4("gl_Position:\n", glPos);
-//     CREATE_SIMT_VEC4(expected, SPLAT(1.0), SPLAT(2.0), SPLAT(3.0), SPLAT(1.0));
-//     ASSERT_EQ_VEC4(glPos, expected);
-// })
 
-// TEST(vec_math, "out/vec_math.spv", {
-//     struct ubo_t {
-//         SimtFloat x;
-//         SimtFloat y;
-//     };
-//     struct ubo_t ubo;
-//     ubo.x = SPLAT(2.0);
-//     ubo.y = SPLAT(10.0);
+TEST(simple_fs, "out/simple_fs.spv", {
+    CREATE_SIMT_VEC3(aCol, SPLAT(1.0), SPLAT(0.021), SPLAT(0.12));
+    PRINT_VEC3("aCol:\n", aCol);
+    BIND_IN_LOCATION(0, aCol);
+    CREATE_SIMT_VEC4(outCol, SPLAT(0.0), SPLAT(0.0), SPLAT(0.0), SPLAT(0.0));
+    BIND_OUT_LOCATION(0, outCol);
+    RUN_JIT();
+    PRINT_VEC4("outCol:\n", outCol);
+    CREATE_SIMT_VEC4(expected, SPLAT(1.0), SPLAT(0.021), SPLAT(0.12), SPLAT(1.0));
+    ASSERT_EQ_VEC4(outCol, expected);
+})
 
-//     CREATE_BINDING(0, ubo);
-//     RUN_JIT();
-//     GET_GL_POS();
-//     PRINT_VEC4("gl_Position:\n", glPos);
+
+TEST(simple_vs, "out/simple_vs.spv", {
+    CREATE_SIMT_VEC3(aPos, SPLAT(1.0), SPLAT(2.0), SPLAT(3.0));
+    PRINT_VEC3("aPos:\n", aPos);
+    BIND_IN_LOCATION(0, aPos);
+    RUN_JIT();
+    GET_GL_POS();
+    PRINT_VEC4("gl_Position:\n", glPos);
+    CREATE_SIMT_VEC4(expected, SPLAT(1.0), SPLAT(2.0), SPLAT(3.0), SPLAT(1.0));
+    ASSERT_EQ_VEC4(glPos, expected);
+})
+
+TEST(vec_math, "out/vec_math.spv", {
+    struct ubo_t {
+        SimtFloat x;
+        SimtFloat y;
+    };
+    struct ubo_t ubo;
+    ubo.x = SPLAT(2.0);
+    ubo.y = SPLAT(10.0);
+
+    CREATE_BINDING(0, ubo);
+    RUN_JIT();
+    GET_GL_POS();
+    PRINT_VEC4("gl_Position:\n", glPos);
     
-// })
+})
 
 SimtVec4 simt_mat4_mul_vec4(SimtMat4 m, SimtVec4 v)
 {

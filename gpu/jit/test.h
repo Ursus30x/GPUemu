@@ -24,6 +24,7 @@
 #define RAND_SIMT()  (SimtFloat){ 2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f}
 
 #define BIND_IN_LOCATION(location, value) jit_ctx->location_in_buffers[location] = &value;
+#define BIND_OUT_LOCATION(location, value) jit_ctx->location_out_buffers[location] = &value;
 #define CREATE_BINDING(attribute, value) jit_ctx->binding_buffers[attribute] = &value;
 
 #define GET_GL_POS() SimtVec4 glPos = o->gl_Position;
