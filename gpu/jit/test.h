@@ -1,451 +1,130 @@
 #define JIT
 #include "debug_gpu.h"
-#include  "jit.h"
-typedef enum Type {
-    I32,
-    F32,
-    Vec3,
-    Vec4,
-    Mat3,
-    Mat4
-};
+#include "jit.h"
 
-#define MAX_UBO_ELEMENTS 10
-#define MAX_ELEM_SIZE (SIMT_WIDTH * 4 * 4)
-#define MAX_UBO_SIZE (MAX_UBO_ELEMENTS * 4 * 4)
-// typedef struct UBO_Type
-// {
-//     uint32_t elements;
-//     Type types[MAX_UBO_ELEMENTS];
+#include <stdio.h> 
+#include <stdlib.h>
+#include <math.h>
 
-// };
 
-typedef struct {
-    //memory map 1 - is present 0 - is not
-    uint32_t binding_buffers_map[MAX_BINDINGS];
-    uint32_t location_in_buffers_map[MAX_ATTRIBUTES];
-    uint32_t location_out_buffers_map[MAX_ATTRIBUTES];
+#define SPLAT(value) (SimtFloat){value, value, value, value, value, value, value, value, value, value, value, value, value, value, value, value}
+#define CREATE_SIMT_F32(name, values) SimtFloat name = values;
+#define CREATE_SIMT_VEC3(name, a, b, c) SimtVec3 name = { a,  b,  c};
+#define CREATE_SIMT_VEC4(name, a, b, c, d) SimtVec4 name = { a,  b,  c, d};
 
-    //offsets of each location / binding
-    uint32_t binding_buffers_offset[MAX_BINDINGS];
-    uint32_t location_in_buffers_offset[MAX_ATTRIBUTES];
-    uint32_t location_out_buffers_offset[MAX_ATTRIBUTES];
+#define SIMT_VEC4(a, b, c, d) (SimtVec4){ a,  b,  c, d };
+#define CREATE_MAT4(name, elems) SimtFloat name = (SimtFloat) elems;
+#define RAND_FLOAT(name) \
+    SimtFloat name; \
+    for(uint32_t i = 0; i < SIMT_WIDTH; i++) \
+    { \
+        name[i] = 2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f; \
+    }
 
-    //size of each location / binding
-    uint32_t binding_buffers_size[MAX_BINDINGS];
-    uint32_t location_in_buffers_size[MAX_ATTRIBUTES];
-    uint32_t location_out_buffers_size[MAX_ATTRIBUTES];
+#define RAND_SIMT()  (SimtFloat){ 2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f}
 
-    uint32_t binding_buffers[MAX_BINDINGS * MAX_UBO_SIZE]; 
-    uint32_t location_in_buffers[MAX_ATTRIBUTES * MAX_ELEM_SIZE];
-    uint32_t location_out_buffers[MAX_ATTRIBUTES * MAX_ELEM_SIZE];
-} ExecutionContextMap;
+#define BIND_IN_LOCATION(location, value) jit_ctx->location_in_buffers[location] = &value;
+#define CREATE_BINDING(attribute, value) jit_ctx->binding_buffers[attribute] = &value;
 
-// Parse ExecutionContextMap to ExecutionContext (with relative addresses)
-// Splats binding buffer values across SIMT_WIDTH lanes
-ExecutionContext* parse_context_map_to_context(const ExecutionContextMap* map)
+#define GET_GL_POS() SimtVec4 glPos = o->gl_Position;
+#define RUN_JIT() func();
+
+#define PRINT_VEC3(caption, name)  \
+    printf("%s", caption); \
+    for(uint32_t i = 0; i < SIMT_WIDTH; i++) \
+    { \
+        printf("lane%d: [%f, %f, %f]\n", i, name.elem[0][i], name.elem[1][i], name.elem[2][i]); \
+    }
+
+#define PRINT_VEC4(caption, name)  \
+    printf("%s", caption); \
+    for(uint32_t i = 0; i < SIMT_WIDTH; i++) \
+    { \
+        printf("lane%d: [%f, %f, %f, %f]\n", i, name.elem[0][i], name.elem[1][i], name.elem[2][i], name.elem[3][i]); \
+    }
+
+
+#define ASSERT_EQ_VEC4(val, expected)  \
+    for(uint32_t i = 0; i < SIMT_WIDTH; i++) \
+    { \
+        if(!(val.elem[0][i]==expected.elem[0][i] && val.elem[1][i]==expected.elem[1][i] && val.elem[2][i]==expected.elem[2][i] && val.elem[3][i]==expected.elem[3][i])){ \
+            printf("asset failed\n"); \
+            return 1; \
+        }\
+    }
+#define ASSERT_EQ_MAT4(val, expected)                                  \
+    for (uint32_t i = 0; i < SIMT_WIDTH; i++)                          \
+    {                                                                   \
+        for (uint32_t c = 0; c < 4; c++)                               \
+        {                                                               \
+            for (uint32_t r = 0; r < 4; r++)                           \
+            {                                                           \
+                if (val.cols[c][r][i] != expected.cols[c][r][i])       \
+                {                                                       \
+                    printf("assert failed at col %u row %u lane %u\n", \
+                           c, r, i);                                    \
+                    return 1;                                           \
+                }                                                       \
+            }                                                           \
+        }                                                               \
+    }
+const float epsilon = 1e-6f;
+
+
+typedef int (*TestFunc)(void);
+
+typedef struct TestNode {
+    const char* name;
+    TestFunc func;
+    struct TestNode* next;
+} TestNode;
+TestNode* test_list_head = NULL;
+
+void register_test(const char* name, TestFunc func)
 {
-    ExecutionContext* ctx = (ExecutionContext*)malloc(sizeof(ExecutionContext));
-    if (!ctx) return NULL;
-    
-    for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-    {
-        if (map->binding_buffers_map[i])
-        {
-           ctx->binding_buffers[i] = (void*)(uintptr_t)(map->binding_buffers_offset[i] + map->binding_buffers);
-        } 
-        else 
-        {
-            ctx->binding_buffers[i] = NULL;
-        }
-    }
-    
-    for (uint32_t i = 0; i < MAX_ATTRIBUTES; i++)
-    {
-        if (map->location_in_buffers_map[i])
-        {
-            // Location buffers already contain per-lane data
-            ctx->location_in_buffers[i] = (void*)(uintptr_t)(map->location_in_buffers_offset[i] + map->location_in_buffers);
-        } else {
-            ctx->location_in_buffers[i] = NULL;
-        }
-        
-        if (map->location_out_buffers_map[i])
-        {
-            // Location buffers already contain per-lane data
-            ctx->location_out_buffers[i] = (void*)(uintptr_t)(map->location_out_buffers_offset[i] + map->location_out_buffers);
-        } else {
-            ctx->location_out_buffers[i] = NULL;
-        }
-    }
-    
-    return ctx;
+    TestNode* new_node = (TestNode*)malloc(sizeof(TestNode));
+    new_node->name = name;
+    new_node->func = func;
+    new_node->next = test_list_head;
+    test_list_head = new_node;
 }
 
-// Print ExecutionContext with values
-void print_execution_context(const ExecutionContext* ctx)
-{
-    if (!ctx)
-    {
-        DEBUG_PRINT("ExecutionContext is NULL\n");
-        return;
+#define TEST(test_name, path, ...) \
+    int test_name(void) \
+    { \
+        jitted_func_t func; \
+        JitContext ctx = {0}; \
+        FILE* f = fopen(path, "rb"); \
+        if (!f) \
+        { \
+            fprintf(stderr, "Failed to open SPIR-V file: %s\n", path); \
+            return 1; \
+        } \
+        fseek(f, 0, SEEK_END); \
+        size_t file_size = ftell(f); \
+        fseek(f, 0, SEEK_SET); \
+        uint32_t* spirv_code = malloc(file_size); \
+        if (fread(spirv_code, 1, file_size, f) != (size_t)file_size) \
+        { \
+            fprintf(stderr, "Failed to read SPIR-V file: %s\n",  path); \
+            free(spirv_code); \
+            fclose(f); \
+            return 1; \
+        } \
+        fclose(f); \
+        init_jit(&ctx); \
+        func = jit_compile_spirv(&ctx, spirv_code, file_size / 4); \
+        free(spirv_code); \
+        ExecutionContext *jit_ctx = get_ectx_from_mcjit(&ctx); \
+        BuiltinVertexOutput* o = get_vs_data_from_mcjit(&ctx); \
+        __VA_ARGS__ ; \
+        free_jit(&ctx); \    
+        printf("Test passed! Output matches expected results.\n"); \
+        return 0; \
+        \
+    } \
+    \
+    __attribute__((constructor)) void register_##test_name(void) { \
+        register_test(#test_name, test_name); \
     }
-    
-    DEBUG_PRINT("=== ExecutionContext ===\n");
-    DEBUG_PRINT("Binding Buffers:\n");
-    for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-    {
-        if (ctx->binding_buffers[i])
-        {
-            DEBUG_PRINT("  [%d] offset = 0x%lx\n", i, (uintptr_t)ctx->binding_buffers[i]);
-        }
-    }
-    
-    DEBUG_PRINT("Input Location Buffers:\n");
-    for (uint32_t i = 0; i < MAX_ATTRIBUTES; i++)
-    {
-        if (ctx->location_in_buffers[i])
-        {
-            DEBUG_PRINT("  [%d] offset = 0x%lx\n", i, (uintptr_t)ctx->location_in_buffers[i]);
-        }
-    }
-    
-    DEBUG_PRINT("Output Location Buffers:\n");
-    for (uint32_t i = 0; i < MAX_ATTRIBUTES; i++)
-    {
-        if (ctx->location_out_buffers[i])
-        {
-            DEBUG_PRINT("  [%d] offset = 0x%lx\n", i, (uintptr_t)ctx->location_out_buffers[i]);
-        }
-    }
-    
-    DEBUG_PRINT("========================\n");
-}
 
-// Print ExecutionContextMap with actual values
-void print_execution_context_map(const ExecutionContextMap* map)
-{
-    if (!map)
-    {
-        DEBUG_PRINT("ExecutionContextMap is NULL\n");
-        return;
-    }
-    
-    DEBUG_PRINT("=== ExecutionContextMap ===\n");
-    
-    DEBUG_PRINT("Binding Buffers (used):\n");
-    for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-    {
-        if (map->binding_buffers_map[i])
-        {
-            DEBUG_PRINT("  [%d] offset=0x%x size=%u lanes=%d values (lane 0 & 15): ", 
-                       i, map->binding_buffers_offset[i], map->binding_buffers_size[i],
-                       map->binding_buffers_size[i] / (4 * sizeof(uint32_t)));
-            uint32_t* data = (uint32_t*)&map->binding_buffers[i * MAX_UBO_SIZE];
-            int vals_per_lane = map->binding_buffers_size[i] / (SIMT_WIDTH * sizeof(uint32_t));
-            
-            // Show lane 0
-            for (int j = 0; j < vals_per_lane && j < 4; j++)
-            {
-                DEBUG_PRINT("0x%08x ", data[j]);
-            }
-            DEBUG_PRINT("| ");
-            // Show lane 15
-            for (int j = 0; j < vals_per_lane && j < 4; j++)
-            {
-                DEBUG_PRINT("0x%08x ", data[15 * vals_per_lane + j]);
-            }
-            DEBUG_PRINT("\n");
-        }
-    }
-    
-    DEBUG_PRINT("Input Location Buffers (used):\n");
-    for (uint32_t i = 0; i < MAX_ATTRIBUTES; i++)
-    {
-        if (map->location_in_buffers_map[i])
-        {
-            DEBUG_PRINT("  [%d] offset=0x%x size=%u values: ", i, map->location_in_buffers_offset[i], map->location_in_buffers_size[i]);
-            uint32_t* data = (uint32_t*)&map->location_in_buffers[i * MAX_ELEM_SIZE];
-            for (int j = 0; j < 4 && j < map->location_in_buffers_size[i] / sizeof(uint32_t); j++)
-            {
-                DEBUG_PRINT("0x%08x ", data[j]);
-            }
-            DEBUG_PRINT("\n");
-        }
-    }
-    
-    DEBUG_PRINT("Output Location Buffers (used):\n");
-    for (uint32_t i = 0; i < MAX_ATTRIBUTES; i++)
-    {
-        if (map->location_out_buffers_map[i])
-        {
-            DEBUG_PRINT("  [%d] offset=0x%x size=%u values: ", i, map->location_out_buffers_offset[i], map->location_out_buffers_size[i]);
-            uint32_t* data = (uint32_t*)&map->location_out_buffers[i * MAX_ELEM_SIZE];
-            for (int j = 0; j < 4 && j < map->location_out_buffers_size[i] / sizeof(uint32_t); j++)
-            {
-                DEBUG_PRINT("0x%08x ", data[j]);
-            }
-            DEBUG_PRINT("\n");
-        }
-    }
-    
-    DEBUG_PRINT("============================\n");
-}
-
-// Save ExecutionContextMap to binary file
-int save_context_map_to_file(const ExecutionContextMap* map, const char* filename)
-{
-    if (!map || !filename)
-    {
-        DEBUG_PRINT("Error: Invalid parameters for save\n");
-        return -1;
-    }
-    
-    FILE* file = fopen(filename, "wb");
-    if (!file)
-    {
-        DEBUG_PRINT("Error: Failed to open file %s for writing\n", filename);
-        return -1;
-    }
-    
-    // Write metadata (maps and offsets/sizes)
-    if (fwrite(map->binding_buffers_map, sizeof(uint32_t), MAX_BINDINGS, file) != MAX_BINDINGS)
-    {
-        DEBUG_PRINT("Error: Failed to write binding_buffers_map\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->location_in_buffers_map, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to write location_in_buffers_map\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->location_out_buffers_map, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to write location_out_buffers_map\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->binding_buffers_offset, sizeof(uint32_t), MAX_BINDINGS, file) != MAX_BINDINGS)
-    {
-        DEBUG_PRINT("Error: Failed to write binding_buffers_offset\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->location_in_buffers_offset, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to write location_in_buffers_offset\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->location_out_buffers_offset, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to write location_out_buffers_offset\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->binding_buffers_size, sizeof(uint32_t), MAX_BINDINGS, file) != MAX_BINDINGS)
-    {
-        DEBUG_PRINT("Error: Failed to write binding_buffers_size\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->location_in_buffers_size, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to write location_in_buffers_size\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->location_out_buffers_size, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to write location_out_buffers_size\n");
-        fclose(file);
-        return -1;
-    }
-    
-    // Write buffer data
-    if (fwrite(map->binding_buffers, sizeof(uint32_t), MAX_BINDINGS * MAX_UBO_SIZE, file) != MAX_BINDINGS * MAX_UBO_SIZE)
-    {
-        DEBUG_PRINT("Error: Failed to write binding_buffers\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->location_in_buffers, sizeof(uint32_t), MAX_ATTRIBUTES * MAX_ELEM_SIZE, file) != MAX_ATTRIBUTES * MAX_ELEM_SIZE)
-    {
-        DEBUG_PRINT("Error: Failed to write location_in_buffers\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fwrite(map->location_out_buffers, sizeof(uint32_t), MAX_ATTRIBUTES * MAX_ELEM_SIZE, file) != MAX_ATTRIBUTES * MAX_ELEM_SIZE)
-    {
-        DEBUG_PRINT("Error: Failed to write location_out_buffers\n");
-        fclose(file);
-        return -1;
-    }
-    
-    fclose(file);
-    DEBUG_PRINT("Successfully saved context map to %s\n", filename);
-    return 0;
-}
-
-// Load ExecutionContextMap from binary file
-int load_context_map_from_file(ExecutionContextMap* map, const char* filename)
-{
-    if (!map || !filename)
-    {
-        DEBUG_PRINT("Error: Invalid parameters for load\n");
-        return -1;
-    }
-    
-    FILE* file = fopen(filename, "rb");
-    if (!file)
-    {
-        DEBUG_PRINT("Error: Failed to open file %s for reading\n", filename);
-        return -1;
-    }
-    
-    // Read metadata (maps and offsets/sizes)
-    if (fread(map->binding_buffers_map, sizeof(uint32_t), MAX_BINDINGS, file) != MAX_BINDINGS)
-    {
-        DEBUG_PRINT("Error: Failed to read binding_buffers_map\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->location_in_buffers_map, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to read location_in_buffers_map\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->location_out_buffers_map, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to read location_out_buffers_map\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->binding_buffers_offset, sizeof(uint32_t), MAX_BINDINGS, file) != MAX_BINDINGS)
-    {
-        DEBUG_PRINT("Error: Failed to read binding_buffers_offset\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->location_in_buffers_offset, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to read location_in_buffers_offset\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->location_out_buffers_offset, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to read location_out_buffers_offset\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->binding_buffers_size, sizeof(uint32_t), MAX_BINDINGS, file) != MAX_BINDINGS)
-    {
-        DEBUG_PRINT("Error: Failed to read binding_buffers_size\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->location_in_buffers_size, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to read location_in_buffers_size\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->location_out_buffers_size, sizeof(uint32_t), MAX_ATTRIBUTES, file) != MAX_ATTRIBUTES)
-    {
-        DEBUG_PRINT("Error: Failed to read location_out_buffers_size\n");
-        fclose(file);
-        return -1;
-    }
-    
-    // Read buffer data
-    if (fread(map->binding_buffers, sizeof(uint32_t), MAX_BINDINGS * MAX_UBO_SIZE, file) != MAX_BINDINGS * MAX_UBO_SIZE)
-    {
-        DEBUG_PRINT("Error: Failed to read binding_buffers\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->location_in_buffers, sizeof(uint32_t), MAX_ATTRIBUTES * MAX_ELEM_SIZE, file) != MAX_ATTRIBUTES * MAX_ELEM_SIZE)
-    {
-        DEBUG_PRINT("Error: Failed to read location_in_buffers\n");
-        fclose(file);
-        return -1;
-    }
-    
-    if (fread(map->location_out_buffers, sizeof(uint32_t), MAX_ATTRIBUTES * MAX_ELEM_SIZE, file) != MAX_ATTRIBUTES * MAX_ELEM_SIZE)
-    {
-        DEBUG_PRINT("Error: Failed to read location_out_buffers\n");
-        fclose(file);
-        return -1;
-    }
-    
-    fclose(file);
-    DEBUG_PRINT("Successfully loaded context map from %s\n", filename);
-    return 0;
-}
-
-// Test example with splatting
-void test_context_parsing()
-{
-    DEBUG_PRINT("Starting context parsing test...\n");
-    
-    ExecutionContextMap map = {0};
-    
-    // Save to file
-    const char* test_file = "./spirv/spirv.bin";
-     ExecutionContextMap loaded_map = {0};
-        if (load_context_map_from_file(&loaded_map, test_file) == 0)
-        {
-            DEBUG_PRINT("\n=== LOADED MAP ===\n");
-            print_execution_context_map(&loaded_map);
-            
-            // Parse loaded map to context
-            ExecutionContext* ctx = parse_context_map_to_context(&loaded_map);
-
-            if (ctx)
-            {
-                DEBUG_PRINT("\n=== PARSED CONTEXT ===\n");
-                //print_execution_context(ctx);
-
-                for(uint32_t i = 0; i < 16; i++)
-                {
-                    struct u {
-                        float x;
-                        float y;
-                    };
-                    struct u l = ((struct u*)ctx->binding_buffers[0])[i];
-                    printf("ubo lane: %d x = %f y = %f\n", i, l.x, l.y);
-                }
-                for(uint32_t i = 0; i < 16; i++)
-                {
-
-                    float o = ((float*)ctx->location_out_buffers[0])[i];
-                    printf("out lane: %d %f\n", i, o);
-                }
-                free(ctx);
-                DEBUG_PRINT("Test completed successfully!\n");
-            }
-        }
-}

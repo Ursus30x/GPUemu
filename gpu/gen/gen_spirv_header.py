@@ -31,11 +31,15 @@ def generate_header(json_path, output_path):
                     value = enum["value"]
                     f.write(f"    {prefix}{name} = {value},\n")
                 f.write(f"    {prefix}Max = 0x7FFFFFFF\n")
-                f.write(f"}} {prefix[:-1] if prefix.endswith('_') else prefix};\n\n")
+                
+                # Cleanup: if prefix is "SpvBuiltIn", typedef should be "SpvBuiltIn"
+                # If prefix is "SpvDecoration", typedef should be "SpvDecoration"
+                f.write(f"}} {prefix};\n\n")
 
-        # Generate Decoration and StorageClass Enums
+        # Generate Enums from SPIR-V Grammar
         write_enum_from_kind("Decoration", "SpvDecoration")
         write_enum_from_kind("StorageClass", "SpvStorageClass")
+        write_enum_from_kind("BuiltIn", "SpvBuiltIn") 
 
         # ================================
         # SpvOpMeta struct
@@ -57,11 +61,9 @@ def generate_header(json_path, output_path):
                 inst = op_map[i]
                 ops = inst.get('operands', [])
                 
-                # Check for Result Type and ID
                 has_type = any(o['kind'] == 'IdResultType' for o in ops)
                 has_id = any(o['kind'] == 'IdResult' for o in ops)
                 
-                # Count operands that aren't the result ID/Type
                 fixed_count = len([
                     o for o in ops
                     if o['kind'] not in ('IdResultType', 'IdResult')
@@ -80,6 +82,5 @@ def generate_header(json_path, output_path):
         f.write("#endif\n")
 
 if __name__ == "__main__":
-    # Ensure you have the spirv.core.grammar.json in the same directory
     generate_header('spirv.core.grammar.json', 'spirv_jit_meta.h')
-    print("Generated spirv_jit_meta.h with SpvOp, SpvDecoration, and SpvStorageClass.")
+    print("Generated spirv_jit_meta.h with Op, Decoration, StorageClass, and BuiltIn.")

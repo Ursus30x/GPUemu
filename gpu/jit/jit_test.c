@@ -1,103 +1,156 @@
 #include "test.h"
-#include "jit.h"
-#include <stdio.h> 
-#include <stdlib.h>
-#include <math.h>
+#include <sys/wait.h>
+#include <time.h>
 
-const float epsilon = 1e-6f;
+// TEST(simple_vs, "out/simple_vs.spv", {
+//     CREATE_SIMT_VEC3(aPos, SPLAT(1.0), SPLAT(2.0), SPLAT(3.0));
+//     PRINT_VEC3("aPos:\n", aPos);
+//     BIND_IN_LOCATION(0, aPos);
+//     RUN_JIT();
+//     GET_GL_POS();
+//     PRINT_VEC4("gl_Position:\n", glPos);
+//     CREATE_SIMT_VEC4(expected, SPLAT(1.0), SPLAT(2.0), SPLAT(3.0), SPLAT(1.0));
+//     ASSERT_EQ_VEC4(glPos, expected);
+// })
 
+// TEST(vec_math, "out/vec_math.spv", {
+//     struct ubo_t {
+//         SimtFloat x;
+//         SimtFloat y;
+//     };
+//     struct ubo_t ubo;
+//     ubo.x = SPLAT(2.0);
+//     ubo.y = SPLAT(10.0);
 
-int main(int argc, char *argv[]) 
+//     CREATE_BINDING(0, ubo);
+//     RUN_JIT();
+//     GET_GL_POS();
+//     PRINT_VEC4("gl_Position:\n", glPos);
+    
+// })
+
+SimtVec4 simt_mat4_mul_vec4(SimtMat4 m, SimtVec4 v)
 {
-    if(argc != 3) 
-    {
-        fprintf(stderr, "Usage: %s <spirv_binary> <memory.bin>\n", argv[0]);
-        return 1;
-    }
-    
-    const char* spirv_path = argv[1];
-    const char* memory_path = argv[2];
+    SimtVec4 result;
+
+    SimtFloat r = m.cols[0][0] * v.elem[0];
+
+    r += m.cols[1][0] * v.elem[1];
+
+    r += m.cols[2][0] * v.elem[2];
+
+    r += m.cols[3][0] * v.elem[3];
+
+    result.elem[0] = r;
+
+    r  = m.cols[0][1] * v.elem[0];
+    r += m.cols[1][1] * v.elem[1];
+    r += m.cols[2][1] * v.elem[2];
+    r += m.cols[3][1] * v.elem[3];
+    result.elem[1] = r;
+
+    r  = m.cols[0][2] * v.elem[0];
+    r += m.cols[1][2] * v.elem[1];
+    r += m.cols[2][2] * v.elem[2];
+    r += m.cols[3][2] * v.elem[3];
+    result.elem[2] = r;
+
+    r  = m.cols[0][3] * v.elem[0];
+    r += m.cols[1][3] * v.elem[1];
+    r += m.cols[2][3] * v.elem[2];
+    r += m.cols[3][3] * v.elem[3];
+    result.elem[3] = r;
+
+    return result;
+}
+
+TEST(vec_mvp, "out/mvp.spv", ({
+    struct ubo_t {
+        SimtMat4 mvp;
+    };
+    struct ubo_t ubo;
+
+    ubo.mvp = (SimtMat4){
+        RAND_SIMT(), RAND_SIMT(), RAND_SIMT(), RAND_SIMT(),
+        RAND_SIMT(), RAND_SIMT(), RAND_SIMT(), RAND_SIMT(),
+        RAND_SIMT(), RAND_SIMT(), RAND_SIMT(), RAND_SIMT(),
+        RAND_SIMT(), RAND_SIMT(), RAND_SIMT(), RAND_SIMT()
+    };
+    RAND_FLOAT(x)
+    RAND_FLOAT(y)
+    RAND_FLOAT(z)
+    CREATE_SIMT_VEC3(aPos, x,y,z);
+    PRINT_VEC3("aPos:\n", aPos);
+    BIND_IN_LOCATION(0, aPos);
+    CREATE_BINDING(0, ubo);
 
     
-
-    FILE* f = fopen(spirv_path, "rb");
-    if (!f)
-    {
-        fprintf(stderr, "Failed to open SPIR-V file: %s\n", spirv_path);
-        return 1;
-    }
-    fseek(f, 0, SEEK_END);
-    size_t file_size = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    RUN_JIT();
+    GET_GL_POS();
+    PRINT_VEC4("gl_Position:\n", glPos);
+    CREATE_SIMT_VEC4(v, x, y, z, SPLAT(1.0));
+    SimtVec4 out = simt_mat4_mul_vec4(ubo.mvp, v);
+    PRINT_VEC4("gold: \n", out);
+    ASSERT_EQ_VEC4(glPos, out)
     
-    uint32_t* spirv_code = malloc(file_size);
-    if (fread(spirv_code, 1, file_size, f) != (size_t)file_size)
-    {
-        fprintf(stderr, "Failed to read SPIR-V file: %s\n", spirv_path);
-        free(spirv_code);
-        fclose(f);
-        return 1;
-    }
-    fclose(f);
+}))
 
-    printf("SPIR-V file '%s' loaded successfully (%zu bytes)\n", spirv_path, file_size);
-    printf("Compiling SPIR-V to native code...\n");
+int run_compilation_script(void) 
+{
+    printf("--- Running compilation script ---\n");
     
-    JitContext ctx = {0};
-    init_jit(&ctx);
-    jitted_func_t my_func = jit_compile_spirv(&ctx, spirv_code, file_size / 4);
+    int raw_status = system("python3 test.py");
     
-
-    ExecutionContextMap loaded_map = {0};
-    if (load_context_map_from_file(&loaded_map, memory_path) != 0)
+    if (WIFEXITED(raw_status)) 
     {
-        printf("can not load test memory: %s",memory_path);
-        exit(1);
-    }
-
-    ExecutionContext* ectx = parse_context_map_to_context(&loaded_map);
-
-    ExecutionContext *jit_ctx = get_ectx_from_mcjit(&ctx);
-    memcpy(jit_ctx, ectx, sizeof(ExecutionContext));
-
-    float expected_output[SIMT_WIDTH];
-    float *out_0 = jit_ctx->location_out_buffers[0];
-    for(uint32_t i = 0; i < 16; i++)
-    {
-        expected_output[i] = out_0[i];
-        out_0[i] = 0.0f;
-    }
-    my_func();
-
-    float* output = jit_ctx->location_out_buffers[0];
-
-    printf("Execution Results:\n");
-    for(int i = 0; i < SIMT_WIDTH; i++) 
-    {
-        printf(" Lane %d: %f\n", i, (output)[i]);
-    }
-    
-    free_jit(&ctx);
-    printf("Compilation finished\n");
-    
- 
-
-   
-    free(spirv_code);
-
-    for(uint32_t i = 0; i < SIMT_WIDTH; i++)
-    {
-        if(fabs(output[i] - expected_output[i]) > epsilon) 
+        int exit_code = WEXITSTATUS(raw_status);
+        if (exit_code != 0) 
         {
-            printf("Test failed at lane %d: Expected %f, Got %f\n", i, expected_output[i], output[i]);
-            for(uint32_t j = 0; j < SIMT_WIDTH; j++)
-            {
-                printf(" Lane %d: Expected %f, Got %f\n", j, expected_output[j], output[j]);
-            }
+            printf("Error: test.py failed with exit code %d. Aborting tests.\n", exit_code);
             return 1;
         }
+        return 0;
+    } 
+    
+    printf("Error: Python script was interrupted or failed to run entirely.\n");
+    return 1;
+}
+
+
+void run_test_suite(void) 
+{
+    printf("--- Starting Test Runner ---\n");
+    
+    TestNode* current = test_list_head;
+    int test_count = 0;
+    int passed = 0;
+    
+    while (current != NULL) 
+    {
+        passed += (current->func() == 0);
+        
+        TestNode* temp = current;
+        current = current->next;
+        free(temp);
+        
+        test_count++;
     }
     
-    printf("Test passed! Output matches expected results.\n");
+    printf("-----------------------------------\n");
+    printf("---- %d tests passed out of %d ----\n", passed, test_count);
+    printf("-----------------------------------\n");
+
+    
+}
+
+int main(void)
+{
+    if (run_compilation_script() == 1) 
+    {
+        return 1; 
+    }
+    srand((unsigned int)time(NULL));
+
+    run_test_suite();
     return 0;
 }

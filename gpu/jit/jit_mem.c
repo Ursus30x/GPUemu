@@ -183,31 +183,28 @@ void handle_op_store(JitContext* ctx, uint32_t* operands) {
 /**
  * handle_op_access_chain: Calculates pointer offsets using raw integer arithmetic.
  */
-void handle_op_access_chain(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count) 
+void handle_op_access_chain(JitContext *ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count) 
 {
     uint32_t base_id = operands[0];
     LLVMValueRef base_ptr = get_val(ctx, base_id);
-    DEBUG_PRINT("\n=== AccessChain Start ===\n");
-    DEBUG_PRINT("Result ID: %u, Base ID: %u, Type ID: %u, Operand Count: %d\n", 
-                res_id, base_id, type_id, operand_count);
     
-    if (!base_ptr) 
-    {
+    DEBUG_PRINT("\n=== AccessChain Start ===\n");
+    DEBUG_PRINT("Result ID: %u, Base ID: %u, Type ID: %u, Operand Count: %d\n",
+                res_id, base_id, type_id, operand_count);
+
+    if (!base_ptr) {
         base_ptr = LLVMConstNull(ctx->ptr_type);
         DEBUG_PRINT("Base pointer is NULL, using null constant\n");
     }
-    
-    LLVMTypeRef i64_type = LLVMInt64TypeInContext(ctx->context);
-    LLVMValueRef ptr_as_int = LLVMBuildPtrToInt(ctx->builder, base_ptr, i64_type, "ptr_base_addr");
-    LLVMValueRef total_offset = LLVMConstInt(i64_type, 0, 0);
 
+    LLVMTypeRef i64_type = LLVMInt64TypeInContext(ctx->context);
+    LLVMValueRef total_offset = LLVMConstInt(i64_type, 0, 0);
     uint32_t current_type_id = ctx->type_info[type_id].base_type_id;
-    
-    
+
     DEBUG_PRINT("Dereferenced pointer: current_type_id=%u\n", current_type_id);
 
-    for (int i = 1; i < operand_count; i++) 
-    {
+    // Process each index operand to accumulate the total byte offset
+    for (int i = 1; i < operand_count; i++) {
         uint32_t index_id = operands[i];
         LLVMValueRef idx_val = get_val(ctx, index_id);
 
@@ -218,43 +215,39 @@ void handle_op_access_chain(JitContext* ctx, uint32_t res_id, uint32_t type_id, 
             idx_val = LLVMConstInt(ctx->int_type, 0, 0);
         }
 
-        if (LLVMGetTypeKind(LLVMTypeOf(idx_val)) == LLVMVectorTypeKind) 
-        {
+        // Extract first element if the index is a vector
+        if (LLVMGetTypeKind(LLVMTypeOf(idx_val)) == LLVMVectorTypeKind) {
             idx_val = LLVMBuildExtractElement(ctx->builder, idx_val, LLVMConstInt(ctx->int_type, 0, 0), "idx_s");
         }
-        
+
         SpvTypeInfo* info = &ctx->type_info[current_type_id];
         DEBUG_PRINT("  Current type ID: %u, opcode=%d (Struct=%d, Array=%d)\n", 
                     current_type_id, info->opcode, SpvOpTypeStruct, SpvOpTypeArray);
 
         if (info->opcode == SpvOpTypeStruct) 
         {
+            // ==========================================
+            // Struct Handling
+            // ==========================================
             uint64_t member_idx = 0;
-            if (LLVMIsConstant(idx_val)) 
-            {
+            if (LLVMIsConstant(idx_val)) {
                 member_idx = LLVMConstIntGetZExtValue(idx_val);
                 DEBUG_PRINT("  Struct member index: %lu\n", member_idx);
-            }
-            else
-            {
+            } else {
                 DEBUG_PRINT("  WARNING: Index is not a constant, using 0\n");
-                member_idx = 0;
             }
-            
+
             int32_t offset_bytes = 0;
-            MemberDecoNode* m = ctx->member_decorations[current_type_id];
-            while (m) 
-            {
-                if (m->member_index == (uint32_t)member_idx)
-                {
+            for (MemberDecoNode* m = ctx->member_decorations[current_type_id]; m != NULL; m = m->next) {
+                if (m->member_index == (uint32_t)member_idx) {
                     offset_bytes = m->offset;
                     DEBUG_PRINT("  Found member %lu decoration: offset=%d bytes\n", member_idx, offset_bytes);
                     break;
                 }
-                m = m->next;
             }
-            
+
             total_offset = LLVMBuildAdd(ctx->builder, total_offset, LLVMConstInt(i64_type, offset_bytes, 0), "struct_off");
+            
             if (info->member_types && member_idx < info->member_count) {
                 current_type_id = info->member_types[member_idx];
                 DEBUG_PRINT("  Next type ID: %u\n", current_type_id);
@@ -262,55 +255,82 @@ void handle_op_access_chain(JitContext* ctx, uint32_t res_id, uint32_t type_id, 
         } 
         else if (info->opcode == SpvOpTypeArray) 
         {
+            // ==========================================
+            // Array Handling
+            // ==========================================
             idx_val = LLVMBuildZExt(ctx->builder, idx_val, i64_type, "idx64");
+            
             int32_t stride = ctx->decorations[current_type_id].array_stride;
-            if (stride <= 0) stride = 4;
+            stride = (stride <= 0) ? 4 : stride;
             DEBUG_PRINT("  Array stride: %d\n", stride);
+            
             LLVMValueRef array_off = LLVMBuildMul(ctx->builder, idx_val, LLVMConstInt(i64_type, stride, 0), "arr_step");
             total_offset = LLVMBuildAdd(ctx->builder, total_offset, array_off, "arr_off");
             current_type_id = info->base_type_id;
         }
         else
         {
+            // ==========================================
+            // SIMT / Built-in / Fallback Handling
+            // ==========================================
             uint32_t type_info_idx = ctx->type_kind_map[base_id];
             SpvTypeInfo *ptr_type_info = &ctx->type_info[type_info_idx];
             uint32_t struct_type_info = ptr_type_info->base_type_id;
-            LLVMValueRef offset_vec_vals[16]; // max struct members 
-          
+            
             MemberDecoNode* m = ctx->member_decorations[struct_type_info];
             LLVMValueRef offset;
-            if (m == NULL)
-            {
-                idx_val = LLVMBuildZExt(ctx->builder, idx_val, i64_type, "idx64");
+            
+            idx_val = LLVMBuildZExt(ctx->builder, idx_val, i64_type, "idx64");
 
+            if (m == NULL) {
                 uint32_t size = get_spv_type_size(info->opcode);
-                LLVMValueRef simt_size = LLVMConstInt(i64_type, SIMT_WIDTH*size, 0);
+                LLVMValueRef simt_size = LLVMConstInt(i64_type, SIMT_WIDTH * size, 0);
                 offset = LLVMBuildMul(ctx->builder, simt_size, idx_val, "index");
             } 
-            else 
-            {
+            else {
+                LLVMValueRef offset_vec_vals[16]; // Max struct members
                 uint32_t j = 0;
-                while (m)
-                {
-                    offset_vec_vals[j] = LLVMConstInt(i64_type, m->offset * SIMT_WIDTH, 0);
+                
+                while (m && j < 16) {
+                    if (m->buildin == SpvBuiltInPosition) {
+                        uint32_t final_offset = 0; // Base offset to reach 'vertexOut'
+                        offset_vec_vals[j] = LLVMConstInt(i64_type, final_offset, 0);
+                        
+                        LLVMValueRef args[] = { offset_vec_vals[j] };
+                        jit_call_printf(ctx, "build in offset: %d\n", args, 1);
+                        DEBUG_PRINT("  BuiltIn Position mapped to offset: %u bytes\n", final_offset);
+                    } else {
+                        offset_vec_vals[j] = LLVMConstInt(i64_type, m->offset * SIMT_WIDTH, 0);
+                    }
                     j++;
                     m = m->next;
                 }
+                
                 LLVMValueRef offset_vec = LLVMConstVector(offset_vec_vals, j);
+                
+                LLVMValueRef args[] = { idx_val };
+                jit_call_printf(ctx, "accidx: %d\n", args, 1);
+                
                 offset = LLVMBuildExtractElement(ctx->builder, offset_vec, idx_val, "struct_off");
             }
-           
 
-            idx_val = LLVMBuildZExt(ctx->builder, idx_val, i64_type, "idx64");
+            LLVMValueRef args[] = { offset };
+            jit_call_printf(ctx, "build in offset: %d\n", args, 1);
             
             total_offset = LLVMBuildAdd(ctx->builder, total_offset, offset, "final_elem_off");
         }
     }
 
-    LLVMValueRef final_addr = LLVMBuildAdd(ctx->builder, ptr_as_int, total_offset, "final_ptr_int");
-    LLVMValueRef final_ptr = LLVMBuildIntToPtr(ctx->builder, final_addr, ctx->ptr_type, "access_chain_ptr");
+    // ==========================================
+    // Final Offset Application
+    // ==========================================
+    // Step by exact bytes using an i8 pointee type GEP.
+    LLVMTypeRef i8_type = LLVMInt8TypeInContext(ctx->context);
+    LLVMValueRef gep_indices[] = { total_offset };
 
-    DEBUG_PRINT("Final AccessChain result: ID %u, total_offset added\n", res_id);
+    LLVMValueRef final_ptr = LLVMBuildGEP2(ctx->builder, i8_type, base_ptr, gep_indices, 1, "access_chain_ptr");
+
+    DEBUG_PRINT("Final AccessChain result: ID %u, total_offset added via i8 GEP\n", res_id);
     DEBUG_PRINT("=== AccessChain End ===\n\n");
 
     set_val(ctx, res_id, final_ptr);

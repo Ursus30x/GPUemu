@@ -24,18 +24,47 @@
 #define MAX_ATTRIBUTES 8
 #define MAX_GLOBALS 32
 
+#define VS_OUT_NAME "gl_PerVertex"
+
+typedef float SimtFloat __attribute__((vector_size(64)));
+
+typedef struct
+{
+    // [4 x <16 x float>]
+    SimtFloat elem[4];
+
+} SimtVec4;
+
+typedef struct
+{
+    // [3 x <16 x float>]
+    SimtFloat elem[3];
+
+} SimtVec3;
+
+typedef struct {
+    SimtFloat cols[4][4];
+} SimtMat4;
+
+typedef struct {
+    SimtVec3 col[3];  // 3 columns, each 192 bytes = 576 bytes total
+} SimtMat3;
+
+typedef struct
+{
+    SimtVec4 gl_Position;
+    SimtFloat gl_PointSize;
+    SimtFloat gl_ClipDistance;
+    SimtFloat gl_CullDistance;
+
+} BuiltinVertexOutput;
+
 typedef struct {
     void* binding_buffers[MAX_BINDINGS]; 
     void* location_in_buffers[MAX_ATTRIBUTES];
     void* location_out_buffers[MAX_ATTRIBUTES];
-
 } ExecutionContext;
 
-typedef struct {
-    uint32_t res_id;
-    uint32_t storage_class;
-    int32_t binding_or_loc;
-} GlobalResolution;
 
 typedef struct {
     int32_t descriptor_set;
@@ -49,9 +78,17 @@ typedef struct {
 typedef struct MemberDecoNode {
     uint32_t member_index;
     int32_t offset;       
+    int32_t buildin;
     int32_t matrix_stride;
     struct MemberDecoNode* next;
 } MemberDecoNode;
+
+typedef struct {
+    uint32_t res_id;
+    uint32_t storage_class;
+    int32_t binding_or_loc;
+    uint32_t base_type;
+} GlobalResolution;
 
 
 typedef struct {
@@ -93,9 +130,13 @@ struct JitContext{
     LLVMModuleRef module;
     LLVMBuilderRef builder;
     LLVMOrcLLJITRef jit;
+    
     LLVMValueRef func;
     LLVMValueRef out_ptr_arg;
-    LLVMValueRef env_arg;     
+    LLVMValueRef env_arg;   
+    LLVMValueRef vs_data;
+    LLVMTypeRef  vs_data_type;   
+    
     LLVMExecutionEngineRef engine;
     LLVMBasicBlockRef current_block;
     
@@ -116,6 +157,8 @@ struct JitContext{
     AluHandler glsl_handlers[82];
 
     ShaderInfo shader_info;
+
+    char **names;
     
 };
 typedef void* (*jitted_func_t)(void);
@@ -134,4 +177,5 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
 LLVMValueRef get_val(JitContext* ctx, uint32_t id);
 LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id);
 ExecutionContext* get_ectx_from_mcjit(JitContext *ctx);
+BuiltinVertexOutput* get_vs_data_from_mcjit(JitContext *ctx);
 #endif

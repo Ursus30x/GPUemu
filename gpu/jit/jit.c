@@ -161,7 +161,7 @@ static inline void handle_op_return_value(JitContext* ctx, uint32_t* operands)
     LLVMBuildRetVoid(ctx->builder);
 }
 /*
- Exaple usage:
+ Example usage:
     {
         LLVMValueRef float_val = LLVMConstReal(ctx->float_type, 42.0);
         LLVMValueRef args2[] = { float_val };
@@ -276,6 +276,9 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpMemberDecorate:
             handle_op_member_decorate(ctx, operands);
             break;
+        case SpvOpName:
+            handle_op_name(ctx, operands);
+            break;
         case SpvOpFAdd:
             handle_op_fadd(ctx, res_id, operands);
             break;
@@ -355,6 +358,7 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_ext_instr(ctx, res_id, operands);
             break;
         case SpvOpCompositeConstruct:
+        case SpvOpConstantComposite:
             handle_op_composite_construct(ctx, res_id, type_id, operands);
             break;
         case SpvOpCompositeExtract:
@@ -457,7 +461,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     ctx->decorations = calloc(ctx->bound, sizeof(SpvDecoInfo));
     ctx->member_decorations = calloc(ctx->bound, sizeof(MemberDecoNode*));
     ctx->type_info = calloc(ctx->bound, sizeof(SpvTypeInfo));
-
+    ctx->names = calloc(ctx->bound, sizeof(char*));
     for (uint32_t i = 0; i < ctx->bound; i++)
     {
         ctx->decorations[i].descriptor_set = -1;
@@ -496,7 +500,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
             ctx->type_kind_map[p[1]] = (uint8_t)opcode;
         }
 
-        if (opcode == SpvOpSource || opcode == SpvOpName || opcode == SpvOpMemberName || 
+        if (opcode == SpvOpSource || opcode == SpvOpMemberName || 
             opcode == SpvOpLine || opcode == SpvOpNoLine) 
         {
             p += inst_word_count;
@@ -523,11 +527,11 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     
 
     char *error = NULL;
-        LLVMDumpModule(ctx->module);
+    LLVMDumpModule(ctx->module);
 
     LLVMVerifyModule(ctx->module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
-    LLVMDumpModule(ctx->module);
+    //LLVMDumpModule(ctx->module);
 
 
     char* triple = LLVMGetDefaultTargetTriple(); 
@@ -593,23 +597,64 @@ void init_jit(JitContext* ctx)
     ctx->module = LLVMModuleCreateWithNameInContext("spirv_vector_module", ctx->context);
     ctx->builder = LLVMCreateBuilderInContext(ctx->context);
 
-    LLVMTypeRef ptr_i8 = LLVMPointerType(LLVMInt8TypeInContext(ctx->context), 0);
+    LLVMTypeRef float_type = LLVMFloatTypeInContext(ctx->context);
+    // <16 x float>
+    LLVMTypeRef simt_float =
+        LLVMVectorType(float_type, 16);
 
-    LLVMTypeRef field_types[] =
-    {
-        LLVMArrayType(ptr_i8, MAX_BINDINGS),
-        LLVMArrayType(ptr_i8, MAX_ATTRIBUTES),
-        LLVMArrayType(ptr_i8, MAX_ATTRIBUTES)
+    LLVMTypeRef ptr_type =
+        LLVMPointerType(
+            LLVMInt8TypeInContext(ctx->context),
+            0);
+
+    // SimtVec4 = [4 x <16 x float>]
+    LLVMTypeRef simt_vec4_type =
+        LLVMArrayType(simt_float, 4);
+
+    // BuiltinVertexOutput
+    LLVMTypeRef builtin_fields[] = {
+        simt_vec4_type,                 // gl_Position
+        simt_float,                     // gl_PointSize
+        LLVMArrayType(simt_float, 1),   // gl_ClipDistance[1]
+        LLVMArrayType(simt_float, 1)    // gl_CullDistance[1]
     };
 
-    ctx->exec_ctx_type =
-        LLVMStructTypeInContext(ctx->context, field_types, 3, 0);
+    LLVMTypeRef builtin_vertex_output_type =
+        LLVMStructTypeInContext(
+            ctx->context,
+            builtin_fields,
+            4,
+            0);
 
-    ctx->env_arg =
-        LLVMAddGlobal(ctx->module, ctx->exec_ctx_type, "ectx");
+    // ExecutionContext
+    LLVMTypeRef exec_ctx_fields[] = {
+        LLVMArrayType(ptr_type, MAX_BINDINGS),     // binding_buffers
+        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_in_buffers
+        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_out_buffers
+        builtin_vertex_output_type                 // vertexOut
+    };
 
+    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 4, 0);
+
+    ctx->env_arg = LLVMAddGlobal(ctx->module, ctx->exec_ctx_type, "ectx");
+    LLVMSetAlignment(ctx->env_arg, 64);
     LLVMSetInitializer(ctx->env_arg, LLVMConstNull(ctx->exec_ctx_type));
     LLVMSetLinkage(ctx->env_arg, LLVMExternalLinkage);
+
+
+
+    LLVMTypeRef vs_data_fields[] = {
+        simt_vec4_type,// gl_Position (Index 0)
+        simt_float,    // gl_PointSize (Index 1)
+        simt_float,    // gl_ClipDistance (Index 2)
+        simt_float     // gl_CullDistance (Index 3)
+    };
+    ctx->vs_data_type = LLVMStructTypeInContext(ctx->context, vs_data_fields, 4, 0);
+    ctx->vs_data  = LLVMAddGlobal(ctx->module, ctx->vs_data_type, "vs_data");
+    LLVMSetAlignment(ctx->vs_data, 64);
+    LLVMSetInitializer(ctx->vs_data, LLVMConstNull(ctx->vs_data_type));
+    LLVMSetLinkage(ctx->vs_data, LLVMExternalLinkage);
+
     if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 
     {
         DEBUG_PRINT("Failed to create execution engine: %s\n", error);
@@ -626,6 +671,15 @@ ExecutionContext* get_ectx_from_mcjit(JitContext *ctx)
     return (ExecutionContext*)(uintptr_t)addr;
 }
 
+BuiltinVertexOutput* get_vs_data_from_mcjit(JitContext *ctx)
+{
+   uint64_t addr = LLVMGetGlobalValueAddress(ctx->engine, "vs_data");
+
+    if (!addr)
+        return NULL;
+
+    return (BuiltinVertexOutput*)(uintptr_t)addr;
+}
 void free_jit(JitContext* ctx)
 {
     LLVMDisposeBuilder(ctx->builder);
