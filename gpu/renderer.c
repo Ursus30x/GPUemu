@@ -2,11 +2,33 @@
 #include "math3d.h"
 #include "math.h"
 #include "debug_gpu.h"
-#include "qemu/thread.h"
+#include <pthread.h> // Added for multithreading
 
 #define PRINT_V4(v) DEBUG_PRINT("[%f, %f, %f, %f]\n", v.x, v.y, v.z, v.w);
 
-static RendererThreads render;
+#ifndef NUM_RENDER_THREADS
+#define NUM_RENDER_THREADS 16
+#endif
+
+// Struct to hold pre-transformed vertex properties (Vertex Cache)
+typedef struct {
+    Vec4 pos;
+    uint32_t color;
+} TransformedVertex;
+
+// Struct to pass arguments to our render threads
+typedef struct {
+    GpuState *orig_gpu;
+    uint32_t start_idx;
+    uint32_t end_idx;
+    uint32_t *px;
+    uint32_t *py;
+    TransformedVertex *transformed_vertices;
+    uint32_t triangle_size;
+    uint32_t start_y;
+    uint32_t end_y;
+} RenderThreadArgs;
+
 
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
@@ -777,6 +799,7 @@ float edge_func(Vec3 a, Vec3 b, Vec3 c)
     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
 }
 
+// Draw triangle clipped to thread-safe Y-bands
 static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu, int band_min_y, int band_max_y)
 {
     uint32_t width = gpu->width;
@@ -821,8 +844,8 @@ static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *
                 float z = w0 * (1.0f/s[0].z) + w1 * (1.0f/s[1].z) + w2 * (1.0f/s[2].z);
                 int idx = y * width + x;
 
-                if (z < Z_BUFFER(gpu)[idx]) 
-                {
+                // THREAD SAFE: This thread uniquely owns this scanline, no atomics/spinlocks needed!
+                if (z < Z_BUFFER(gpu)[idx]) {
                     Z_BUFFER(gpu)[idx] = z;
                     uint8_t r = (uint8_t)(w0 * GET_R(color.a_col) + w1 * GET_R(color.b_col) + w2 * GET_R(color.c_col));
                     uint8_t g = (uint8_t)(w0 * GET_G(color.a_col) + w1 * GET_G(color.b_col) + w2 * GET_G(color.c_col));
@@ -834,21 +857,26 @@ static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *
     }
 }
 
+// Public API wrapper maintaining backwards-compatible header interface
 void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
 {
     draw_triangle_band(v0, v1, v2, color, gpu, 0, gpu->height - 1);
 }
 
-// pass 1: Parallel Vertex Shader execution across all VBO elements
-static void worker_transform_vertices_impl(RenderThreadArgs *args) {
+// ------------------------------------------------------------------------- //
+// Thread Workers
+// ------------------------------------------------------------------------- //
+
+// PASS 1: Parallel Vertex Shader execution across all VBO elements
+static void* worker_transform_vertices(void* opaque) {
+    RenderThreadArgs *args = (RenderThreadArgs*)opaque;
     GpuState local_gpu = *(args->orig_gpu); 
     GpuState *gpu = &local_gpu;
 
     Vec3 *vertices = VERTEX_TABLE(gpu);
     TransformedVertex *out_vertices = args->transformed_vertices;
 
-    for (uint32_t i = args->start_idx; i < args->end_idx; i++)
-    {
+    for (uint32_t i = args->start_idx; i < args->end_idx; i++) {
         Vec4 v = {vertices[i].x, vertices[i].y, vertices[i].z, 1.0f};
         gpu->v_pos.right = v;
 
@@ -865,11 +893,12 @@ static void worker_transform_vertices_impl(RenderThreadArgs *args) {
             (uint8_t)gpu->pRegs[REG_PG].u32,
             (uint8_t)gpu->pRegs[REG_PB].u32);
     }
+    return NULL;
 }
 
-// pass 2: Parallel scanline-band rasterization using the cached pre-transformed geometry
-static void worker_rasterize_bands_impl(RenderThreadArgs *args) 
-{
+// PASS 2: Parallel scanline-band rasterization using the cached pre-transformed geometry
+static void* worker_rasterize_bands(void* opaque) {
+    RenderThreadArgs *args = (RenderThreadArgs*)opaque;
     GpuState local_gpu = *(args->orig_gpu);
     GpuState *gpu = &local_gpu;
 
@@ -880,8 +909,7 @@ static void worker_rasterize_bands_impl(RenderThreadArgs *args)
     int band_min_y = args->start_y;
     int band_max_y = args->end_y - 1;
 
-    for (uint32_t i = 0; i < triangle_size; i++) 
-    {
+    for (uint32_t i = 0; i < triangle_size; i++) {
         Vec4 v0 = vertices[indices[i].a].pos;
         Vec4 v1 = vertices[indices[i].b].pos;
         Vec4 v2 = vertices[indices[i].c].pos;
@@ -894,10 +922,11 @@ static void worker_rasterize_bands_impl(RenderThreadArgs *args)
 
         draw_triangle_band(v0, v1, v2, color, gpu, band_min_y, band_max_y);
     }
+    return NULL;
 }
 
-static void worker_wireframe_vertices_impl(RenderThreadArgs *args) 
-{
+static void* worker_wireframe_vertices(void* opaque) {
+    RenderThreadArgs *args = (RenderThreadArgs*)opaque;
     GpuState local_gpu = *(args->orig_gpu);
     GpuState *gpu = &local_gpu;
     
@@ -931,10 +960,11 @@ static void worker_wireframe_vertices_impl(RenderThreadArgs *args)
         args->px[i] = (int)((ndc_x*0.5f + 0.5f) * width);
         args->py[i] = (int)((-ndc_y*0.5f + 0.5f) * height);
     }
+    return NULL;
 }
 
-static void worker_wireframe_edges_impl(RenderThreadArgs *args) 
-{
+static void* worker_wireframe_edges(void* opaque) {
+    RenderThreadArgs *args = (RenderThreadArgs*)opaque;
     GpuState local_gpu = *(args->orig_gpu);
     GpuState *gpu = &local_gpu;
     
@@ -947,6 +977,124 @@ static void worker_wireframe_edges_impl(RenderThreadArgs *args)
         DEBUG_PRINT("[GPU State] px[e.a]: %u, py[e.a]: %u, px[e.b]: %u, py[e.b]: %u, e.a: %u, e.b %u\n",
             args->px[e.a], args->py[e.a], args->px[e.b], args->py[e.b], e.a, e.b);
         draw_line(gpu, args->px[e.a], args->py[e.a], args->px[e.b], args->py[e.b], vertices[e.a].rgba, vertices[e.b].rgba);
+    }
+    return NULL;
+}
+
+
+// ------------------------------------------------------------------------- //
+// Main Distributing Functions
+// ------------------------------------------------------------------------- //
+
+void gpu_render_triangles(void *opaque)
+{
+    GpuState *gpu = opaque;
+    if(gpu->gpu_mode == GPU_MODE_IDLE)
+    {
+        return;
+    }
+    gpu->gpu_mode = GPU_MODE_IDLE;
+    
+    uint32_t vertex_size = gpu->vbo_config.size;
+    uint32_t triangle_size = gpu->edge_config.size; // Original macro configuration structure for QEMU triangles table
+
+    // Allocate geometry cache for vertex pre-shading pass
+    TransformedVertex *transformed_vertices = malloc(sizeof(TransformedVertex) * vertex_size);
+    if (!transformed_vertices) {
+        gpu->gpu_mode = GPU_MODE_3D;
+        return;
+    }
+
+    pthread_t threads[NUM_RENDER_THREADS];
+    RenderThreadArgs args[NUM_RENDER_THREADS];
+
+    // PASS 1: Run vertex transformations in parallel
+    uint32_t chunk_v = vertex_size / NUM_RENDER_THREADS;
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        args[i].orig_gpu = gpu;
+        args[i].transformed_vertices = transformed_vertices;
+        args[i].start_idx = i * chunk_v;
+        args[i].end_idx = (i == NUM_RENDER_THREADS - 1) ? vertex_size : (i + 1) * chunk_v;
+        
+        pthread_create(&threads[i], NULL, worker_transform_vertices, &args[i]);
+    }
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    // PASS 2: Rasterize horizontal screen scanline bands in parallel (Lock-free)
+    uint32_t height = gpu->height;
+    uint32_t chunk_y = height / NUM_RENDER_THREADS;
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        args[i].orig_gpu = gpu;
+        args[i].transformed_vertices = transformed_vertices;
+        args[i].triangle_size = triangle_size;
+        args[i].start_y = i * chunk_y;
+        args[i].end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
+        
+        pthread_create(&threads[i], NULL, worker_rasterize_bands, &args[i]);
+    }
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    free(transformed_vertices);
+    gpu->gpu_mode = GPU_MODE_3D;
+}
+
+void gpu_render_wireframe(void *opaque)
+{
+    GpuState *gpu = opaque;
+    if(gpu->gpu_mode == GPU_MODE_IDLE)
+    {
+        DEBUG_PRINT("[Render Frame] GPU IS IDLE\n");
+        return;
+    }
+    gpu->gpu_mode = GPU_MODE_IDLE;
+
+    debug_dump_edges(opaque);
+    debug_dump_vertices(opaque);
+    debug_dump_ubo(opaque);
+
+    uint32_t vertex_size = gpu->vbo_config.size;
+    uint32_t edges_size =  gpu->edge_config.size;
+    
+    DEBUG_PRINT("[GPU State] Width: %u, Height: %u, Vertex Size: %u, Edge Size: %u\n",
+       gpu->width, gpu->height, gpu->vbo_config.size, gpu->edge_config.size);
+
+    uint32_t *px = malloc(sizeof(uint32_t) * vertex_size);
+    uint32_t *py = malloc(sizeof(uint32_t) * vertex_size);
+
+    pthread_t threads[NUM_RENDER_THREADS];
+    RenderThreadArgs args[NUM_RENDER_THREADS];
+
+    // 1. Process vertices in parallel
+    uint32_t chunk_v = vertex_size / NUM_RENDER_THREADS;
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        args[i].orig_gpu = gpu;
+        args[i].px = px;
+        args[i].py = py;
+        args[i].start_idx = i * chunk_v;
+        args[i].end_idx = (i == NUM_RENDER_THREADS - 1) ? vertex_size : (i + 1) * chunk_v;
+        
+        pthread_create(&threads[i], NULL, worker_wireframe_vertices, &args[i]);
+    }
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    DEBUG_PRINT("[Render Frame] Drawing lines\n");
+
+    // 2. Process edges in parallel
+    uint32_t chunk_e = edges_size / NUM_RENDER_THREADS;
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        args[i].start_idx = i * chunk_e;
+        args[i].end_idx = (i == NUM_RENDER_THREADS - 1) ? edges_size : (i + 1) * chunk_e;
+        
+        pthread_create(&threads[i], NULL, worker_wireframe_edges, &args[i]);
+    }
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        pthread_join(threads[i], NULL);
     }
 }
 

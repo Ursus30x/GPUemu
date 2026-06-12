@@ -68,8 +68,9 @@ LLVMValueRef mat_operation_helper(JitContext* ctx, LLVMValueRef a, LLVMValueRef 
     }
     else
     {
-       res = func(ctx->builder, a, b, name);
+       res = func(ctx->builder, b, a, name);
     }
+    return res;
 }
 void handle_op_fadd(JitContext* ctx, uint32_t res_id, uint32_t* operands) 
 {
