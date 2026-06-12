@@ -13,6 +13,79 @@ static void gpu_class_init(ObjectClass *class, const void *data);
 static void pci_gpu_realize(PCIDevice *pdev, Error **errp);
 static void pci_gpu_uninit(PCIDevice *pdev);
 static void vga_update_display(void *opaque);
+static void handle_dma(GpuState *s);
+static void process_ring_buffer(GpuState *s);
+
+/* Thread Worker Functions */
+static void *gpu_refresh_thread_worker(void *opaque)
+{
+    GpuState *s = opaque;
+    while (1) {
+        // ~60 FPS refresh rate
+        g_usleep(16666); 
+
+        if (s->threads_exit) {
+            break;
+        }
+
+        // Fetch data from GPU VRAM to internal QEMU buffer
+        qemu_mutex_lock(&s->render_mutex);
+        uint32_t *fb_ptr = FB(s);
+        if (fb_ptr) {
+            memcpy(s->internal_fb, fb_ptr, s->width * s->height * 4);
+        }
+        qemu_mutex_unlock(&s->render_mutex);
+
+        // Signal QEMU Main Loop to update the screen
+        bql_lock();
+        dpy_gfx_update(s->con, 0, 0, s->width, s->height);
+        bql_unlock();
+    }
+    return NULL;
+}
+
+static void *gpu_dma_thread_worker(void *opaque)
+{
+    GpuState *s = opaque;
+    while (1) {
+        qemu_mutex_lock(&s->dma_mutex);
+        while (!s->dma_pending && !s->threads_exit) {
+            qemu_cond_wait(&s->dma_cond, &s->dma_mutex);
+        }
+        if (s->threads_exit) {
+            qemu_mutex_unlock(&s->dma_mutex);
+            break;
+        }
+        s->dma_pending = false;
+        qemu_mutex_unlock(&s->dma_mutex);
+
+        handle_dma(s);
+        
+        // Use atomic or lock if dma_cmd needs protection, but for now MMIO write is sync with main loop
+        s->dma_cmd &= ~GPU_DMA_CMD_START;
+    }
+    return NULL;
+}
+
+static void *gpu_cmd_thread_worker(void *opaque)
+{
+    GpuState *s = opaque;
+    while (1) {
+        qemu_mutex_lock(&s->cmd_mutex);
+        while (!s->cmd_pending && !s->threads_exit) {
+            qemu_cond_wait(&s->cmd_cond, &s->cmd_mutex);
+        }
+        if (s->threads_exit) {
+            qemu_mutex_unlock(&s->cmd_mutex);
+            break;
+        }
+        s->cmd_pending = false;
+        qemu_mutex_unlock(&s->cmd_mutex);
+
+        process_ring_buffer(s);
+    }
+    return NULL;
+}
 
 type_init(pci_gpu_register_types)
 
@@ -22,8 +95,6 @@ static void wireframe_3d_mode(GpuState *gpu)
     if (gpu->gpu_mode == GPU_MODE_3D)
     {
         gpu_render_wireframe(gpu);
-        vga_update_display(gpu);
-        graphic_hw_update(gpu->con);
     }
 }
 static void triangles_3d_mode(GpuState *gpu)
@@ -32,8 +103,6 @@ static void triangles_3d_mode(GpuState *gpu)
     if (gpu->gpu_mode == GPU_MODE_3D)
     {
         gpu_render_triangles(gpu);
-        vga_update_display(gpu);
-        graphic_hw_update(gpu->con);
     }
 }
 static void gpu_print_mmio(GpuState *s)
@@ -101,7 +170,9 @@ static void handle_dma(GpuState *s)
     // Notify host with interrupt if unmasked
     if (s->int_mask & GPU_INT_DMA_DONE) {
         if (msi_enabled(pdev)) {
+            bql_lock();
             msi_notify(pdev, 0);
+            bql_unlock();
         }
     }
 }
@@ -172,52 +243,58 @@ static void execute_command(GpuState *gpu, Command *cmd)
 
 static void process_ring_buffer(GpuState *s)
 {
-    // 1. Read Dynamic Configuration directly from State
+    // Read state of the ring buffer regs
     uint32_t rb_start = s->ring_buffer_start;
     uint32_t rb_end   = s->ring_buffer_end;
     uint32_t head     = s->ring_buffer_head;
+    uint32_t tail     = s->ring_buffer_tail;
 
-    // 2. Safety: Driver hasn't initialized registers yet
+    // Check if ring buffer is initalized
     if (rb_start == 0 || rb_end <= rb_start) {
         return;
     }
 
-    // 3. Dynamic Bounds Check (Anti-Segfault)
-    // If tail is outside valid range (e.g. after driver restart), reset it.
-    if (s->ring_buffer_tail < rb_start || s->ring_buffer_tail >= rb_end) {
+    // Check if rb is within bounds (sanity check)
+    if (tail < rb_start || tail >= rb_end) {
         DEBUG_PRINT("[GPU ERROR] Tail (0x%x) out of bounds [0x%x - 0x%x]. Resetting to Start.\n",
-            s->ring_buffer_tail, rb_start, rb_end);
-        s->ring_buffer_tail = rb_start;
+            tail, rb_start, rb_end);
+        tail = rb_start;
     }
 
-    // 4. Idle Check
-    if (head == s->ring_buffer_tail) {
+    // If both head and tail are at the same address then rb is idle
+    if (head == tail) {
         return;
     }
 
-    // 5. Processing Loop
-    while (s->ring_buffer_tail != head)
+    // Process commands
+    qemu_mutex_lock(&s->render_mutex);
+    while (tail != head)
     {
-        uint8_t *cmd_ptr = s->vram_ptr + s->ring_buffer_tail;
+        uint8_t *cmd_ptr = s->vram_ptr + tail;
         Command *cmd = (Command *)cmd_ptr;
 
         execute_command(s, cmd);
 
-        s->ring_buffer_tail += sizeof(Command);
+        tail += sizeof(Command);
 
         // --- DYNAMIC WRAP LOGIC ---
-        // Wrap exactly at the configured End address
-        if (s->ring_buffer_tail >= rb_end) {
+        if (tail >= rb_end) {
             DEBUG_PRINT("[GPU CMD] Buffer End Reached. Wrapping to 0x%x\n", rb_start);
-            s->ring_buffer_tail = rb_start;
+            tail = rb_start;
         }
     }
+    qemu_mutex_unlock(&s->render_mutex);
 
-    /* Signal completion via interrupt */
+    // Update the shared register ONLY once we are finished
+    s->ring_buffer_tail = tail;
+    s->int_status |= GPU_INT_CMD_DONE;
+
+    // Notify via MSI
     if (s->int_mask & GPU_INT_CMD_DONE) {
-        s->int_status |= GPU_INT_CMD_DONE;
         if (msi_enabled(PCI_DEVICE(s))) {
+            bql_lock();
             msi_notify(PCI_DEVICE(s), 0);
+            bql_unlock();
         }
     }
 }
@@ -310,17 +387,19 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         DEBUG_PRINT("GPU MMIO WRITE: 0x%lx written to 0x%" PRIx64 " (size %u). New reg value: 0x%x\n", val, addr, size, *target_reg);
         if (trigger_command_processor)
         {
-            DEBUG_PRINT("\n[GPU TRIGGER] Detected write to RING_HEAD (0x04). Launching command processor...\n");
-            process_ring_buffer(s);
+            DEBUG_PRINT("\n[GPU TRIGGER] Detected write to RING_HEAD (0x04). Signaling command processor thread...\n");
+            qemu_mutex_lock(&s->cmd_mutex);
+            s->cmd_pending = true;
+            qemu_cond_signal(&s->cmd_cond);
+            qemu_mutex_unlock(&s->cmd_mutex);
         }
         if (trigger_dma && (*target_reg & GPU_DMA_CMD_START))
         {
-            DEBUG_PRINT("\n[GPU TRIGGER] DMA_CMD START detected. Launching DMA transfer...\n");
-            handle_dma(s);
-
-            // Reset start bit
-            *target_reg &= ~GPU_DMA_CMD_START;
-            DEBUG_PRINT("[GPU TRIGGER] DMA finished. CMD register reset to 0x%x\n", *target_reg);
+            DEBUG_PRINT("\n[GPU TRIGGER] DMA_CMD START detected. Signaling DMA transfer thread...\n");
+            qemu_mutex_lock(&s->dma_mutex);
+            s->dma_pending = true;
+            qemu_cond_signal(&s->dma_cond);
+            qemu_mutex_unlock(&s->dma_mutex);
         }
     }
 }
@@ -343,6 +422,12 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case REG_RING_BUFFER_TAIL_ADDR:
         reg_val = s->ring_buffer_tail;
+        break;
+    case REG_RING_BUFFER_START_ADDR:
+        reg_val = s->ring_buffer_start;
+        break;
+    case REG_RING_BUFFER_END_ADDR:
+        reg_val = s->ring_buffer_end;
         break;
     case REG_VERTEX_SHADER_ADDR:
         reg_val = s->vs_code_addr;
@@ -438,9 +523,11 @@ static void vga_update_display(void *opaque)
     uint32_t width = gpu->width;
     uint32_t height = gpu->height;
     DisplaySurface *surface = qemu_console_surface(gpu->con);
+
+    // No lock needed here as we read from the internal shadow buffer
+    // which was populated by the refresh thread.
     for (uint32_t i = 0; i < width * height; i++)
-        ((uint32_t *)surface_data(surface))[i] = FB(gpu)[i];
-    dpy_gfx_update(gpu->con, 0, 0, 640, 480);
+        ((uint32_t *)surface_data(surface))[i] = gpu->internal_fb[i];
 }
 
 static const GraphicHwOps ghwops = {
@@ -487,10 +574,55 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 
     /* Initialize MSI */
     msi_init(pdev, 0, 1, true, false, errp);
+
+    /* Initialize Threading */
+    gpu->threads_exit = false;
+    
+    qemu_mutex_init(&gpu->cmd_mutex);
+    qemu_cond_init(&gpu->cmd_cond);
+    gpu->cmd_pending = false;
+    qemu_thread_create(&gpu->cmd_thread, "gpu-cmd-thread", gpu_cmd_thread_worker, gpu, QEMU_THREAD_JOINABLE);
+
+    qemu_mutex_init(&gpu->dma_mutex);
+    qemu_cond_init(&gpu->dma_cond);
+    gpu->dma_pending = false;
+    qemu_thread_create(&gpu->dma_thread, "gpu-dma-thread", gpu_dma_thread_worker, gpu, QEMU_THREAD_JOINABLE);
+
+    qemu_mutex_init(&gpu->render_mutex);
+
+    // Allocate internal shadow buffer (fixed size for simplicity)
+    gpu->internal_fb = g_malloc0(1024 * 1024 * 4); 
+    qemu_thread_create(&gpu->refresh_thread, "gpu-refresh-thread", gpu_refresh_thread_worker, gpu, QEMU_THREAD_JOINABLE);
+
+    init_thread_pool();
 }
 
 /* Uninitialize GPU device */
 static void pci_gpu_uninit(PCIDevice *pdev)
 {
+    GpuState *gpu = GPU(pdev);
+    
+    gpu->threads_exit = true;
+
+    qemu_mutex_lock(&gpu->cmd_mutex);
+    qemu_cond_signal(&gpu->cmd_cond);
+    qemu_mutex_unlock(&gpu->cmd_mutex);
+
+    qemu_mutex_lock(&gpu->dma_mutex);
+    qemu_cond_signal(&gpu->dma_cond);
+    qemu_mutex_unlock(&gpu->dma_mutex);
+
+    qemu_thread_join(&gpu->cmd_thread);
+    qemu_thread_join(&gpu->dma_thread);
+    qemu_thread_join(&gpu->refresh_thread);
+
+    qemu_mutex_destroy(&gpu->cmd_mutex);
+    qemu_cond_destroy(&gpu->cmd_cond);
+    qemu_mutex_destroy(&gpu->dma_mutex);
+    qemu_cond_destroy(&gpu->dma_cond);
+    qemu_mutex_destroy(&gpu->render_mutex);
+
+    g_free(gpu->internal_fb);
+
     msi_uninit(pdev);
 }

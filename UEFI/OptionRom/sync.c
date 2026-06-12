@@ -36,7 +36,6 @@ EFI_STATUS EFIAPI GpuCmdSync(VOID)
 
     // Check if GPU is finished drawing
     while (!(GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_CMD_DONE)) {
-        if (GpuRingBufferIsIdle()) break;
         gBS->Stall(10);
     }
 
