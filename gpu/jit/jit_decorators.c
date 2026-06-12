@@ -114,6 +114,14 @@ void handle_op_type_matrix(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     ctx->type_info[res_id].member_types = NULL;       
     ctx->type_info[res_id].member_count = column_count;
 }
+
+void handle_op_name(JitContext* ctx, uint32_t* operands)
+{
+    uint32_t target_id = operands[0];
+    const char* name = (const char*)&operands[1];
+    ctx->names[target_id] = strdup(name);
+    DEBUG_PRINT("ID %u is named: %s\n", target_id, name);
+}
 void handle_op_member_decorate(JitContext* ctx, uint32_t* operands) 
 {
     uint32_t struct_id = operands[0];
@@ -135,12 +143,18 @@ void handle_op_member_decorate(JitContext* ctx, uint32_t* operands)
         node->next = ctx->member_decorations[struct_id];
         ctx->member_decorations[struct_id] = node;
     }
-    
-    if(decoration == SpvDecorationOffset) 
-    {
-        node->offset = value;
+    node->buildin = -1;
+
+  
+    switch (decoration) {
+        case SpvDecorationOffset:
+            node->offset = value;
+            break;
+        case SpvDecorationBuiltIn:
+            node->buildin = value;
+            break;
     }
-}
+}   
 static uint32_t spirv_string_word_length(const char* str)
 {
     uint32_t len = (uint32_t)strlen(str) + 1;
