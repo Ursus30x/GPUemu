@@ -9,7 +9,7 @@ subprocess.run(["mkdir", "-p", "out"], capture_output=True, text=True)
 test_directory = Path("glsl")
 
 # Find all GLSL files
-glsl_files = list(test_directory.glob("*.vert"))
+glsl_files = list(test_directory.glob("*.vert")) + list(test_directory.glob("*.frag"))
 
 if not glsl_files:
     print("No GLSL files found in glsl/ directory")
