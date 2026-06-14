@@ -16,10 +16,15 @@ Since most of this project relies on modifying QEMU and EDK2 projects, we decide
 
 Here are the instructions:
 -   Download needed packages:
-    -   For Ubuntu/Debian:
+    -   For Debian based distros:
     ``` sh
     apt install make g++ gcc python3 uuid-dev nasm python3-pip python3-venv ninja-build libglib2.0-dev cmake libpixman-1-dev libgtk-3-dev
     ```
+    -   For Arch based distros:
+    ```
+    pacman -Syu make python3 gcc ninja meson glib2 glib2-devel base-devel pixman gtk3 nasm
+    ```
+
 
 -   Run `scripts/apply_patches.sh`
     -   This prepares submodules, applies patches to them, and symlinks directories to their respective submodules.
