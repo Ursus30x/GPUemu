@@ -95,7 +95,7 @@ static void G_GNUC_UNUSED debug_dump_ubo(void *opaque)
 }
 
 #else
-  #define DEBUG_PRINT(...) printf(__VA_ARGS__)
+  #define DEBUG_PRINT(...) {}
 #ifdef GPUEPU
 __attribute__((unused))
 static void debug_dump_vertices(GpuState *gpu){}

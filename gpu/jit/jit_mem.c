@@ -78,7 +78,7 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
                 LLVMConstInt(ctx->int_type, offset, 0)
             };
 
-            LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg, indices, 3, "res_slot");
+            LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 3, "res_slot");
             LLVMValueRef actual_ptr = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, slot_ptr, "res_ptr");
             set_val(ctx, res_id, actual_ptr);
         }
@@ -106,7 +106,7 @@ static LLVMValueRef build_recursive_load(JitContext *ctx, LLVMTypeRef type, LLVM
         LLVMValueRef aggregate = LLVMGetUndef(type);
 
         for (uint32_t i = 0; i < count; i++) {
-            LLVMValueRef index = LLVMConstInt(LLVMInt32Type(), i, 0);
+            LLVMValueRef index = LLVMConstInt(LLVMInt32TypeInContext(ctx->context), i, 0);
             
             LLVMValueRef element_ptr = LLVMBuildInBoundsGEP2(ctx->builder, elem_type, ptr, &index, 1, "load_gep");
             
@@ -158,7 +158,7 @@ static void build_recursive_store(JitContext *ctx, LLVMValueRef val_to_store, LL
 
         for (uint32_t i = 0; i < count; i++) 
         {
-            LLVMValueRef index = LLVMConstInt(LLVMInt32Type(), i, 0);
+            LLVMValueRef index = LLVMConstInt(LLVMInt32TypeInContext(ctx->context), i, 0);
             
             LLVMValueRef element_ptr = LLVMBuildInBoundsGEP2(ctx->builder, elem_type, ptr, &index, 1, "store_gep");
             
@@ -296,8 +296,7 @@ void handle_op_access_chain(JitContext *ctx, uint32_t res_id, uint32_t type_id, 
                         uint32_t final_offset = 0; // Base offset to reach 'vertexOut'
                         offset_vec_vals[j] = LLVMConstInt(i64_type, final_offset, 0);
                         
-                        LLVMValueRef args[] = { offset_vec_vals[j] };
-                        jit_call_printf(ctx, "build in offset: %d\n", args, 1);
+                       
                         DEBUG_PRINT("  BuiltIn Position mapped to offset: %u bytes\n", final_offset);
                     } else {
                         offset_vec_vals[j] = LLVMConstInt(i64_type, m->offset * SIMT_WIDTH, 0);
@@ -308,15 +307,12 @@ void handle_op_access_chain(JitContext *ctx, uint32_t res_id, uint32_t type_id, 
                 
                 LLVMValueRef offset_vec = LLVMConstVector(offset_vec_vals, j);
                 
-                LLVMValueRef args[] = { idx_val };
-                jit_call_printf(ctx, "accidx: %d\n", args, 1);
+                
                 
                 offset = LLVMBuildExtractElement(ctx->builder, offset_vec, idx_val, "struct_off");
             }
 
-            LLVMValueRef args[] = { offset };
-            jit_call_printf(ctx, "build in offset: %d\n", args, 1);
-            
+       
             total_offset = LLVMBuildAdd(ctx->builder, total_offset, offset, "final_elem_off");
         }
     }

@@ -27,8 +27,8 @@
 #define BIND_OUT_LOCATION(location, value) jit_ctx->location_out_buffers[location] = &value;
 #define CREATE_BINDING(attribute, value) jit_ctx->binding_buffers[attribute] = &value;
 
-#define GET_GL_POS() SimtVec4 glPos = o->gl_Position;
-#define RUN_JIT() func();
+#define GET_GL_POS() SimtVec4 glPos = vs_out.gl_Position;
+#define RUN_JIT() func(jit_ctx, &vs_out);
 
 #define PRINT_VEC3(caption, name)  \
     printf("%s", caption); \
@@ -116,10 +116,11 @@ void register_test(const char* name, TestFunc func)
         init_jit(&ctx); \
         func = jit_compile_spirv(&ctx, spirv_code, file_size / 4); \
         free(spirv_code); \
-        ExecutionContext *jit_ctx = get_ectx_from_mcjit(&ctx); \
-        BuiltinVertexOutput* o = get_vs_data_from_mcjit(&ctx); \
+        ExecutionContext jit_ctx_storage = {0}; \
+        ExecutionContext *jit_ctx = &jit_ctx_storage; \
+        BuiltinVertexOutput vs_out = {0}; \
         __VA_ARGS__ ; \
-        free_jit(&ctx); \    
+        free_jit(&ctx); \
         printf("Test passed! Output matches expected results.\n"); \
         return 0; \
         \

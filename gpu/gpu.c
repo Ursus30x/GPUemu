@@ -1,5 +1,4 @@
 // #define DEBUG_P_REG
-
 #include "gpu.h"
 #include "math3d.h"
 #include "renderer.h"
@@ -22,6 +21,7 @@ static void *gpu_refresh_thread_worker(void *opaque)
 {
     GpuState *s = opaque;
     while (1) {
+        
         // ~60 FPS refresh rate
         g_usleep(16666); 
 
@@ -103,7 +103,10 @@ static void triangles_3d_mode(GpuState *gpu)
 
     if (gpu->gpu_mode == GPU_MODE_3D)
     {
-        gpu_render_triangles(gpu);
+        if(gpu->use_legacy_asm)
+            gpu_render_triangles(gpu);
+        else
+           gpu_render_triangles_simt(gpu);
     }
 }
 static void gpu_print_mmio(GpuState *s)
@@ -119,7 +122,6 @@ static void gpu_print_mmio(GpuState *s)
     DEBUG_PRINT("0x20 [FB_ADDR]:          0x%08x\n", s->framebuffer_vram_offset);
     DEBUG_PRINT("0x24 [GPU_TIME]:         %u\n", s->gpu_time);
     DEBUG_PRINT("0x2C [ZBUFFER]:          0x%08x\n", s->zbuffer_addr);
-
     DEBUG_PRINT("----------------------------------\n");
 }
 
@@ -207,13 +209,34 @@ static void execute_command(GpuState *gpu, Command *cmd)
             gpu->uinform_config = cmd->payload.state.value.buffer_config;
             break;
         case STATE_ID_VERTEX_SHADER_PTR:
-            DEBUG_PRINT("[CMD] Vertex shader config\n");
+        {   DEBUG_PRINT("[CMD] Vertex shader config\n");
             gpu->vs_code_addr = cmd->payload.state.value.shader_ptrs.vs_addr;
+            if(!gpu->use_legacy_asm && gpu->vs_shader_func == NULL)
+            {
+                void* shader = gpu->vram_ptr+gpu->vs_code_addr;
+                uint32_t size =  *((uint32_t *)shader);
+                uint32_t* shader_code =  ((uint32_t *)(shader+ sizeof(uint32_t)));
+                free_jit(&gpu->jit_ctx_vs); 
+                init_jit(&gpu->jit_ctx_vs); 
+                gpu->vs_shader_func = jit_compile_spirv(&gpu->jit_ctx_vs, shader_code, size / 4); 
+            }
             break;
+        }
         case STATE_ID_FRAGMENT_SHADER_PTR:
+        {   
             DEBUG_PRINT("[CMD] Fragment shader config\n");
             gpu->fs_code_addr = cmd->payload.state.value.shader_ptrs.fs_addr;
+            if(!gpu->use_legacy_asm && gpu->fs_shader_func == NULL)
+            {
+                void* shader = gpu->vram_ptr+gpu->fs_code_addr;
+                uint32_t size =  *((uint32_t *)shader);
+                uint32_t* shader_code =  ((uint32_t *)(shader+ sizeof(uint32_t)));
+                free_jit(&gpu->jit_ctx_fs); 
+                init_jit(&gpu->jit_ctx_fs); 
+                gpu->fs_shader_func = jit_compile_spirv(&gpu->jit_ctx_fs, shader_code, size / 4); 
+            }
             break;
+        }
         default:
             break;
         }
@@ -536,9 +559,14 @@ static const GraphicHwOps ghwops = {
     .gfx_update = vga_update_display,
     .text_update = vga_update_text,
 };
+#include "hw/core/qdev-properties.h"
+static Property my_pci_properties[] = {
 
+    DEFINE_PROP_BOOL("legacy_asm", GpuState, use_legacy_asm, false),
+};
 static void gpu_class_init(ObjectClass *class, const void *data)
 {
+    DeviceClass *dc = DEVICE_CLASS(class);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(class);
 
     k->realize = pci_gpu_realize;
@@ -547,7 +575,12 @@ static void gpu_class_init(ObjectClass *class, const void *data)
     k->device_id = GPU_DEVICE_ID;
     k->revision = 0x01;
     k->class_id = PCI_CLASS_DISPLAY_OTHER;
+    device_class_set_props(dc, my_pci_properties);
 }
+#define SPLAT(value) (SimtFloat){value, value, value, value, value, value, value, value, value, value, value, value, value, value, value, value}
+#define CREATE_SIMT_F32(name, values) SimtFloat name = values;
+#define CREATE_SIMT_VEC3(name, a, b, c) SimtVec3 name = { a,  b,  c};
+#define CREATE_SIMT_VEC4(name, a, b, c, d) SimtVec4 name = { a,  b,  c, d};
 
 /* Realize GPU device */
 static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
@@ -555,19 +588,6 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     DEBUG_PRINT("pci_gpu_realize\n");
 
 
-    //DEBUG JITTER s
-    JitContext ctx = {0};
-    init_jit(&ctx);
-    //jitted_func_t my_func = jit_compile_spirv( &ctx, code, sizeof(code)/4);
-    //  // Align the buffer to 64 bytes for AVX-512 compatibility
-    // float *output = aligned_alloc(64, sizeof(float) * SIMT_WIDTH);
-    // memset(output, 0, sizeof(float) * SIMT_WIDTH);
-    // ExecutionContext exec_ctx = {0};
-    // my_func();
-
-    //printf("Execution Results:\n");
-    //for(int i=0; i<SIMT_WIDTH; i++) printf(" Lane %d: %f\n", i, output[i]);
-    free_jit(&ctx);
     GpuState *gpu = GPU(pdev);
     /* BAR0: cmd registers */
     memory_region_init_io(&gpu->mmiomem, OBJECT(gpu), &gpu_mmio_ops, gpu, "gpu-mmio", GPU_CMD_SIZE);
@@ -580,7 +600,8 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->vram_ptr = memory_region_get_ram_ptr(&gpu->vrammem);
 
     gpu->con = graphic_console_init(DEVICE(pdev), 0, &ghwops, gpu);
-
+    gpu->vs_shader_func = NULL;
+     gpu->fs_shader_func = NULL;
     // init state
     gpu->height = 480;
     gpu->width = 640;
@@ -589,10 +610,9 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 
     /* Initialize MSI */
     msi_init(pdev, 0, 1, true, false, errp);
+    init_jit(&gpu->jit_ctx_fs);
+    init_jit(&gpu->jit_ctx_vs);
 
-    /* Initialize Threading */
-    gpu->threads_exit = false;
-    
     qemu_mutex_init(&gpu->cmd_mutex);
     qemu_cond_init(&gpu->cmd_cond);
     gpu->cmd_pending = false;
@@ -604,12 +624,15 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     qemu_thread_create(&gpu->dma_thread, "gpu-dma-thread", gpu_dma_thread_worker, gpu, QEMU_THREAD_JOINABLE);
 
     qemu_mutex_init(&gpu->render_mutex);
+    
 
     // Allocate internal shadow buffer (fixed size for simplicity)
     gpu->internal_fb = g_malloc0(1024 * 1024 * 4); 
     qemu_thread_create(&gpu->refresh_thread, "gpu-refresh-thread", gpu_refresh_thread_worker, gpu, QEMU_THREAD_JOINABLE);
 
     init_thread_pool();
+
+    gpu_render_triangles_simt(gpu);
 }
 
 /* Uninitialize GPU device */
