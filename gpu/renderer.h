@@ -4,8 +4,9 @@
 
 
 #ifndef NUM_RENDER_THREADS
-#define NUM_RENDER_THREADS 16
+#define NUM_RENDER_THREADS 32
 #endif
+extern QemuMutex jit_mutex;
 
 typedef struct {
     Vec4 pos;
@@ -22,13 +23,22 @@ typedef struct {
     uint32_t triangle_size;
     uint32_t start_y;
     uint32_t end_y;
+    uint32_t start_block;
+    uint32_t end_block;
+    uint16_t raster_exec_mask;
+    SimtVec4 transformed_simt;
+
+    JitContext jit_ctx_vs; 
+    JitContext jit_ctx_fs; 
 } RenderThreadArgs;
 
 
 typedef enum {
     TASK_NONE = 0,
     TASK_TRANSFORM_VERTICES,
+    TASK_TRANSFORM_VERTICES_SIMT,
     TASK_RASTERIZE_BANDS,
+    TASK_RASTERIZE_BANDS_SIMT,
     TASK_WIREFRAME_VERTICES,
     TASK_WIREFRAME_EDGES,
     TASK_EXIT
@@ -57,14 +67,11 @@ typedef struct {
 void init_thread_pool(void);
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color);
 void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, uint32_t color2);
-void exec_shader(GpuState *gpu, uint32_t program_offset);
 
-uint8_t cmp_u32(uint32_t a, uint32_t b, uint8_t flag);
-uint8_t cmp_f32(float a, float b, uint8_t flag);
 void gpu_render_wireframe(void *opaque);
 void gpu_render_triangles(void *opaque);
 float edge_func(Vec3 a, Vec3 b, Vec3 c);
 void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu);
-
-
+void gpu_render_triangles_simt(void *opaque);
+void worker_transform_vertices_simt_impl(RenderThreadArgs *args) ;
 #endif

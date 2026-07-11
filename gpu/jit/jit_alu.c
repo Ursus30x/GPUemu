@@ -318,7 +318,7 @@ void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* ope
         );
         composite = result; 
     }
-    printf("Extracting composite with %u indices\n", num_indices);
+    DEBUG_PRINT("Extracting composite with %u indices\n", num_indices);
 
     set_val(ctx, res_id, result);
 }

@@ -1,4 +1,5 @@
 #define GPUEPU
+#include <sys/time.h> 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/units.h"
@@ -15,6 +16,7 @@
 #include "gpu_isa.h"
 #include "gpu_hw.h"
 #include "vram.h"
+#include "jit.h"
 
 #ifndef GPU_H
 #define GPU_H
@@ -49,7 +51,6 @@
 #define REG_RB_TAIL(s)       (*(uint32_t*)&s->cmd[REG_RING_BUFFER_TAIL])
 #define REG_RB_START(s)      (*(uint32_t*)&s->cmd[REG_RING_BUFFER_START])
 #define REG_RB_END(s)        (*(uint32_t*)&s->cmd[REG_RING_BUFFER_END])
-
 
 
 typedef struct GpuState {
@@ -114,6 +115,15 @@ typedef struct GpuState {
     Mat4 v_pos;
 
     uint8_t cFlag;
+
+    bool use_legacy_asm;
+
+    //jitter
+    JitContext jit_ctx_vs; 
+    JitContext jit_ctx_fs; 
+    jitted_func_t vs_shader_func; 
+    jitted_func_t fs_shader_func; 
+
 } GpuState;
 
 

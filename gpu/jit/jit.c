@@ -153,8 +153,17 @@ static inline void handle_op_return_value(JitContext* ctx, uint32_t* operands)
     LLVMValueRef vec_val = get_val(ctx, operands[0]);
     
     LLVMTypeRef vec_ptr_type = LLVMPointerType(ctx->vec_float_type, 0);
-    LLVMValueRef out_ptr_arg = LLVMBuildExtractValue(ctx->builder, ctx->env_arg, 2, 0);
-    LLVMValueRef bitcast_ptr = LLVMBuildBitCast(ctx->builder, out_ptr_arg, vec_ptr_type, "vec_ptr_cast");
+    /* Compute pointer to location_out_buffers[0] from the passed-in ExecutionContext parameter */
+    LLVMValueRef indices[] = {
+        LLVMConstInt(ctx->int_type, 0, 0), /* struct ptr idx */
+        LLVMConstInt(ctx->int_type, 2, 0), /* location_out_buffers field */
+        LLVMConstInt(ctx->int_type, 0, 0)  /* first element (location 0) */
+    };
+
+    LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 3, "out_slot_ptr");
+    /* slot_ptr has type i8** (pointer to element in the array); load the actual i8* */
+    LLVMValueRef actual_out_ptr = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, slot_ptr, "out_actual_ptr");
+    LLVMValueRef bitcast_ptr = LLVMBuildBitCast(ctx->builder, actual_out_ptr, vec_ptr_type, "vec_ptr_cast");
     
     build_masked_store(ctx, vec_val, bitcast_ptr, ctx->emask);
     
@@ -402,7 +411,7 @@ void build_masked_store(JitContext *ctx, LLVMValueRef val_to_store, LLVMValueRef
         for (uint32_t i = 0; i < count; i++)
         {
 
-            LLVMValueRef index = LLVMConstInt(LLVMInt32Type(), i, 0);
+            LLVMValueRef index = LLVMConstInt(LLVMInt32TypeInContext(ctx->context), i, 0);
             
             LLVMValueRef element_ptr = LLVMBuildInBoundsGEP2(ctx->builder, elem_type, ptr, &index, 1, "elem_ptr");
             
@@ -486,9 +495,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         values[i] = LLVMConstInt(LLVMInt1TypeInContext(ctx->context), 1, 0); 
     }
     ctx->emask = LLVMConstVector(values, SIMT_WIDTH);
- 
-    // Example usage: print a float constant (e.g., 42.0f)
-   
+    
     while (p < end) 
     {
         uint32_t instruction = p[0];
@@ -527,7 +534,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     
 
     char *error = NULL;
-    LLVMDumpModule(ctx->module);
+   // LLVMDumpModule(ctx->module);
 
     LLVMVerifyModule(ctx->module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
@@ -597,6 +604,9 @@ void init_jit(JitContext* ctx)
     ctx->module = LLVMModuleCreateWithNameInContext("spirv_vector_module", ctx->context);
     ctx->builder = LLVMCreateBuilderInContext(ctx->context);
 
+    ctx->env_arg_param = NULL;
+    ctx->vs_data_param = NULL;
+
     LLVMTypeRef float_type = LLVMFloatTypeInContext(ctx->context);
     // <16 x float>
     LLVMTypeRef simt_float =
@@ -635,13 +645,9 @@ void init_jit(JitContext* ctx)
     };
 
     ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 4, 0);
-
-    ctx->env_arg = LLVMAddGlobal(ctx->module, ctx->exec_ctx_type, "ectx");
-    LLVMSetAlignment(ctx->env_arg, 64);
-    LLVMSetInitializer(ctx->env_arg, LLVMConstNull(ctx->exec_ctx_type));
-    LLVMSetLinkage(ctx->env_arg, LLVMExternalLinkage);
-
-
+    /* Note: module-level globals for ExecutionContext and vs_data are no longer created.
+       Per-invocation pointers are passed as function parameters (env_arg_param / vs_data_param).
+    */
 
     LLVMTypeRef vs_data_fields[] = {
         simt_vec4_type,// gl_Position (Index 0)
@@ -650,10 +656,6 @@ void init_jit(JitContext* ctx)
         simt_float     // gl_CullDistance (Index 3)
     };
     ctx->vs_data_type = LLVMStructTypeInContext(ctx->context, vs_data_fields, 4, 0);
-    ctx->vs_data  = LLVMAddGlobal(ctx->module, ctx->vs_data_type, "vs_data");
-    LLVMSetAlignment(ctx->vs_data, 64);
-    LLVMSetInitializer(ctx->vs_data, LLVMConstNull(ctx->vs_data_type));
-    LLVMSetLinkage(ctx->vs_data, LLVMExternalLinkage);
 
     if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 
     {
@@ -685,4 +687,5 @@ void free_jit(JitContext* ctx)
     LLVMDisposeBuilder(ctx->builder);
     LLVMOrcDisposeLLJIT(ctx->jit);
     LLVMContextDispose(ctx->context);
+    memset(ctx, 0, sizeof(JitContext));
 }

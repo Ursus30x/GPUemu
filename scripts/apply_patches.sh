@@ -70,6 +70,8 @@ ln -sf "$CWD/gpu/jit/jit_mem.h" "$CWD/qemu/hw/misc/jit_mem.h"
 ln -sf "$CWD/include/gpu_isa.h" "$CWD/qemu/hw/misc/gpu_isa.h"
 ln -sf "$CWD/include/gpu_hw.h" "$CWD/qemu/hw/misc/gpu_hw.h"
 ln -sf "$CWD/include/vram.h" "$CWD/qemu/hw/misc/vram.h"
+ln -sf "$CWD/gpu/asm.h" "$CWD/qemu/hw/misc/asm.h"
+ln -sf "$CWD/gpu/asm.c" "$CWD/qemu/hw/misc/asm.c"
 
 ln -sf "$CWD/gpu/gen/spirv_jit_meta.h" "$CWD/gpu/jit/spirv_jit_meta.h"
 ln -sf "$CWD/gpu/gen/glsl_std_450.h" "$CWD/gpu/jit/glsl_std_450.h"
