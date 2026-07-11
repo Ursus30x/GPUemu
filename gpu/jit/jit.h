@@ -152,6 +152,10 @@ struct JitContext{
     LLVMTypeRef ptr_type;
     LLVMTypeRef exec_ctx_type;
 
+    /* LLVMValueRefs for entry-function parameters (thread-local state) */
+    LLVMValueRef env_arg_param;   /* ExecutionContext* parameter */
+    LLVMValueRef vs_data_param;   /* BuiltinVertexOutput* parameter */
+
     LLVMOrcThreadSafeContextRef ts_ctx;
 
     AluHandler glsl_handlers[82];
@@ -161,7 +165,8 @@ struct JitContext{
     char **names;
     
 };
-typedef void* (*jitted_func_t)(void);
+/* Jitted function now takes pointers to per-invocation state to be thread-safe */
+typedef void (*jitted_func_t)(ExecutionContext*, BuiltinVertexOutput*);
 
 
 void jit_call_printf(JitContext* ctx, const char* fmt, LLVMValueRef* args, unsigned num_args);
