@@ -4,9 +4,28 @@
 
 
 #ifndef NUM_RENDER_THREADS
-#define NUM_RENDER_THREADS 32
+#define NUM_RENDER_THREADS 16
 #endif
 extern QemuMutex jit_mutex;
+#include <stdbool.h>
+
+typedef struct {
+    Vec3 s[3];
+    float s_inv_w[3];
+    float inv_z[3];
+
+    int min_x, max_x, min_y, max_y;
+    int stamp_min_x, stamp_max_x, stamp_min_y, stamp_max_y;
+
+    float d_w0_dx, d_w0_dy;
+    float d_w1_dx, d_w1_dy;
+    float d_w2_dx, d_w2_dy;
+
+    float start_w0, start_w1, start_w2;
+
+    float r_inv_w[3], g_inv_w[3], b_inv_w[3];
+} TriangleContext;
+
 
 typedef struct {
     Vec4 pos;
@@ -62,6 +81,9 @@ typedef struct {
 #define GET_B(color) (uint8_t)((color) & 0xFF)
 
 #define RGB_TO_UINT(r, g, b) (((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
+
+// UBO access macro: Get pointer to UBO data in VRAM
+#define UBO_DATA(gpu) (gpu->uinform_config.size > 0 ? (gpu->vram_ptr + gpu->uinform_config.addr) : NULL)
 
 
 void init_thread_pool(void);
