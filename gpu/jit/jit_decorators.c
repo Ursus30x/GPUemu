@@ -168,7 +168,10 @@ void handle_op_entry_point(JitContext* ctx, uint32_t* operands, uint32_t operand
 
     const char* name = (const char*)&operands[2];
 
-    memcpy(ctx->shader_info.entry_point_name, name, sizeof(ctx->shader_info.entry_point_name));
+    // Safely copy the name, limiting to entry_point_name size
+    size_t name_len = strnlen(name, sizeof(ctx->shader_info.entry_point_name) - 1);
+    memcpy(ctx->shader_info.entry_point_name, name, name_len);
+    ctx->shader_info.entry_point_name[name_len] = '\0';
     ctx->shader_info.execution_model = execution_model;
 
     DEBUG_PRINT("Entry Point: ID %u, Execution Model %u\n", entry_point_id, execution_model);

@@ -577,6 +577,7 @@ static void gpu_class_init(ObjectClass *class, const void *data)
     k->class_id = PCI_CLASS_DISPLAY_OTHER;
     device_class_set_props(dc, my_pci_properties);
 }
+
 #define SPLAT(value) (SimtFloat){value, value, value, value, value, value, value, value, value, value, value, value, value, value, value, value}
 #define CREATE_SIMT_F32(name, values) SimtFloat name = values;
 #define CREATE_SIMT_VEC3(name, a, b, c) SimtVec3 name = { a,  b,  c};

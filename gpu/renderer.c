@@ -1,3 +1,4 @@
+
 #include "renderer.h"
 #include "math3d.h"
 #include "math.h"
@@ -74,6 +75,11 @@ float edge_func(Vec3 a, Vec3 b, Vec3 c)
 {
     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
 }
+static inline float project_depth(Vec4 v)
+{
+    float w = (v.w < 0.1f) ? 0.1f : v.w;
+    return v.z / w;
+}
 
 static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu, int band_min_y, int band_max_y)
 {
@@ -132,6 +138,7 @@ static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *
     }
 }
 
+
 void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
 {
     draw_triangle_band(v0, v1, v2, color, gpu, 0, gpu->height - 1);
@@ -166,6 +173,15 @@ static void worker_transform_vertices_impl(RenderThreadArgs *args) {
     
    
 }
+
+static void bind_ubo_to_context(GpuState *gpu, ExecutionContext *ectx)
+{
+    if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0)
+    {
+        void *ubo_data = gpu->vram_ptr + gpu->uinform_config.addr;
+        ectx->binding_buffers[0] = ubo_data;
+    }
+}
 void worker_transform_vertices_simt_impl(RenderThreadArgs *args) 
 {
     GpuState local_gpu = *(args->orig_gpu); 
@@ -176,27 +192,23 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
 
     for (uint32_t b = args->start_block; b < args->end_block; b++)
     {
-        uint32_t base_idx = b * 16;
+        uint32_t base_idx = b * SIMT_WIDTH;
 
-        // Default: assuming all 16 lanes are active (0xFFFF)
         uint16_t exec_mask = 0xFFFF;
-
-        if (base_idx + 16 > total_vertices) 
-        {
+        if (base_idx + SIMT_WIDTH > total_vertices) {
             uint32_t active_lanes = total_vertices - base_idx;
-            exec_mask = (1 << active_lanes) - 1; 
+            exec_mask = (1 << active_lanes) - 1;
         }
 
         SimtVec3 in_vec;
-        for (int lane = 0; lane < 16; lane++)
+        for (int lane = 0; lane < SIMT_WIDTH; lane++)
         {
-            // If the lane is active, unpack from vertex stream. Otherwise, load 0.0f.
             if (exec_mask & (1 << lane))
             {
                 uint32_t i = base_idx + lane;
-                in_vec.elem[0][lane] = vertices[i].x; // X vector lane
-                in_vec.elem[1][lane] = vertices[i].y; // Y vector lane
-                in_vec.elem[2][lane] = vertices[i].z; // Z vector lane
+                in_vec.elem[0][lane] = vertices[i].x;
+                in_vec.elem[1][lane] = vertices[i].y;
+                in_vec.elem[2][lane] = vertices[i].z;
             }
             else
             {
@@ -208,15 +220,15 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
 
         ExecutionContext jit_ctx = {0};
         BuiltinVertexOutput vs_out = {0};
-
+        bind_ubo_to_context(gpu, &jit_ctx);
         jit_ctx.location_in_buffers[0] = &in_vec;
         gpu->vs_shader_func(&jit_ctx, &vs_out);
         args->transformed_simt = vs_out.gl_Position;
 
-       for(uint32_t i = 0; i < SIMT_WIDTH; i++) 
-        { 
+        for (uint32_t i = 0; i < SIMT_WIDTH; i++)
+        {
             uint32_t global_idx = base_idx + i;
-            if (global_idx < total_vertices) 
+            if (global_idx < total_vertices)
             {
                 args->transformed_vertices[global_idx].pos.x = args->transformed_simt.elem[0][i];
                 args->transformed_vertices[global_idx].pos.y = args->transformed_simt.elem[1][i];
@@ -225,10 +237,8 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
                 args->transformed_vertices[global_idx].color = vertices[global_idx].rgba;
             }
         }
-       
     }
 }
-
 
 static void worker_rasterize_bands_impl(RenderThreadArgs *args) 
 {
@@ -257,166 +267,228 @@ static void worker_rasterize_bands_impl(RenderThreadArgs *args)
         draw_triangle_band(v0, v1, v2, color, gpu, band_min_y, band_max_y);
    }
 }
-static void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu, int band_min_y, int band_max_y, RenderThreadArgs *args)
-{
-    uint32_t width = gpu->width;
-    uint32_t height = gpu->height;  
-    Vec3 s[3];
-    Vec4 v[3] = {v0, v1, v2};
 
-    // 1. Perspective Divide & Viewport Mapping (Once per triangle)
-    for(int i = 0; i < 3; i++)
+// =================================================================
+// PHASE 1: Geometry, Viewport, and Bounds
+// =================================================================
+static bool setup_geometry_and_bounds(Vec4 v0, Vec4 v1, Vec4 v2, GpuState *gpu, int band_min_y, int band_max_y, TriangleContext *ctx, float *out_inv_area) 
+{
+    Vec4 v[3] = {v0, v1, v2};
+    uint32_t width = gpu->width;
+    uint32_t height = gpu->height;
+
+    for (int i = 0; i < 3; i++) 
     {
         float w = (v[i].w < 0.1f) ? 0.1f : v[i].w;
         float inv_w = 1.0f / w;
 
+        ctx->s_inv_w[i] = inv_w;
+        ctx->inv_z[i] = 1.0f / inv_w;
+
         float ndc_x = v[i].x * inv_w;
         float ndc_y = v[i].y * inv_w;
 
-        s[i].x = (ndc_x + 1.0f) * 0.5f * width;
-        s[i].y = (1.0f - (ndc_y + 1.0f) * 0.5f) * height;
-        s[i].z = inv_w;
+        ctx->s[i].x = (ndc_x + 1.0f) * 0.5f * width;
+        ctx->s[i].y = (1.0f - (ndc_y + 1.0f) * 0.5f) * height;
+        ctx->s[i].z = inv_w; 
     }
 
-    float area = edge_func(s[0], s[1], s[2]);
-    if (area == 0.0f) return; // Prevent division by zero on degenerate triangles
-
-    // 2. Bounding Box Setup
-    int min_x = fmax(0, fmin(s[0].x, fmin(s[1].x, s[2].x)));
-    int max_x = fmin(width - 1, fmax(s[0].x, fmax(s[1].x, s[2].x)));
+    float area = edge_func(ctx->s[0], ctx->s[1], ctx->s[2]);
+    if (area == 0.0f) return false; 
     
-    // Intersect vertical footprint with thread's assigned scanline band
-    int min_y = fmax(band_min_y, fmin(s[0].y, fmin(s[1].y, s[2].y)));
-    int max_y = fmin(band_max_y, fmax(s[0].y, fmax(s[1].y, s[2].y)));
+    *out_inv_area = 1.0f / area;
 
-    if (min_y > max_y || min_x > max_x) return;
+    ctx->min_x = fmax(0, fmin(ctx->s[0].x, fmin(ctx->s[1].x, ctx->s[2].x)));
+    ctx->max_x = fmin(width - 1, fmax(ctx->s[0].x, fmax(ctx->s[1].x, ctx->s[2].x)));
+    
+    ctx->min_y = fmax(band_min_y, fmin(ctx->s[0].y, fmin(ctx->s[1].y, ctx->s[2].y)));
+    ctx->max_y = fmin(band_max_y, fmax(ctx->s[0].y, fmax(ctx->s[1].y, ctx->s[2].y)));
 
-    // 3. Align Bounding Box to 4x4 SIMT Stamps
-    // Bitwise & ~3 pushes the minimum down to the nearest multiple of 4
-    int stamp_min_x = min_x & ~3;
-    int stamp_max_x = (max_x + 3) & ~3;
-    int stamp_min_y = min_y & ~3;
-    int stamp_max_y = (max_y + 3) & ~3;
+    if (ctx->min_y > ctx->max_y || ctx->min_x > ctx->max_x) return false;
 
-    // 4. Rasterize using 16-lane (4x4) blocks
-    for (int y = stamp_min_y; y < stamp_max_y; y += 4)
+    ctx->stamp_min_x = ctx->min_x & ~3;
+    ctx->stamp_max_x = (ctx->max_x + 4) & ~3;
+    ctx->stamp_min_y = ctx->min_y & ~3;
+    ctx->stamp_max_y = (ctx->max_y + 4) & ~3;
+
+    return true;
+}
+
+// =================================================================
+// PHASE 2: Pineda Gradients & Color Invariants
+// =================================================================
+static void setup_invariants(Col3 color, float inv_area, TriangleContext *ctx) 
+{
+    Vec3 p_zero = {0.0f, 0.0f, 0.0f};
+    Vec3 p_dx1  = {1.0f, 0.0f, 0.0f};
+    Vec3 p_dy1  = {0.0f, 1.0f, 0.0f};
+
+    float base0 = edge_func(ctx->s[1], ctx->s[2], p_zero);
+    ctx->d_w0_dx = (edge_func(ctx->s[1], ctx->s[2], p_dx1) - base0) * inv_area;
+    ctx->d_w0_dy = (edge_func(ctx->s[1], ctx->s[2], p_dy1) - base0) * inv_area;
+
+    float base1 = edge_func(ctx->s[2], ctx->s[0], p_zero);
+    ctx->d_w1_dx = (edge_func(ctx->s[2], ctx->s[0], p_dx1) - base1) * inv_area;
+    ctx->d_w1_dy = (edge_func(ctx->s[2], ctx->s[0], p_dy1) - base1) * inv_area;
+
+    float base2 = edge_func(ctx->s[0], ctx->s[1], p_zero);
+    ctx->d_w2_dx = (edge_func(ctx->s[0], ctx->s[1], p_dx1) - base2) * inv_area;
+    ctx->d_w2_dy = (edge_func(ctx->s[0], ctx->s[1], p_dy1) - base2) * inv_area;
+
+    ctx->r_inv_w[0] = GET_R(color.a_col) * ctx->s_inv_w[0];
+    ctx->g_inv_w[0] = GET_G(color.a_col) * ctx->s_inv_w[0];
+    ctx->b_inv_w[0] = GET_B(color.a_col) * ctx->s_inv_w[0];
+
+    ctx->r_inv_w[1] = GET_R(color.b_col) * ctx->s_inv_w[1];
+    ctx->g_inv_w[1] = GET_G(color.b_col) * ctx->s_inv_w[1];
+    ctx->b_inv_w[1] = GET_B(color.b_col) * ctx->s_inv_w[1];
+
+    ctx->r_inv_w[2] = GET_R(color.c_col) * ctx->s_inv_w[2];
+    ctx->g_inv_w[2] = GET_G(color.c_col) * ctx->s_inv_w[2];
+    ctx->b_inv_w[2] = GET_B(color.c_col) * ctx->s_inv_w[2];
+
+    Vec3 start_p = {ctx->stamp_min_x + 0.5f, ctx->stamp_min_y + 0.5f, 0};
+    ctx->start_w0 = edge_func(ctx->s[1], ctx->s[2], start_p) * inv_area;
+    ctx->start_w1 = edge_func(ctx->s[2], ctx->s[0], start_p) * inv_area;
+    ctx->start_w2 = edge_func(ctx->s[0], ctx->s[1], start_p) * inv_area;
+}
+
+// =================================================================
+// PHASE 3: Stamp Coverage Evaluation (Step A)
+// =================================================================
+static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stamp_w1, float stamp_w2, TriangleContext *ctx, float *lane_w0, float *lane_w1, float *lane_w2) 
+{
+    uint16_t exec_mask = 0x0000;
+
+    for (int lane = 0; lane < 16; lane++) 
     {
-        for (int x = stamp_min_x; x < stamp_max_x; x += 4)
+        int lx = lane % 4;
+        int ly = lane / 4;
+        int px = x + lx;
+        int py = y + ly;
+
+        float w0 = stamp_w0 + (lx * ctx->d_w0_dx) + (ly * ctx->d_w0_dy);
+        float w1 = stamp_w1 + (lx * ctx->d_w1_dx) + (ly * ctx->d_w1_dy);
+        float w2 = stamp_w2 + (lx * ctx->d_w2_dx) + (ly * ctx->d_w2_dy);
+
+        lane_w0[lane] = w0;
+        lane_w1[lane] = w1;
+        lane_w2[lane] = w2;
+
+        bool in_bounds = (px >= ctx->min_x && px <= ctx->max_x && py >= ctx->min_y && py <= ctx->max_y);
+        bool in_tri = (w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f);
+        
+        if (in_bounds && in_tri) 
         {
+            exec_mask |= (1 << lane);
+        }
+    }
+    return exec_mask;
+}
 
-            uint16_t exec_mask = 0x0000;
-            
-            // SIMT registers to hold barycentric coordinates for active lanes
+// =================================================================
+// PHASE 4: Early-Z and Varying Interpolation 
+// =================================================================
+static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, float *lane_w0, float *lane_w1, float *lane_w2, TriangleContext *ctx, GpuState *gpu, SimtVec3 *fs_in_color) 
+{
+    uint16_t shade_mask = 0x0000;
+    uint32_t width = gpu->width;
+
+    for (int lane = 0; lane < 16; lane++) 
+    {
+        if (!(exec_mask & (1 << lane))) continue;
+
+        int px = x + (lane % 4);
+        int py = y + (lane / 4);
+        int idx = py * width + px;
+
+        float w0 = lane_w0[lane];
+        float w1 = lane_w1[lane];
+        float w2 = lane_w2[lane];
+
+        float z = w0 * ctx->inv_z[0] + w1 * ctx->inv_z[1] + w2 * ctx->inv_z[2];
+        
+        if (z < Z_BUFFER(gpu)[idx]) 
+        {
+            Z_BUFFER(gpu)[idx] = z;
+            shade_mask |= (1 << lane);
+
+            float pixel_inv_w = w0 * ctx->s_inv_w[0] + w1 * ctx->s_inv_w[1] + w2 * ctx->s_inv_w[2];
+            float pixel_w = 1.0f / pixel_inv_w;
+
+            fs_in_color->elem[0][lane] = (w0 * ctx->r_inv_w[0] + w1 * ctx->r_inv_w[1] + w2 * ctx->r_inv_w[2]) * pixel_w;
+            fs_in_color->elem[1][lane] = (w0 * ctx->g_inv_w[0] + w1 * ctx->g_inv_w[1] + w2 * ctx->g_inv_w[2]) * pixel_w;
+            fs_in_color->elem[2][lane] = (w0 * ctx->b_inv_w[0] + w1 * ctx->b_inv_w[1] + w2 * ctx->b_inv_w[2]) * pixel_w;
+        }
+    }
+    return shade_mask;
+}
+
+// =================================================================
+// PHASE 5: Shading and Output (Step C & D)
+// =================================================================
+static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState *gpu, SimtVec3 *fs_in_color) 
+{
+    SimtVec3 out_color = {0};
+    ExecutionContext jit_ctx = {0};
+    
+    bind_ubo_to_context(gpu, &jit_ctx);
+    
+    jit_ctx.location_in_buffers[0] = fs_in_color;
+    jit_ctx.location_out_buffers[0] = &out_color;
+    gpu->fs_shader_func(&jit_ctx, NULL);
+
+    for (int lane = 0; lane < 16; lane++) 
+    {
+        if (!(shade_mask & (1 << lane))) continue;
+
+        int px = x + (lane % 4);
+        int py = y + (lane / 4);
+
+        uint8_t r = (uint8_t)out_color.elem[0][lane];
+        uint8_t g = (uint8_t)out_color.elem[1][lane];
+        uint8_t b = (uint8_t)out_color.elem[2][lane];
+
+        put_pixel(gpu, px, py, RGB_TO_UINT(r, g, b));
+    }
+}
+
+
+static void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu, int band_min_y, int band_max_y, RenderThreadArgs *args)
+{
+    TriangleContext ctx = {0};
+    float inv_area;
+
+    if (!setup_geometry_and_bounds(v0, v1, v2, gpu, band_min_y, band_max_y, &ctx, &inv_area)) 
+    {
+        return; 
+    }
+    setup_invariants(color, inv_area, &ctx);
+
+    for (int y = ctx.stamp_min_y; y < ctx.stamp_max_y; y += 4) 
+    {
+        float row_w0 = ctx.start_w0 + (y - ctx.stamp_min_y) * ctx.d_w0_dy;
+        float row_w1 = ctx.start_w1 + (y - ctx.stamp_min_y) * ctx.d_w1_dy;
+        float row_w2 = ctx.start_w2 + (y - ctx.stamp_min_y) * ctx.d_w2_dy;
+
+        for (int x = ctx.stamp_min_x; x < ctx.stamp_max_x; x += 4) 
+        {
+            float stamp_w0 = row_w0 + (x - ctx.stamp_min_x) * ctx.d_w0_dx;
+            float stamp_w1 = row_w1 + (x - ctx.stamp_min_x) * ctx.d_w1_dx;
+            float stamp_w2 = row_w2 + (x - ctx.stamp_min_x) * ctx.d_w2_dx;
+
             float lane_w0[16], lane_w1[16], lane_w2[16];
-
-            // =================================================================
-            // STEP A: Parallel Coverage Evaluation (16 Lanes)
-            // =================================================================
-            for (int lane = 0; lane < 16; lane++)
-            {
-                int px = x + (lane % 4);
-                int py = y + (lane / 4);
-
-                // Check standard bounds (scissor/viewport clipping)
-                if (px < min_x || px > max_x || py < min_y || py > max_y) continue;
-
-                Vec3 p = {px + 0.5f, py + 0.5f, 0};
-                
-                float w0 = edge_func(s[1], s[2], p) / area;
-                float w1 = edge_func(s[2], s[0], p) / area;
-                float w2 = edge_func(s[0], s[1], p) / area;
-
-                // If pixel is inside the triangle, activate the lane
-                if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                    exec_mask |= (1 << lane);
-                    lane_w0[lane] = w0;
-                    lane_w1[lane] = w1;
-                    lane_w2[lane] = w2;
-                }
-            }
-                                
-            // Early Out: If the entire 4x4 stamp misses the triangle, skip the fragment phase
+            
+            uint16_t exec_mask = evaluate_stamp_coverage(x, y, stamp_w0, stamp_w1, stamp_w2, &ctx, lane_w0, lane_w1, lane_w2);
             if (exec_mask == 0x0000) continue;
             
-            // Save mask state into thread arguments for potential debugging/metrics
             args->raster_exec_mask = exec_mask;
 
-           
-            // =================================================================
-            // STEP B: Early-Z Test & Varying Interpolation
-            // =================================================================
-            uint16_t shade_mask = 0x0000;
-            SimtVec3 fs_in_color = {}; // Structure for Fragment Shader inputs
-
-            for (int lane = 0; lane < 16; lane++)
-            {
-                if (!(exec_mask & (1 << lane))) continue;
-
-                int px = x + (lane % 4);
-                int py = y + (lane / 4);
-                int idx = py * width + px;
-
-                float w0 = lane_w0[lane];
-                float w1 = lane_w1[lane];
-                float w2 = lane_w2[lane];
-
-                // 1. Calculate Z
-                float z = w0 * (1.0f/s[0].z) + w1 * (1.0f/s[1].z) + w2 * (1.0f/s[2].z);
-
-                // 2. Early-Z Test: Only process fragments that are visible
-                if (z < Z_BUFFER(gpu)[idx]) 
-                {
-                    Z_BUFFER(gpu)[idx] = z;
-                    shade_mask |= (1 << lane); // Mark lane active for Fragment Shader
-
-                    // 3. Interpolate varyings (e.g., color, UVs)
-                    // The FS will read these as its 'in' variables.
-                    fs_in_color.elem[0][lane] = w0 * GET_R(color.a_col) + w1 * GET_R(color.b_col) + w2 * GET_R(color.c_col);
-                    fs_in_color.elem[1][lane] = w0 * GET_G(color.a_col) + w1 * GET_G(color.b_col) + w2 * GET_G(color.c_col);
-                    fs_in_color.elem[2][lane] = w0 * GET_B(color.a_col) + w1 * GET_B(color.b_col) + w2 * GET_B(color.c_col);
-                }
-            }
-
-            // Early Out: If all pixels failed the Z-test, skip shading entirely!
+            SimtVec3 fs_in_color = {0};
+            uint16_t shade_mask = process_z_and_interpolate(x, y, exec_mask, lane_w0, lane_w1, lane_w2, &ctx, gpu, &fs_in_color);
             if (shade_mask == 0x0000) continue;
-            // =================================================================
-            // STEP C: Execute the JIT Fragment Shader (16 Lanes at once)
-            // =================================================================
-            SimtVec3 out_color = {0};
-            // Map inputs (Varyings)
 
-       
-            ExecutionContext jit_ctx = {0};
-            jit_ctx.location_in_buffers[0] = &fs_in_color;
-            jit_ctx.location_out_buffers[0] = &out_color;
-            gpu->fs_shader_func(&jit_ctx, NULL);
-            //qemu_mutex_unlock(&jit_mutex);
-
-     
-            // =================================================================
-            // STEP D: Write Output to Framebuffer
-            // =================================================================
-
-            for (int lane = 0; lane < 16; lane++)
-            {
-                // Only process lanes that survived the Z-test and were actually shaded
-                if (!(shade_mask & (1 << lane))) continue;
-
-                int px = x + (lane % 4);
-                int py = y + (lane / 4);
-
-                // Read the f32 values from the output buffer.
-                float f_r = out_color.elem[0][lane];
-                float f_g = out_color.elem[1][lane];
-                float f_b = out_color.elem[2][lane];
-
-
-                uint8_t r = (uint8_t)(f_r);
-                uint8_t g = (uint8_t)f_g;
-                uint8_t b = (uint8_t)f_b;
-
-                put_pixel(gpu, px, py, RGB_TO_UINT(r, g, b));
-            }
+            execute_shader_and_write(x, y, shade_mask, gpu, &fs_in_color);
         }
     }
 }
@@ -640,7 +712,7 @@ void gpu_render_triangles_simt(void *opaque)
 
 void gpu_render_triangles(void *opaque)
 {
-    GpuState *gpu = opaque;
+      GpuState *gpu = opaque;
     if(gpu->gpu_mode == GPU_MODE_IDLE)
     {
         return;
