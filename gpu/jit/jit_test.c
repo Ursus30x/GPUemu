@@ -2,8 +2,26 @@
 #include <sys/wait.h>
 #include <time.h>
 
+TEST(fs_art, "out/art.spv", FRAGMENT_SHADER, {
+})
 
-TEST(simple_fs, "out/simple_fs.spv", {
+TEST(fs_cord, "out/fs_cord.spv", FRAGMENT_SHADER, {
+    RAND_FLOAT(x);
+    RAND_FLOAT(y);
+    CREATE_SIMT_VEC4(glFragCord, x, y, SPLAT(0.0), SPLAT(0.0));
+    PRINT_VEC4("glFragCord:\n", glFragCord);
+    SET_GL_FRAGCORD(glFragCord);
+    CREATE_SIMT_VEC4(outCol, SPLAT(0.0), SPLAT(0.0), SPLAT(0.0), SPLAT(0.0));
+    BIND_OUT_LOCATION(0, outCol);
+    RUN_JIT();
+    PRINT_VEC4("outCol:\n", outCol);
+    CREATE_SIMT_VEC4(expected, x, y, SPLAT(0.0), SPLAT(0.0));
+    ASSERT_EQ_VEC4(outCol, expected);
+})
+
+
+
+TEST(simple_fs, "out/simple_fs.spv", FRAGMENT_SHADER, {
     CREATE_SIMT_VEC3(aCol, SPLAT(1.0), SPLAT(0.021), SPLAT(0.12));
     PRINT_VEC3("aCol:\n", aCol);
     BIND_IN_LOCATION(0, aCol);
@@ -16,7 +34,8 @@ TEST(simple_fs, "out/simple_fs.spv", {
 })
 
 
-TEST(simple_vs, "out/simple_vs.spv", {
+TEST(simple_vs, "out/simple_vs.spv", VERTEX_SHADER, {
+    SET_VERTEX_SHADER
     CREATE_SIMT_VEC3(aPos, SPLAT(1.0), SPLAT(2.0), SPLAT(3.0));
     PRINT_VEC3("aPos:\n", aPos);
     BIND_IN_LOCATION(0, aPos);
@@ -27,7 +46,7 @@ TEST(simple_vs, "out/simple_vs.spv", {
     ASSERT_EQ_VEC4(glPos, expected);
 })
 
-TEST(vec_math, "out/vec_math.spv", {
+TEST(vec_math, "out/vec_math.spv", VERTEX_SHADER,  {
     struct ubo_t {
         SimtFloat x;
         SimtFloat y;
@@ -78,7 +97,7 @@ SimtVec4 simt_mat4_mul_vec4(SimtMat4 m, SimtVec4 v)
     return result;
 }
 
-TEST(vec_mvp, "out/mvp.spv", ({
+TEST(vec_mvp, "out/mvp.spv", VERTEX_SHADER,({
     struct ubo_t {
         SimtMat4 mvp;
     };
