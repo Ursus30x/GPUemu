@@ -21,14 +21,17 @@
         name[i] = 2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f; \
     }
 
+#define SET_FRAGMENT_SHADER ctx.shader_type = FRAGMENT_SHADER;
+#define SET_VERTEX_SHADER ctx.shader_type = VERTEX_SHADER;
+
 #define RAND_SIMT()  (SimtFloat){ 2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f}
 
 #define BIND_IN_LOCATION(location, value) jit_ctx->location_in_buffers[location] = &value;
 #define BIND_OUT_LOCATION(location, value) jit_ctx->location_out_buffers[location] = &value;
 #define CREATE_BINDING(attribute, value) jit_ctx->binding_buffers[attribute] = &value;
-
+#define SET_GL_FRAGCORD(c) fs_in.gl_FragCoord = c;
 #define GET_GL_POS() SimtVec4 glPos = vs_out.gl_Position;
-#define RUN_JIT() func(jit_ctx, &vs_out);
+#define RUN_JIT() func(jit_ctx, &vs_out, &fs_in);
 
 #define PRINT_VEC3(caption, name)  \
     printf("%s", caption); \
@@ -90,7 +93,7 @@ void register_test(const char* name, TestFunc func)
     test_list_head = new_node;
 }
 
-#define TEST(test_name, path, ...) \
+#define TEST(test_name, path, shader_type, ...) \
     int test_name(void) \
     { \
         jitted_func_t func; \
@@ -113,12 +116,13 @@ void register_test(const char* name, TestFunc func)
             return 1; \
         } \
         fclose(f); \
-        init_jit(&ctx); \
+        init_jit(&ctx, shader_type); \
         func = jit_compile_spirv(&ctx, spirv_code, file_size / 4); \
         free(spirv_code); \
         ExecutionContext jit_ctx_storage = {0}; \
         ExecutionContext *jit_ctx = &jit_ctx_storage; \
         BuiltinVertexOutput vs_out = {0}; \
+        BuiltinFragmentInput fs_in = {0}; \
         __VA_ARGS__ ; \
         free_jit(&ctx); \
         printf("Test passed! Output matches expected results.\n"); \

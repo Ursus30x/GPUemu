@@ -217,7 +217,7 @@ static void execute_command(GpuState *gpu, Command *cmd)
                 uint32_t size =  *((uint32_t *)shader);
                 uint32_t* shader_code =  ((uint32_t *)(shader+ sizeof(uint32_t)));
                 free_jit(&gpu->jit_ctx_vs); 
-                init_jit(&gpu->jit_ctx_vs); 
+                init_jit(&gpu->jit_ctx_vs, VERTEX_SHADER); 
                 gpu->vs_shader_func = jit_compile_spirv(&gpu->jit_ctx_vs, shader_code, size / 4); 
             }
             break;
@@ -232,7 +232,7 @@ static void execute_command(GpuState *gpu, Command *cmd)
                 uint32_t size =  *((uint32_t *)shader);
                 uint32_t* shader_code =  ((uint32_t *)(shader+ sizeof(uint32_t)));
                 free_jit(&gpu->jit_ctx_fs); 
-                init_jit(&gpu->jit_ctx_fs); 
+                init_jit(&gpu->jit_ctx_fs, FRAGMENT_SHADER); 
                 gpu->fs_shader_func = jit_compile_spirv(&gpu->jit_ctx_fs, shader_code, size / 4); 
             }
             break;
@@ -611,8 +611,8 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 
     /* Initialize MSI */
     msi_init(pdev, 0, 1, true, false, errp);
-    init_jit(&gpu->jit_ctx_fs);
-    init_jit(&gpu->jit_ctx_vs);
+    init_jit(&gpu->jit_ctx_fs, FRAGMENT_SHADER);
+    init_jit(&gpu->jit_ctx_vs, VERTEX_SHADER);
 
     qemu_mutex_init(&gpu->cmd_mutex);
     qemu_cond_init(&gpu->cmd_cond);

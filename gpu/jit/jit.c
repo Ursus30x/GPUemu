@@ -385,6 +385,9 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpMatrixTimesVector:
             handle_op_matrix_times_vector(ctx, res_id, operands);
             break;
+        case SpvOpVectorShuffle:
+            handle_op_vector_shuffle(ctx, res_id,type_id, operands);
+            break;
         case SpvOpEntryPoint:
             handle_op_entry_point(ctx, operands, operand_count);
             break;
@@ -592,8 +595,9 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     return my_func;
 }
 
-void init_jit(JitContext* ctx)
+void init_jit(JitContext* ctx,shader_t shader_type)
 {
+    ctx->shader_type = shader_type;
 
     char *error = NULL;
     LLVMInitializeNativeTarget();
@@ -606,6 +610,7 @@ void init_jit(JitContext* ctx)
 
     ctx->env_arg_param = NULL;
     ctx->vs_data_param = NULL;
+    ctx->fs_data_param = NULL;
 
     LLVMTypeRef float_type = LLVMFloatTypeInContext(ctx->context);
     // <16 x float>
@@ -656,6 +661,13 @@ void init_jit(JitContext* ctx)
         simt_float     // gl_CullDistance (Index 3)
     };
     ctx->vs_data_type = LLVMStructTypeInContext(ctx->context, vs_data_fields, 4, 0);
+    LLVMTypeRef fs_data_fields[] = {
+        simt_vec4_type,// gl_FragCoord (Index 0)
+        simt_float,    // gl_FrontFacing (Index 1)
+        simt_vec4_type,// gl_PointCoord (Index 2)
+        simt_float     // gl_SampleID (Index 3)
+    };
+    ctx->fs_data_type = LLVMStructTypeInContext(ctx->context, fs_data_fields, 4, 0);
 
     if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 
     {
@@ -682,10 +694,78 @@ BuiltinVertexOutput* get_vs_data_from_mcjit(JitContext *ctx)
 
     return (BuiltinVertexOutput*)(uintptr_t)addr;
 }
+BuiltinFragmentInput* get_fs_data_from_mcjit(JitContext *ctx)
+{
+   uint64_t addr = LLVMGetGlobalValueAddress(ctx->engine, "fs_data");
+
+    if (!addr)
+        return NULL;
+
+    return (BuiltinFragmentInput*)(uintptr_t)addr;
+}
 void free_jit(JitContext* ctx)
 {
-    LLVMDisposeBuilder(ctx->builder);
-    LLVMOrcDisposeLLJIT(ctx->jit);
-    LLVMContextDispose(ctx->context);
+    if (!ctx) return;
+
+    if (ctx->builder) 
+    {
+        LLVMDisposeBuilder(ctx->builder);
+    }
+
+    if (ctx->jit) 
+    {
+        LLVMOrcDisposeLLJIT(ctx->jit);
+    }
+
+    if (ctx->engine) 
+    {
+        LLVMDisposeExecutionEngine(ctx->engine);
+    }
+
+
+    if (ctx->ts_ctx) 
+    {
+        LLVMOrcDisposeThreadSafeContext(ctx->ts_ctx);
+    } 
+    else if (ctx->context) 
+    {
+        LLVMContextDispose(ctx->context);
+    }
+
+
+   // if (ctx->type_kind_map) free(ctx->type_kind_map);
+   // if (ctx->id_val_map)    free(ctx->id_val_map);
+   // if (ctx->decorations)   free(ctx->decorations);
+    //if (ctx->type_info)     free(ctx->type_info);
+
+
+    // if (ctx->member_decorations)
+    // {
+    //     for (uint32_t i = 0; i < ctx->bound; ++i) 
+    //     {
+    //         MemberDecoNode* node = ctx->member_decorations[i];
+    //         while (node) 
+    //         {
+    //             MemberDecoNode* next = node->next; 
+    //             free(node);
+    //             node = next;
+    //         }
+    //     }
+    //     free(ctx->member_decorations);
+    // }
+
+    if (ctx->names) 
+    {
+        for (uint32_t i = 0; i < ctx->bound; ++i)
+        {
+            if (ctx->names[i]) 
+            {
+                free(ctx->names[i]);
+            }
+        }
+        free(ctx->names);
+    }
+
+    // ==========================================================
     memset(ctx, 0, sizeof(JitContext));
 }
