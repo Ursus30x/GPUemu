@@ -36,7 +36,7 @@ void resolve_pending_globals(JitContext* ctx)
         else continue;
 
 
-        if(g->storage_class == SpvStorageClassOutput && g->binding_or_loc == -1)
+        if((g->storage_class == SpvStorageClassOutput || g->storage_class == SpvStorageClassInput)&& g->binding_or_loc == -1)
         {
             // The "vertexOut" struct is the 4th element (index 3) in exec_ctx_fields
             LLVMValueRef indices[] = {
@@ -44,18 +44,36 @@ void resolve_pending_globals(JitContext* ctx)
                 LLVMConstInt(ctx->int_type, 0, 0)  // Field 0: llvm
             };
 
-            /* vs_data_param points to the builtin vertex output struct for this invocation */
-            LLVMValueRef vs_data = ctx->vs_data_param;
-            /* get the ADDRESS of the vertexOut block relative to the passed-in vs_data pointer */
-            LLVMValueRef vertex_out_addr = LLVMBuildInBoundsGEP2(
-                ctx->builder,
-                ctx->vs_data_type,
-                vs_data,
-                indices,
-                2,
-                "vertex_out_ptr"
-            );
-            set_val(ctx, g->res_id, vertex_out_addr);
+            if(ctx->shader_type == VERTEX_SHADER)
+            {
+                /* vs_data_param points to the builtin vertex output struct for this invocation */
+                LLVMValueRef vs_data = ctx->vs_data_param;
+                /* get the ADDRESS of the vertexOut block relative to the passed-in vs_data pointer */
+                LLVMValueRef vertex_out_addr = LLVMBuildInBoundsGEP2(
+                    ctx->builder,
+                    ctx->vs_data_type,
+                    vs_data,
+                    indices,
+                    2,
+                    "vertex_out_ptr"
+                );
+                set_val(ctx, g->res_id, vertex_out_addr);
+            }
+            else if(ctx->shader_type == FRAGMENT_SHADER)
+            {
+                /* fs_data_param points to the builtin vertex output struct for this invocation */
+                LLVMValueRef fs_data = ctx->fs_data_param;
+                /* get the ADDRESS of the fsIn block relative to the passed-in fs_data pointer */
+                LLVMValueRef fs_in_addr = LLVMBuildInBoundsGEP2(
+                    ctx->builder,
+                    ctx->fs_data_type,
+                    fs_data,
+                    indices,
+                    2,
+                    "fs_in_ptr"
+                );
+                set_val(ctx, g->res_id, fs_in_addr);
+            }
         }
         else 
         {
@@ -91,18 +109,22 @@ void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     {
         // Use the pre-built ExecutionContext and vs_data struct types from init_jit
         // Function Signature: void main_simt(ExecutionContext* ectx, BuiltinVertexOutput* vs_out)
-        LLVMTypeRef param_types[2];
+        LLVMTypeRef param_types[3];
         LLVMTypeRef ectx_ptr_type = LLVMPointerType(ctx->exec_ctx_type, 0);
         LLVMTypeRef vs_data_ptr_type = LLVMPointerType(ctx->vs_data_type, 0);
+        LLVMTypeRef fs_data_ptr_type = LLVMPointerType(ctx->fs_data_type, 0);
+       
         param_types[0] = ectx_ptr_type;
         param_types[1] = vs_data_ptr_type;
+        param_types[2] = fs_data_ptr_type;
 
-        LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), param_types, 2, 0);
+        LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), param_types, 3, 0);
         ctx->func = LLVMAddFunction(ctx->module, "main_simt", func_type);
 
         /* Capture the LLVM parameter values for use during codegen */
         ctx->env_arg_param = LLVMGetParam(ctx->func, 0);
         ctx->vs_data_param = LLVMGetParam(ctx->func, 1);
+        ctx->fs_data_param = LLVMGetParam(ctx->func, 2);
 
         LLVMAddTargetDependentFunctionAttr(ctx->func, "no-trapping-math", "true");
         LLVMAddTargetDependentFunctionAttr(ctx->func, "stack-protector-buffer-size", "8");

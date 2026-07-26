@@ -298,7 +298,54 @@ void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t ty
     }
 }
 
+void handle_op_vector_shuffle(JitContext* ctx, uint32_t res_id, uint32_t type_id,uint32_t* operands)
+{
+    SpvTypeInfo* info = &ctx->type_info[type_id];
+    uint32_t num_components = info->member_count;
 
+    // Word 0 is Vector 1, Word 1 is Vector 2, Words 2..N are the component indices
+    uint32_t vec1_id = operands[0];
+    uint32_t vec2_id = operands[1];
+
+    LLVMValueRef vec1 = get_val(ctx, vec1_id);
+    LLVMValueRef vec2 = get_val(ctx, vec2_id);
+
+    // In your JIT, SPIR-V vectors are mapped to LLVM Arrays of SIMT vectors.
+    // We need to know how many components are in Vector 1 to determine the index offset.
+    LLVMTypeRef vec1_type = LLVMTypeOf(vec1);
+    uint32_t vec1_components = LLVMGetArrayLength(vec1_type);
+
+    LLVMTypeRef lane_vec_type = LLVMVectorType(ctx->float_type, SIMT_WIDTH);
+    LLVMTypeRef array_type = LLVMArrayType(lane_vec_type, num_components);
+    LLVMValueRef result = LLVMGetUndef(array_type);
+
+    // Iterate through the requested indices and build the new logical vector
+    for (uint32_t i = 0; i < num_components; i++)
+    {
+        uint32_t comp_idx = operands[2 + i];
+        LLVMValueRef comp_val;
+
+        if (comp_idx == 0xFFFFFFFF)
+        {
+            // FFFFFFFF means the corresponding result component has no source and is undefined
+            comp_val = LLVMGetUndef(lane_vec_type);
+        }
+        else if (comp_idx < vec1_components)
+        {
+            // Extract from Vector 1
+            comp_val = LLVMBuildExtractValue(ctx->builder, vec1, comp_idx, "shuf_ext_v1");
+        }
+        else
+        {
+            // Extract from Vector 2 (offset by the length of Vector 1)
+            comp_val = LLVMBuildExtractValue(ctx->builder, vec2, comp_idx - vec1_components, "shuf_ext_v2");
+        }
+
+        result = LLVMBuildInsertValue(ctx->builder, result, comp_val, i, "shuf_ins");
+    }
+
+    set_val(ctx, res_id, result);
+}
 void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* operands, uint32_t num_indices)
 {
     // operands[0] = Composite ID
@@ -448,9 +495,45 @@ void create_glsl_std_450_map(JitContext* ctx)
     ctx->glsl_handlers[GLSLstd450Distance] = handle_ext_distance;
     ctx->glsl_handlers[GLSLstd450Cross] = handle_ext_cross;
     ctx->glsl_handlers[GLSLstd450Refract] = handle_ext_refract;
+    ctx->glsl_handlers[GLSLstd450Tan] = handle_ext_tan;
+    ctx->glsl_handlers[GLSLstd450Exp] = handle_ext_exp;
+
 }
+void handle_ext_exp(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
 
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.exp", 8); 
+    LLVMValueRef exp_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
 
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef args[] = { x };
+
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(exp_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                        func_sig,
+                                        exp_func, 
+                                        args, 1, 
+                                        "exp_v");
+
+    set_val(ctx, res_id, result);
+}
+void handle_ext_tan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.tan", 8); 
+    LLVMValueRef sin_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
+    LLVMValueRef x = get_val(ctx, operands[0]);
+    LLVMValueRef args[] = { x };
+    LLVMTypeRef func_sig = LLVMGlobalGetValueType(sin_func);
+    LLVMValueRef result = LLVMBuildCall2(ctx->builder, 
+                                    func_sig,
+                                    sin_func, 
+                                    args, 1, 
+                                    "tan_v");
+    set_val(ctx, res_id, result);
+}
 void handle_ext_sin(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMTypeRef vec_float_type = ctx->vec_float_type;
@@ -520,8 +603,8 @@ void handle_ext_pow(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 void handle_ext_atan2(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMTypeRef vec_float_type = ctx->vec_float_type;
-    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.atan2", 9); 
-    LLVMValueRef atan2_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 2);
+    unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.atan2", 10); 
+    LLVMValueRef atan2_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
     LLVMValueRef x = get_val(ctx, operands[0]);
     LLVMValueRef y = get_val(ctx, operands[1]);
 
