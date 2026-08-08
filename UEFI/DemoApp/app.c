@@ -759,7 +759,7 @@ VOID Test3DTrianglesSimt(){
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
-
+        
         mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
         mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
         mGOP3D->GpuBindVBO(mGOP3D, hVBO, 8);
@@ -1063,7 +1063,7 @@ VOID TestShaderArt() {
     float time = 0.0f;
     while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
         GetTimeSeconds(&time);
-        for(UINT32 i = 0; i<16;i++)
+        for(UINT32 i = 0; i<16; i++)
         {
             uniform.iTime[i] = time;
         }

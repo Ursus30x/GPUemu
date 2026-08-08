@@ -91,14 +91,15 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
 
 static LLVMValueRef build_recursive_load(JitContext *ctx, LLVMTypeRef type, LLVMValueRef ptr) 
 {
-   
-    if (LLVMGetTypeKind(type) == LLVMVectorTypeKind) 
+    LLVMTypeKind kind = LLVMGetTypeKind(type);
+
+    if (kind == LLVMVectorTypeKind) 
     {
         LLVMValueRef load = LLVMBuildLoad2(ctx->builder, type, ptr, "load_simt");
         LLVMSetAlignment(load, 64);
         return load;
     } 
-    else if (LLVMGetTypeKind(type) == LLVMArrayTypeKind) 
+    else if (kind == LLVMArrayTypeKind) 
     {
         uint32_t count = LLVMGetArrayLength(type);
         LLVMTypeRef elem_type = LLVMGetElementType(type);
@@ -116,7 +117,10 @@ static LLVMValueRef build_recursive_load(JitContext *ctx, LLVMTypeRef type, LLVM
         }
         return aggregate;
     }
-    return LLVMGetUndef(type);
+
+    LLVMValueRef load = LLVMBuildLoad2(ctx->builder, type, ptr, "load_scalar");
+    LLVMSetAlignment(load, 64);
+    return load;
 }
 
 void handle_op_load(JitContext* ctx, uint32_t res_id, uint32_t res_type_id, uint32_t* operands) 
@@ -166,6 +170,11 @@ static void build_recursive_store(JitContext *ctx, LLVMValueRef val_to_store, LL
 
             build_recursive_store(ctx, element_val, element_ptr, mask);
         }
+    }
+    else
+    {
+        LLVMValueRef store_inst = LLVMBuildStore(ctx->builder, val_to_store, ptr);
+        LLVMSetAlignment(store_inst, 64);
     }
 }
 

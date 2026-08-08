@@ -23,6 +23,7 @@
 #define MAX_BINDINGS 8
 #define MAX_ATTRIBUTES 8
 #define MAX_GLOBALS 32
+#define MAX_CONTROL_STACK 16
 
 #define VS_OUT_NAME "gl_PerVertex"
 
@@ -30,6 +31,30 @@ typedef enum {
     FRAGMENT_SHADER,
     VERTEX_SHADER
 } shader_t;
+
+
+
+typedef enum {
+    JIT_CFG_NONE = 0,
+    JIT_CFG_SELECTION,
+    JIT_CFG_LOOP
+} JitCfgKind;
+
+typedef struct {
+    JitCfgKind kind;
+    uint32_t merge_id;
+    uint32_t continue_id;
+    uint32_t header_id;
+
+    uint32_t true_id;
+    uint32_t false_id;
+    bool executed_true;
+    LLVMValueRef cond;
+    LLVMValueRef parent_mask;
+
+
+} JitControlConstruct;
+
 
 typedef float SimtFloat __attribute__((vector_size(64)));
 
@@ -184,11 +209,14 @@ struct JitContext{
     ShaderInfo shader_info;
 
     char **names;
+
+    JitControlConstruct control_stack[MAX_CONTROL_STACK];
+    uint32_t control_stack_depth;
     
 };
+
 /* Jitted function now takes pointers to per-invocation state to be thread-safe */
 typedef void (*jitted_func_t)(ExecutionContext*, BuiltinVertexOutput*, BuiltinFragmentInput*);
-
 
 void jit_call_printf(JitContext* ctx, const char* fmt, LLVMValueRef* args, unsigned num_args);
 void jit_call_printf_simt(JitContext* ctx, const char* fmt, LLVMValueRef vec_val);

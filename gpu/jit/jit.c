@@ -345,6 +345,27 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpLabel:
             handle_op_label(ctx, res_id);
             break;
+        case SpvOpBranch:
+            handle_op_branch(ctx, operands);
+            break;
+        case SpvOpBranchConditional:
+            handle_op_branch_conditional(ctx, operands);
+            break;
+        case SpvOpSelectionMerge:
+            handle_op_selection_merge(ctx, operands);
+            break;
+        case SpvOpLoopMerge:
+            handle_op_loop_merge(ctx, operands);
+            break;
+        case SpvOpPhi:
+            handle_op_phi(ctx, res_id, type_id, operands, operand_count);
+            break;
+        case SpvOpKill:
+            LLVMBuildUnreachable(ctx->builder);
+            break;
+        case SpvOpUnreachable:
+            LLVMBuildUnreachable(ctx->builder);
+            break;
         case SpvOpFunctionEnd:
             // Nothing to do here for now, but we could add cleanup logic if needed in the future
             break;
@@ -433,6 +454,15 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
         case SpvOpTypeFloat:
             return ctx->vec_float_type;
 
+        case SpvOpTypeInt:
+        {
+            uint32_t width = info->base_type_id ? info->base_type_id : 32;
+            return LLVMIntTypeInContext(ctx->context, width);
+        }
+
+        case SpvOpTypeBool:
+            return LLVMInt1TypeInContext(ctx->context);
+
         case SpvOpTypeVector: 
         {
             uint32_t count = info->member_count; 
@@ -491,6 +521,11 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
 
 
+    ctx->func = NULL;
+    ctx->current_block = NULL;
+    ctx->control_stack_depth = 0;
+    memset(ctx->control_stack, 0, sizeof(ctx->control_stack));
+
     DEBUG_PRINT("--- Starting JIT Compilation (LLVM ORC Backend) ---\n");
     LLVMValueRef values[SIMT_WIDTH];
     for (size_t i = 0; i < SIMT_WIDTH; i++)
@@ -538,7 +573,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
 
     char *error = NULL;
    // LLVMDumpModule(ctx->module);
-
+    printf("GENERATED SPIRV\n");
     LLVMVerifyModule(ctx->module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
     //LLVMDumpModule(ctx->module);
