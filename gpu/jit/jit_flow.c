@@ -1,54 +1,299 @@
 #include "jit_flow.h"
+#include <stdio.h>
+#include <string.h>
 
-
-void handle_op_type_function(JitContext* ctx, uint32_t res_id, uint32_t* operands) 
+static int jit_block_has_terminator(LLVMBasicBlockRef bb)
 {
-    // Operand[0] is the return type; the remaining operands are argument types.
-    // For the GPU emulator (main), we expect a single function with a specific signature, so we can directly map this to our predefined function type.
-    // TO-DO handle multiple functions and more complex signatures in the future if needed.
+    return bb != NULL && LLVMGetBasicBlockTerminator(bb) != NULL;
+}
+
+static LLVMBasicBlockRef jit_get_or_create_label_block(JitContext* ctx, uint32_t label_id)
+{
+    LLVMValueRef existing = get_val(ctx, label_id);
+    if (existing)
+        return (LLVMBasicBlockRef)existing;
+
+    char name[32];
+    snprintf(name, sizeof(name), "label_%u", label_id);
+
+    LLVMBasicBlockRef bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, name);
+    set_val(ctx, label_id, (LLVMValueRef)bb);
+    return bb;
+
+
+}
+
+LLVMValueRef jit_get_emask(JitContext* ctx)
+{
+    if (ctx->emask != NULL)
+        return ctx->emask;
+
+    // Fallback: Default to all-true SIMT active mask (<16 x i1> true)
+    LLVMTypeRef i1_type = LLVMInt1TypeInContext(ctx->context);
+    LLVMTypeRef mask_type = LLVMVectorType(i1_type, 16);
+    return LLVMConstAllOnes(mask_type);
+
+
+}
+
+static LLVMValueRef jit_to_branch_condition(JitContext* ctx, LLVMValueRef cond)
+{
+    if (!cond)
+        return NULL;
+
+    LLVMTypeRef cond_type = LLVMTypeOf(cond);
+    if (!cond_type)
+        return cond;
+
+    LLVMTypeKind kind = LLVMGetTypeKind(cond_type);
+
+    if (kind == LLVMVectorTypeKind)
+    {
+        unsigned int num_elements = LLVMGetVectorSize(cond_type);
+        if (num_elements == 0)
+            return cond;
+
+        LLVMValueRef result = NULL;
+        for (unsigned int i = 0; i < num_elements; i++)
+        {
+            LLVMValueRef elem = LLVMBuildExtractElement(
+                ctx->builder, cond, LLVMConstInt(ctx->int_type, i, 0), "lane_val");
+
+            LLVMTypeRef elem_type = LLVMTypeOf(elem);
+            LLVMTypeKind elem_kind = LLVMGetTypeKind(elem_type);
+            LLVMValueRef elem_bool = elem;
+
+            if (elem_kind == LLVMIntegerTypeKind)
+            {
+                if (LLVMGetIntTypeWidth(elem_type) != 1)
+                {
+                    elem_bool = LLVMBuildICmp(
+                        ctx->builder,
+                        LLVMIntNE,
+                        elem,
+                        LLVMConstInt(elem_type, 0, 0),
+                        "lane_cmp");
+                }
+            }
+            else if (elem_kind == LLVMFloatTypeKind)
+            {
+                elem_bool = LLVMBuildFCmp(
+                    ctx->builder,
+                    LLVMRealONE,
+                    elem,
+                    LLVMConstReal(elem_type, 0.0),
+                    "lane_cmp");
+            }
+
+            if (result == NULL)
+                result = elem_bool;
+            else
+                result = LLVMBuildOr(ctx->builder, result, elem_bool, "branch_cond_any");
+        }
+
+        return result;
+    }
+
+    if (kind == LLVMIntegerTypeKind)
+    {
+        if (LLVMGetIntTypeWidth(cond_type) == 1)
+            return cond;
+
+        return LLVMBuildICmp(
+            ctx->builder,
+            LLVMIntNE,
+            cond,
+            LLVMConstInt(cond_type, 0, 0),
+            "branch_cond_cmp");
+    }
+
+    if (kind == LLVMFloatTypeKind)
+    {
+        return LLVMBuildFCmp(
+            ctx->builder,
+            LLVMRealONE,
+            cond,
+            LLVMConstReal(cond_type, 0.0),
+            "branch_cond_cmp");
+    }
+    return cond;
+}
+
+void handle_op_type_function(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    (void)operands;
     ctx->type_info[res_id].opcode = SpvOpTypeFunction;
 }
-// static int8_t is_vs_out(const char* name)
-// {
-//     if(name == NULL)
-//     {
-//         return 0;
-//     }
-//     return strcmp(name, VS_OUT_NAME) == 0;
-// }
-void resolve_pending_globals(JitContext* ctx) 
+
+void handle_op_selection_merge(JitContext* ctx, uint32_t* operands)
 {
-    /* Use the function parameter values (passed into main_simt) instead of module globals */
+    if (ctx->control_stack_depth >= MAX_CONTROL_STACK)
+        return;
+
+    JitControlConstruct* construct = &ctx->control_stack[ctx->control_stack_depth++];
+    memset(construct, 0, sizeof(*construct));
+    construct->kind = JIT_CFG_SELECTION;
+    construct->merge_id = operands[0];
+    construct->continue_id = 0;
+    construct->header_id = 0;
+
+
+}
+
+void handle_op_loop_merge(JitContext* ctx, uint32_t* operands)
+{
+    if (ctx->control_stack_depth >= MAX_CONTROL_STACK)
+        return;
+
+    JitControlConstruct* construct = &ctx->control_stack[ctx->control_stack_depth++];
+    memset(construct, 0, sizeof(*construct));
+    construct->kind = JIT_CFG_LOOP;
+    construct->merge_id = operands[0];
+    construct->continue_id = operands[1];
+    construct->header_id = 0;
+
+
+}
+
+void handle_op_branch(JitContext* ctx, uint32_t* operands)
+{
+    if (!ctx->func)
+    return;
+
+    uint32_t target_id = operands[0];
+
+    if (ctx->current_block != NULL && !jit_block_has_terminator(ctx->current_block))
+    {
+        // Intercept block jumps within selection constructs to enable linear SIMT execution
+        if (ctx->control_stack_depth > 0 && 
+            ctx->control_stack[ctx->control_stack_depth - 1].kind == JIT_CFG_SELECTION)
+        {
+            JitControlConstruct* construct = &ctx->control_stack[ctx->control_stack_depth - 1];
+
+            if (target_id == construct->merge_id)
+            {
+                // End of 'then' block reached: transition to 'else' block if present
+                if (!construct->executed_true && construct->false_id != 0 && construct->false_id != construct->merge_id)
+                {
+                    construct->executed_true = true;
+
+                    // Calculate active mask for 'else' branch: parent_mask & (~cond)
+                    LLVMValueRef not_cond = LLVMBuildNot(ctx->builder, construct->cond, "cond_not");
+                    LLVMValueRef false_mask = LLVMBuildAnd(ctx->builder, construct->parent_mask, not_cond, "simt_mask_else");
+                    ctx->emask = false_mask;
+
+                    // Divert execution into 'else' block instead of skipping to merge block
+                    LLVMBasicBlockRef false_block = jit_get_or_create_label_block(ctx, construct->false_id);
+                    LLVMBuildBr(ctx->builder, false_block);
+                    return;
+                }
+                else
+                {
+                    // End of selection construct: restore parent active mask and pop construct
+                    ctx->emask = construct->parent_mask;
+                    ctx->control_stack_depth--;
+                }
+            }
+        }
+
+        LLVMBasicBlockRef target = jit_get_or_create_label_block(ctx, target_id);
+        LLVMBuildBr(ctx->builder, target);
+    }
+}
+
+void handle_op_branch_conditional(JitContext* ctx, uint32_t* operands)
+{
+    if (!ctx->func)
+        return;
+
+    LLVMValueRef cond = get_val(ctx, operands[0]);
+    uint32_t true_id = operands[1];
+    uint32_t false_id = operands[2];
+
+    LLVMBasicBlockRef true_block = jit_get_or_create_label_block(ctx, true_id);
+
+    if (ctx->current_block != NULL && !jit_block_has_terminator(ctx->current_block))
+    {
+        // Check if conditional branch belongs to an OpSelectionMerge construct
+        if (ctx->control_stack_depth > 0 && 
+            ctx->control_stack[ctx->control_stack_depth - 1].kind == JIT_CFG_SELECTION)
+        {
+            JitControlConstruct* construct = &ctx->control_stack[ctx->control_stack_depth - 1];
+            construct->true_id = true_id;
+            construct->false_id = false_id;
+            construct->cond = cond;
+            construct->parent_mask = jit_get_emask(ctx);
+
+            // Calculate active mask for 'then' branch: parent_mask & cond
+            LLVMValueRef true_mask = LLVMBuildAnd(ctx->builder, construct->parent_mask, cond, "simt_mask_then");
+            ctx->emask = true_mask;
+
+            // Enter 'then' block unconditionally to process active lanes
+            LLVMBuildBr(ctx->builder, true_block);
+        }
+        else
+        {
+            // Standard loop / scalar branch fallback
+            LLVMBasicBlockRef false_block = jit_get_or_create_label_block(ctx, false_id);
+            LLVMValueRef cond_scalar = jit_to_branch_condition(ctx, cond);
+            LLVMBuildCondBr(ctx->builder, cond_scalar, true_block, false_block);
+        }
+    }
+}
+
+void handle_op_phi(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count)
+{
+    if (!ctx->func || !ctx->current_block || operand_count < 2)
+        return;
+
+    LLVMTypeRef phi_type = map_spv_to_llvm_type(ctx, type_id);
+    if (!phi_type)
+        phi_type = LLVMTypeOf(get_val(ctx, operands[0]));
+
+    LLVMValueRef phi = LLVMBuildPhi(ctx->builder, phi_type, "phi");
+    set_val(ctx, res_id, phi);
+
+    uint32_t incoming_count = operand_count / 2;
+    LLVMValueRef incoming_values[16];
+    LLVMBasicBlockRef incoming_blocks[16];
+
+    for (uint32_t i = 0; i < incoming_count && i < 16; ++i)
+    {
+        incoming_values[i] = get_val(ctx, operands[i * 2]);
+        incoming_blocks[i] = jit_get_or_create_label_block(ctx, operands[i * 2 + 1]);
+    }
+
+    if (incoming_count > 0)
+        LLVMAddIncoming(phi, incoming_values, incoming_blocks, incoming_count);
+}
+
+void resolve_pending_globals(JitContext* ctx)
+{
     LLVMValueRef ectx_ptr = ctx->env_arg_param;
 
     for (uint32_t i = 0; i < ctx->global_count; i++) 
     {
         GlobalResolution* g = &ctx->globals[i];
-        //char *name = ctx->names[g->base_type];
         
         uint32_t field_idx = 0;
         if (g->storage_class == SpvStorageClassUniform || g->storage_class == SpvStorageClassStorageBuffer)
-            field_idx = 0; // binding_buffers
+            field_idx = 0;
         else if (g->storage_class == SpvStorageClassInput)
-            field_idx = 1; // location_in_buffers
+            field_idx = 1;
         else if (g->storage_class == SpvStorageClassOutput)
-            field_idx = 2; // location_out_buffers
+            field_idx = 2;
         else continue;
 
-
-        if((g->storage_class == SpvStorageClassOutput || g->storage_class == SpvStorageClassInput)&& g->binding_or_loc == -1)
+        if((g->storage_class == SpvStorageClassOutput || g->storage_class == SpvStorageClassInput) && g->binding_or_loc == -1)
         {
-            // The "vertexOut" struct is the 4th element (index 3) in exec_ctx_fields
             LLVMValueRef indices[] = {
-                LLVMConstInt(ctx->int_type, 0, 0), // Pointer dereference
-                LLVMConstInt(ctx->int_type, 0, 0)  // Field 0: llvm
+                LLVMConstInt(ctx->int_type, 0, 0),
+                LLVMConstInt(ctx->int_type, 0, 0)
             };
 
             if(ctx->shader_type == VERTEX_SHADER)
             {
-                /* vs_data_param points to the builtin vertex output struct for this invocation */
                 LLVMValueRef vs_data = ctx->vs_data_param;
-                /* get the ADDRESS of the vertexOut block relative to the passed-in vs_data pointer */
                 LLVMValueRef vertex_out_addr = LLVMBuildInBoundsGEP2(
                     ctx->builder,
                     ctx->vs_data_type,
@@ -61,9 +306,7 @@ void resolve_pending_globals(JitContext* ctx)
             }
             else if(ctx->shader_type == FRAGMENT_SHADER)
             {
-                /* fs_data_param points to the builtin vertex output struct for this invocation */
                 LLVMValueRef fs_data = ctx->fs_data_param;
-                /* get the ADDRESS of the fsIn block relative to the passed-in fs_data pointer */
                 LLVMValueRef fs_in_addr = LLVMBuildInBoundsGEP2(
                     ctx->builder,
                     ctx->fs_data_type,
@@ -83,7 +326,6 @@ void resolve_pending_globals(JitContext* ctx)
                 LLVMConstInt(ctx->int_type, g->binding_or_loc, 0)
             };
             
-            // GEP into the global struct address directly
             LLVMValueRef slot_ptr = LLVMBuildInBoundsGEP2(
                 ctx->builder, 
                 ctx->exec_ctx_type, 
@@ -97,23 +339,22 @@ void resolve_pending_globals(JitContext* ctx)
             set_val(ctx, g->res_id, actual_data_ptr);
         }
     }
+
 }
 
 void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands)
 {
-    // operands[0]: Function Control 
-    // operands[1]: Function Type ID 
-    // TO-DO handle multiple functions and more complex signatures in the future if needed.
+    (void)res_id;
+    (void)type_id;
+    (void)operands;
 
-    if (ctx->func == NULL) 
+    if (ctx->func == NULL)
     {
-        // Use the pre-built ExecutionContext and vs_data struct types from init_jit
-        // Function Signature: void main_simt(ExecutionContext* ectx, BuiltinVertexOutput* vs_out)
         LLVMTypeRef param_types[3];
         LLVMTypeRef ectx_ptr_type = LLVMPointerType(ctx->exec_ctx_type, 0);
         LLVMTypeRef vs_data_ptr_type = LLVMPointerType(ctx->vs_data_type, 0);
         LLVMTypeRef fs_data_ptr_type = LLVMPointerType(ctx->fs_data_type, 0);
-       
+
         param_types[0] = ectx_ptr_type;
         param_types[1] = vs_data_ptr_type;
         param_types[2] = fs_data_ptr_type;
@@ -121,7 +362,6 @@ void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
         LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), param_types, 3, 0);
         ctx->func = LLVMAddFunction(ctx->module, "main_simt", func_type);
 
-        /* Capture the LLVM parameter values for use during codegen */
         ctx->env_arg_param = LLVMGetParam(ctx->func, 0);
         ctx->vs_data_param = LLVMGetParam(ctx->func, 1);
         ctx->fs_data_param = LLVMGetParam(ctx->func, 2);
@@ -133,22 +373,20 @@ void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
         ctx->current_block = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "init_global");
         LLVMPositionBuilderAtEnd(ctx->builder, ctx->current_block);
 
-        resolve_pending_globals(ctx);
+        ctx->emask = jit_get_emask(ctx);
 
+        resolve_pending_globals(ctx);
     }
 }
 
-void handle_op_label(JitContext* ctx, uint32_t res_id) 
+void handle_op_label(JitContext* ctx, uint32_t res_id)
 {
-    char name[32];
-    snprintf(name, sizeof(name), "label_%u", res_id);
-    
-    LLVMBasicBlockRef bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, name);
-    if(ctx->current_block != NULL)
+    LLVMBasicBlockRef bb = jit_get_or_create_label_block(ctx, res_id);
+    if(ctx->current_block != NULL && ctx->current_block != bb && !jit_block_has_terminator(ctx->current_block))
     {
         LLVMBuildBr(ctx->builder, bb);
     }
     LLVMPositionBuilderAtEnd(ctx->builder, bb);
     ctx->current_block = bb;
-    set_val(ctx, res_id, (LLVMValueRef)bb); 
+    set_val(ctx, res_id, (LLVMValueRef)bb);
 }

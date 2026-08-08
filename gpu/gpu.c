@@ -210,8 +210,9 @@ static void execute_command(GpuState *gpu, Command *cmd)
             break;
         case STATE_ID_VERTEX_SHADER_PTR:
         {   DEBUG_PRINT("[CMD] Vertex shader config\n");
+            uint32_t prev_addr =  gpu->vs_code_addr;
             gpu->vs_code_addr = cmd->payload.state.value.shader_ptrs.vs_addr;
-            if(!gpu->use_legacy_asm && gpu->vs_shader_func == NULL)
+            if(!gpu->use_legacy_asm && (gpu->vs_shader_func == NULL ||  gpu->vs_code_addr != prev_addr))
             {
                 void* shader = gpu->vram_ptr+gpu->vs_code_addr;
                 uint32_t size =  *((uint32_t *)shader);
@@ -225,8 +226,9 @@ static void execute_command(GpuState *gpu, Command *cmd)
         case STATE_ID_FRAGMENT_SHADER_PTR:
         {   
             DEBUG_PRINT("[CMD] Fragment shader config\n");
+            uint32_t prev_addr = gpu->fs_code_addr;
             gpu->fs_code_addr = cmd->payload.state.value.shader_ptrs.fs_addr;
-            if(!gpu->use_legacy_asm && gpu->fs_shader_func == NULL)
+            if(!gpu->use_legacy_asm && (gpu->fs_shader_func == NULL || prev_addr !=  gpu->fs_code_addr))
             {
                 void* shader = gpu->vram_ptr+gpu->fs_code_addr;
                 uint32_t size =  *((uint32_t *)shader);
