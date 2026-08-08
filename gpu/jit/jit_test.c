@@ -128,6 +128,84 @@ TEST(vec_mvp, "out/mvp.spv", VERTEX_SHADER,({
     
 }))
 
+TEST(cfg_if, "out/cfg_if.spv", VERTEX_SHADER, {
+    CREATE_SIMT_VEC3(aPos, SPLAT(1.5), SPLAT(0.0), SPLAT(0.0));
+    BIND_IN_LOCATION(0, aPos);
+    RUN_JIT();
+    GET_GL_POS();
+    CREATE_SIMT_VEC4(expected, SPLAT(2.5), SPLAT(0.0), SPLAT(0.0), SPLAT(1.0));
+    ASSERT_EQ_VEC4(glPos, expected);
+})
+
+TEST(cfg_if_else, "out/cfg_if_else.spv", VERTEX_SHADER, {
+    CREATE_SIMT_VEC3(aPos, SPLAT(1.0), SPLAT(2.0), SPLAT(0.0));
+    BIND_IN_LOCATION(0, aPos);
+    RUN_JIT();
+    GET_GL_POS();
+    CREATE_SIMT_VEC4(expected, SPLAT(3.0), SPLAT(2.0), SPLAT(0.0), SPLAT(1.0));
+    ASSERT_EQ_VEC4(glPos, expected);
+})
+
+TEST(cfg_loop, "out/cfg_loop.spv", VERTEX_SHADER, {
+    SimtFloat x_vals;
+    SimtFloat y_vals;
+    SimtFloat z_vals;
+
+    for (uint32_t lane = 0; lane < SIMT_WIDTH; lane++) {
+        x_vals[lane] = (float)(1 + lane);
+        y_vals[lane] = (float)(2 + lane);
+        z_vals[lane] = (float)(3 + lane);
+    }
+
+    SimtVec3 aPos = { x_vals, y_vals, z_vals };
+    BIND_IN_LOCATION(0, aPos);
+    RUN_JIT();
+    GET_GL_POS();
+
+    SimtVec4 expected = {0};
+    for (uint32_t lane = 0; lane < SIMT_WIDTH; lane++) {
+        expected.elem[0][lane] = 3.0f * x_vals[lane];
+        expected.elem[1][lane] = y_vals[lane];
+        expected.elem[2][lane] = z_vals[lane];
+        expected.elem[3][lane] = 1.0f;
+    }
+    PRINT_VEC4("glPos: \n", glPos);
+        PRINT_VEC4("expected: \n", expected);
+
+    ASSERT_EQ_VEC4(glPos, expected);
+})
+
+
+TEST(cfg_loop_if, "out/cfg_loop_if.spv", VERTEX_SHADER, {
+    SimtFloat x_vals;
+    SimtFloat y_vals;
+    SimtFloat z_vals;
+
+    for (uint32_t lane = 0; lane < SIMT_WIDTH; lane++) {
+        x_vals[lane] = (float)(1 + lane);
+        y_vals[lane] = (lane % 2 == 0) ? 1.0f : -1.0f;
+        z_vals[lane] = (float)(10 + lane);
+    }
+
+    SimtVec3 aPos = { x_vals, y_vals, z_vals };
+    BIND_IN_LOCATION(0, aPos);
+
+    RUN_JIT();
+    GET_GL_POS();
+
+    SimtVec4 expected = {0};
+    for (uint32_t lane = 0; lane < SIMT_WIDTH; lane++) {
+        float chosen = (y_vals[lane] > 0.0f) ? x_vals[lane] : z_vals[lane];
+        expected.elem[0][lane] = 3.0f * chosen;
+        expected.elem[1][lane] = y_vals[lane];
+        expected.elem[2][lane] = z_vals[lane];
+        expected.elem[3][lane] = 1.0f;
+    }
+     PRINT_VEC4("glPos: \n", glPos);
+PRINT_VEC4("expected: \n", expected);
+    ASSERT_EQ_VEC4(glPos, expected);
+})
+
 int run_compilation_script(void) 
 {
     printf("--- Running compilation script ---\n");

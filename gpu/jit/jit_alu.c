@@ -20,14 +20,38 @@ void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     {
         float val = *(float*)&operands[0];
         const_val = LLVMConstReal(ctx->float_type, val);
-    } 
-    else 
+
+        LLVMValueRef* vals = malloc(sizeof(LLVMValueRef) * SIMT_WIDTH);
+        for (int i = 0; i < SIMT_WIDTH; i++) 
+        {
+            vals[i] = const_val;
+        }
+
+        LLVMValueRef vec_val = LLVMConstVector(vals, SIMT_WIDTH);
+        free(vals);
+        set_val(ctx, res_id, vec_val);
+        return;
+    }
+
+    if (kind == SpvOpTypeInt)
     {
         int32_t val = *(int32_t*)&operands[0];
         const_val = LLVMConstInt(ctx->int_type, (unsigned long long)val, 1);
+        set_val(ctx, res_id, const_val);
+        return;
     }
 
-    // Creating the SIMT vector
+    if (kind == SpvOpTypeBool)
+    {
+        uint32_t val = operands[0] != 0;
+        const_val = LLVMConstInt(LLVMInt1TypeInContext(ctx->context), val, 0);
+        set_val(ctx, res_id, const_val);
+        return;
+    }
+
+    int32_t val = *(int32_t*)&operands[0];
+    const_val = LLVMConstInt(ctx->int_type, (unsigned long long)val, 1);
+
     LLVMValueRef* vals = malloc(sizeof(LLVMValueRef) * SIMT_WIDTH);
     for (int i = 0; i < SIMT_WIDTH; i++) 
     {
