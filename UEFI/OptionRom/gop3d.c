@@ -11,6 +11,7 @@
 #include "ringbuffer.h"
 #include "gpu_memory.h"
 #include "vram.h"
+#include "gpu_hw.h"
 #include "sync.h"
 
 
@@ -254,6 +255,91 @@ EFI_STATUS EFIAPI GpuFreeBuffer(
     return EFI_SUCCESS;
 }
 
+EFI_STATUS EFIAPI GpuCmdTransferBuffer(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  GOP_3D_BUFFER_TYPE  Type,
+  IN  VOID                *HostData,
+  IN  UINT32              Size,
+  OUT VRAMADDR            *GpuAddress
+  )
+{
+    if (HostData == NULL || Size == 0 || GpuAddress == NULL) {
+        return EFI_INVALID_PARAMETER;
+    }
+
+    CHAR8 *Tag = "GENERIC";
+    if (Type == Gop3dBufferTypeVertex) Tag = "VBO";
+    else if (Type == Gop3dBufferTypeIndex) Tag = "IBO";
+    else if (Type == Gop3dBufferTypeUniform) Tag = "UBO";
+    else if (Type == Gop3dBufferTypeShaderCode) Tag = "SHADER";
+
+    (VOID)Tag; // Suppress "unused variable" error if debug is disabled
+
+    // Allocate VRAM
+    VRAMADDR Addr = GpuAllocateMem(Size, Tag);
+    if (Addr == 0) {
+        return EFI_OUT_OF_RESOURCES;
+    }
+
+    Command cmd;
+    ZeroMem(&cmd, sizeof(Command));
+    cmd.opcode = CMD_DMA_TRANSFER;
+    cmd.payload.dma.host_addr = (UINT64)(UINTN)HostData;
+    cmd.payload.dma.vram_offset = Addr;
+    cmd.payload.dma.size = Size;
+    cmd.payload.dma.cmd = GPU_DMA_CMD_TO_VRAM;
+
+    *GpuAddress = Addr;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdUpdateBuffer(
+  IN     GOP_3D_PROTOCOL     *This,
+  IN     GOP_3D_BUFFER_TYPE  Type,
+  IN     VOID                *HostData,
+  IN     UINT32              Size,
+  IN OUT VRAMADDR            *GpuAddress
+)
+{
+    if (HostData == NULL || Size == 0 || GpuAddress == NULL) {
+        return EFI_INVALID_PARAMETER;
+    }
+
+    VRAMADDR OldAddr = *GpuAddress;
+    UINT32 OldSize = GpuGetAllocatedSize(OldAddr);
+
+    // If existing buffer is large enough, just overwrite it
+    if (OldSize >= Size) {
+        Command cmd;
+        ZeroMem(&cmd, sizeof(Command));
+        cmd.opcode = CMD_DMA_TRANSFER;
+        cmd.payload.dma.host_addr = (UINT64)(UINTN)HostData;
+        cmd.payload.dma.vram_offset = OldAddr;
+        cmd.payload.dma.size = Size;
+        cmd.payload.dma.cmd = GPU_DMA_CMD_TO_VRAM;
+
+        return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+    }
+
+    // If updated size is bigger, try to allocate new buffer first
+    VRAMADDR NewAddr = 0;
+    EFI_STATUS Status = GpuCmdTransferBuffer(This, Type, HostData, Size, &NewAddr);
+
+    if (EFI_ERROR(Status) || NewAddr == 0) {
+        return EFI_OUT_OF_RESOURCES;
+    }
+
+    // TODO: Implement proper realloc mechanizm in memory allocator
+    if (OldAddr != 0) {
+        GpuFreeMem(OldAddr);
+    }
+
+    *GpuAddress = NewAddr;
+
+    return EFI_SUCCESS;
+}
+
 /* -------------------------------------------------------------------------
  * Drawing & Execution
  * ------------------------------------------------------------------------- */
@@ -352,6 +438,9 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuTransferBuffer    = GpuTransferBuffer;
   Private->Gop3dProtocol.GpuUpdateBuffer      = GpuUpdateBuffer;
   Private->Gop3dProtocol.GpuFreeBuffer        = GpuFreeBuffer;
+
+  Private->Gop3dProtocol.GpuCmdTransferBuffer = GpuCmdTransferBuffer;
+  Private->Gop3dProtocol.GpuCmdUpdateBuffer   = GpuCmdUpdateBuffer;
 
   Private->Gop3dProtocol.GpuCmdClearFrame     = GpuCmdClearFrame;
   Private->Gop3dProtocol.GpuCmdDraw           = GpuCmdDraw;
