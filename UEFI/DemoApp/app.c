@@ -264,15 +264,15 @@ VOID Test3DTeapot(){
 
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, MODEL_VERT_SIZE);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, MODEL_EDGE_SIZE);
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, MODEL_VERT_SIZE);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, MODEL_EDGE_SIZE);
 
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(Mat4));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(Mat4));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyLines, IndexCount);
 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
@@ -388,18 +388,18 @@ VOID Test3D(){
 
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 8);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 13);
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 8);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 13);
 
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(Mat4));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(Mat4));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyLines, IndexCount);
 
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP2, sizeof(Mat4));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, IndexCount);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP2, sizeof(Mat4));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyLines, IndexCount);
 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
@@ -506,16 +506,15 @@ VOID Test3DTriangles(){
 
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 8);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 12);
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 8);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
 
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(Mat4));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
-
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(Mat4));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
@@ -590,15 +589,15 @@ VOID FullScreenQuad() {
         }
 
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 4);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 2);
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 4);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 2);
 
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(struct UniformBuffer));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(struct UniformBuffer));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);

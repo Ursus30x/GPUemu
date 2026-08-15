@@ -82,7 +82,7 @@ EFI_STATUS EFIAPI GpuCmdEnd(
  * ------------------------------------------------------------------------- */
 
 // Internal helper function
-EFI_STATUS EFIAPI GpuBindResourceGeneric(
+EFI_STATUS EFIAPI GpuCmdBindResourceGeneric(
   IN StateID StateId,
   IN VRAMADDR Address,
   IN UINT32 Size,
@@ -103,34 +103,34 @@ EFI_STATUS EFIAPI GpuBindResourceGeneric(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
-EFI_STATUS EFIAPI GpuBindVBO(
+EFI_STATUS EFIAPI GpuCmdBindVBO(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
   IN UINT32 Size
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_VBO_CONFIG, GpuAddress, Size,D_TYPE_VEC3);
+    return GpuCmdBindResourceGeneric(STATE_ID_VBO_CONFIG, GpuAddress, Size,D_TYPE_VEC3);
 }
 
-EFI_STATUS EFIAPI GpuBindIBO(
+EFI_STATUS EFIAPI GpuCmdBindIBO(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
   IN UINT32 Size
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_EDGE_CONFIG, GpuAddress, Size, D_TYPE_VEC2);
+    return GpuCmdBindResourceGeneric(STATE_ID_EDGE_CONFIG, GpuAddress, Size, D_TYPE_VEC2);
 }
 
-EFI_STATUS EFIAPI GpuBindUBO(
+EFI_STATUS EFIAPI GpuCmdBindUBO(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
   IN UINT32 Size
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_UNIFORM_CONFIG, GpuAddress, Size, D_TYPE_MAT4);
+    return GpuCmdBindResourceGeneric(STATE_ID_UNIFORM_CONFIG, GpuAddress, Size, D_TYPE_MAT4);
 }
 
-EFI_STATUS EFIAPI GpuBindVertShader(
+EFI_STATUS EFIAPI GpuCmdBindVertShader(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
   IN UINT32 Size
@@ -144,7 +144,7 @@ EFI_STATUS EFIAPI GpuBindVertShader(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
-EFI_STATUS EFIAPI GpuBindFragShader(
+EFI_STATUS EFIAPI GpuCmdBindFragShader(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
   IN UINT32 Size
@@ -258,7 +258,7 @@ EFI_STATUS EFIAPI GpuFreeBuffer(
  * Drawing & Execution
  * ------------------------------------------------------------------------- */
 
-EFI_STATUS EFIAPI GpuClearFrame(
+EFI_STATUS EFIAPI GpuCmdClearFrame(
   IN GOP_3D_PROTOCOL *This,
   IN UINT32 Color
   )
@@ -270,7 +270,7 @@ EFI_STATUS EFIAPI GpuClearFrame(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
-EFI_STATUS EFIAPI GpuDraw(
+EFI_STATUS EFIAPI GpuCmdDraw(
   IN GOP_3D_PROTOCOL      *This,
   IN GOP_3D_TOPOLOGY      Topology,
   IN UINT32               VertexCount
@@ -336,28 +336,28 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   GpuRingBufferInit(RING_BUFFER_SIZE);
 
   // Link Implementation to Protocol Pointers
-  Private->Gop3dProtocol.GpuInit           = GpuInit;
-  Private->Gop3dProtocol.GpuDestroy        = GpuDestroy;
-  Private->Gop3dProtocol.GpuSetMode        = GpuSetMode;
+  Private->Gop3dProtocol.GpuInit              = GpuInit;
+  Private->Gop3dProtocol.GpuDestroy           = GpuDestroy;
+  Private->Gop3dProtocol.GpuSetMode           = GpuSetMode;
 
-  Private->Gop3dProtocol.GpuCmdBegin       = GpuCmdBegin;
-  Private->Gop3dProtocol.GpuCmdEnd         = GpuCmdEnd;
+  Private->Gop3dProtocol.GpuCmdBegin          = GpuCmdBegin;
+  Private->Gop3dProtocol.GpuCmdEnd            = GpuCmdEnd;
 
-  Private->Gop3dProtocol.GpuBindVBO        = GpuBindVBO;
-  Private->Gop3dProtocol.GpuBindIBO        = GpuBindIBO;
-  Private->Gop3dProtocol.GpuBindUBO        = GpuBindUBO;
-  Private->Gop3dProtocol.GpuBindVertShader = GpuBindVertShader;
-  Private->Gop3dProtocol.GpuBindFragShader = GpuBindFragShader;
+  Private->Gop3dProtocol.GpuCmdBindVBO        = GpuCmdBindVBO;
+  Private->Gop3dProtocol.GpuCmdBindIBO        = GpuCmdBindIBO;
+  Private->Gop3dProtocol.GpuCmdBindUBO        = GpuCmdBindUBO;
+  Private->Gop3dProtocol.GpuCmdBindVertShader = GpuCmdBindVertShader;
+  Private->Gop3dProtocol.GpuCmdBindFragShader = GpuCmdBindFragShader;
 
-  Private->Gop3dProtocol.GpuTransferBuffer = GpuTransferBuffer;
-  Private->Gop3dProtocol.GpuUpdateBuffer   = GpuUpdateBuffer;
-  Private->Gop3dProtocol.GpuFreeBuffer     = GpuFreeBuffer;
+  Private->Gop3dProtocol.GpuTransferBuffer    = GpuTransferBuffer;
+  Private->Gop3dProtocol.GpuUpdateBuffer      = GpuUpdateBuffer;
+  Private->Gop3dProtocol.GpuFreeBuffer        = GpuFreeBuffer;
 
-  Private->Gop3dProtocol.GpuClearFrame     = GpuClearFrame;
-  Private->Gop3dProtocol.GpuDraw           = GpuDraw;
+  Private->Gop3dProtocol.GpuCmdClearFrame     = GpuCmdClearFrame;
+  Private->Gop3dProtocol.GpuCmdDraw           = GpuCmdDraw;
 
-  Private->Gop3dProtocol.GpuSubmitCmd      = GpuSubmitCmd;
-  Private->Gop3dProtocol.GpuPresent        = GpuPresent;
+  Private->Gop3dProtocol.GpuSubmitCmd         = GpuSubmitCmd;
+  Private->Gop3dProtocol.GpuPresent           = GpuPresent;
 
   return EFI_SUCCESS;
 }
