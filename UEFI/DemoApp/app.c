@@ -213,10 +213,13 @@ VOID Test3DTeapot(){
     VRAMADDR hVBO, hIBO, hVS, hFS;
     VRAMADDR hMVP1 = 0, hMVP2 = 0;
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, model_vertices, sizeof(model_vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  model_edges,    sizeof(model_edges),    &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, model_vertices, sizeof(model_vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  model_edges,    sizeof(model_edges),    &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
 
     float angle = 0.0f;
     Print(L"Animating... Press Key to Exit.\n");
@@ -325,10 +328,15 @@ VOID Test3D(){
     VRAMADDR hVBO, hIBO, hVS, hFS;
     VRAMADDR hMVP1 = 0, hMVP2 = 0;
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, cube_vertices, sizeof(cube_vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  cube_edges,    sizeof(cube_edges),    &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, cube_vertices, sizeof(cube_vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  cube_edges,    sizeof(cube_edges),    &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
 
     float angle = 0.0f;
     Print(L"Animating... Press Key to Exit.\n");
@@ -457,10 +465,13 @@ VOID Test3DTriangles(){
     VRAMADDR hVBO, hIBO, hVS, hFS;
     VRAMADDR hMVP1 = 0;
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
 
     float angle = 0.0f;
     Print(L"Animating... Press Key to Exit.\n");
@@ -560,10 +571,13 @@ VOID FullScreenQuad() {
 
     VRAMADDR hVBO, hIBO, hVS, hFS, hMVP1 = 0;
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
 
     Print(L"Rendering Full Screen Quad... Press Key to Exit.\n");
     FpsCounterStart();

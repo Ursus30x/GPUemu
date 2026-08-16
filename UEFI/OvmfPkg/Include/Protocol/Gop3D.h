@@ -101,39 +101,7 @@ EFI_STATUS
   UINT32           Size
   );
 
-/**
- * Allocates VRAM and transfers data from Host to Device.
- * @param Type        The type of buffer (Vertex, Index, Uniform, Shader).
- * @param HostData    Pointer to the source data in System Memory.
- * @param Size        Size in bytes to allocate and copy.
- * @param GpuAddress  [OUT] The resulting VRAM address of the uploaded buffer.
- */
-typedef
-EFI_STATUS
-(EFIAPI *GOP_3D_TRANSFER_BUFFER)(
-  IN  GOP_3D_PROTOCOL     *This,
-  IN  GOP_3D_BUFFER_TYPE  Type,
-  IN  VOID                *HostData,
-  IN  UINT32              Size,
-  OUT VRAMADDR            *GpuAddress
-  );
 
-/**
- * Reallocates VRAM and transfers new data from Host to Device.
- * @param Type        The type of buffer (Vertex, Index, Uniform, Shader).
- * @param HostData    Pointer to the source data in System Memory.
- * @param Size        Size in bytes to allocate and copy.
- * @param GpuAddress  [OUT] The resulting VRAM address of the uploaded buffer.
- */
-typedef
-EFI_STATUS
-(EFIAPI *GOP_3D_UPDATE_BUFFER)(
-  IN  GOP_3D_PROTOCOL     *This,
-  IN  GOP_3D_BUFFER_TYPE  Type,
-  IN  VOID                *HostData,
-  IN  UINT32              Size,
-  OUT VRAMADDR            *GpuAddress
-  );
 
 /**
  * Frees VRAM allocated resource.
@@ -240,8 +208,6 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindFragShader;
   GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindVertShader;
 
-  GOP_3D_TRANSFER_BUFFER      GpuTransferBuffer;
-  GOP_3D_UPDATE_BUFFER        GpuUpdateBuffer;
   GOP_3D_FREE_BUFFER          GpuFreeBuffer;
   GOP_3D_CMD_TRANSFER_BUFFER  GpuCmdTransferBuffer;
   GOP_3D_CMD_UPDATE_BUFFER    GpuCmdUpdateBuffer;

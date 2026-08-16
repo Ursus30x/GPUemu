@@ -60,8 +60,7 @@ typedef enum {
     CMD_SET_STATE          = 0x02,
     CMD_CLEAR_FRAMEBUFFER  = 0x03,
     CMD_DMA_TRANSFER       = 0x04,
-    CMD_DMA_UPDATE         = 0x05,
-    CMD_DMA_FREE           = 0x06,
+    CMD_DMA_UPDATE         = 0x05
 } CommandOpcode;
 
 

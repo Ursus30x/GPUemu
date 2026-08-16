@@ -109,15 +109,18 @@ VOID TestFrame(){
     VRAMADDR hVBO, hIBO, hVS, hFS;
     VRAMADDR hMVP1 = 0;
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, cube_vertices, sizeof(cube_vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  cube_edges,    sizeof(cube_edges),    &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, cube_vertices, sizeof(cube_vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  cube_edges,    sizeof(cube_edges),    &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
     BenchStop(&StaticDataTimer);
     // STATIC DATA TIMER END
 
     // MVP DATA TIMER START
-    BenchStart(&MvpTimer, L"Matrix Calc & Upload");
+    BenchStart(&MvpTimer, L"Matrix Calc");
     Mat4 ry, rx, scale, trans, proj;
     Mat4 model1, mvp1;
 
@@ -131,14 +134,13 @@ VOID TestFrame(){
     Mat4_Mul(&scale, &model1, &model1);
     Mat4_Mul(&trans, &model1, &model1);
     Mat4_Mul(&proj, &model1, &mvp1);
-
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
     BenchStop(&MvpTimer);
     // MVP DATA TIMER END
 
     // COMMAND BUFFER RECORDING TIMER START
     BenchStart(&CmdRecTimer, L"Command Recording");
     mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
     mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
     mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
