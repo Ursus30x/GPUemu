@@ -322,7 +322,8 @@ static bool setup_geometry_and_bounds(Vec4 v0, Vec4 v1, Vec4 v2, GpuState *gpu, 
         float inv_w = 1.0f / w;
 
         ctx->s_inv_w[i] = inv_w;
-        ctx->inv_z[i] = 1.0f / inv_w;
+        
+        ctx->inv_z[i] = v[i].z * inv_w;
 
         float ndc_x = v[i].x * inv_w;
         float ndc_y = v[i].y * inv_w;
@@ -333,7 +334,7 @@ static bool setup_geometry_and_bounds(Vec4 v0, Vec4 v1, Vec4 v2, GpuState *gpu, 
     }
 
     float area = edge_func(ctx->s[0], ctx->s[1], ctx->s[2]);
-    //if (area == 0.0f) return false; 
+    if (area == 0.0f) return false; 
     
     *out_inv_area = 1.0f / area;
 
@@ -352,7 +353,6 @@ static bool setup_geometry_and_bounds(Vec4 v0, Vec4 v1, Vec4 v2, GpuState *gpu, 
 
     return true;
 }
-
 // =================================================================
 // PHASE 2: Pineda Gradients & Color Invariants
 // =================================================================
@@ -416,7 +416,8 @@ static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stam
         lane_w2[lane] = w2;
 
         bool in_bounds = (px >= ctx->min_x && px <= ctx->max_x && py >= ctx->min_y && py <= ctx->max_y);
-        bool in_tri = (w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f);
+        
+        bool in_tri = (w0 >= -1e-4f && w1 >= -1e-4f && w2 >= -1e-4f);
         
         if (in_bounds && in_tri) 
         {
@@ -425,7 +426,6 @@ static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stam
     }
     return exec_mask;
 }
-
 // =================================================================
 // PHASE 4: Early-Z and Varying Interpolation 
 // =================================================================
@@ -505,17 +505,19 @@ static void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuSt
 
     setup_invariants(color, inv_area, &ctx);
     BuiltinFragmentInput fs_in = {0};
-    for (int y = ctx.stamp_min_y; y < ctx.stamp_max_y; y += 4) 
-    {
-        float row_w0 = ctx.start_w0 + (y - ctx.stamp_min_y) * ctx.d_w0_dy;
-        float row_w1 = ctx.start_w1 + (y - ctx.stamp_min_y) * ctx.d_w1_dy;
-        float row_w2 = ctx.start_w2 + (y - ctx.stamp_min_y) * ctx.d_w2_dy;
 
-        for (int x = ctx.stamp_min_x; x < ctx.stamp_max_x; x += 4) 
+    for (int y = ctx.stamp_min_y; y <= ctx.stamp_max_y; y += 4) 
+    {
+        // Correctly scale the vertical gradient by the cumulative row offset from stamp_min_y
+        float row_w0 = ctx.start_w0 + ((float)(y - ctx.stamp_min_y)) * ctx.d_w0_dy;
+        float row_w1 = ctx.start_w1 + ((float)(y - ctx.stamp_min_y)) * ctx.d_w1_dy;
+        float row_w2 = ctx.start_w2 + ((float)(y - ctx.stamp_min_y)) * ctx.d_w2_dy;
+
+        for (int x = ctx.stamp_min_x; x <= ctx.stamp_max_x; x += 4) 
         {
-            float stamp_w0 = row_w0 + (x - ctx.stamp_min_x) * ctx.d_w0_dx;
-            float stamp_w1 = row_w1 + (x - ctx.stamp_min_x) * ctx.d_w1_dx;
-            float stamp_w2 = row_w2 + (x - ctx.stamp_min_x) * ctx.d_w2_dx;
+            float stamp_w0 = row_w0 + ((float)(x - ctx.stamp_min_x)) * ctx.d_w0_dx;
+            float stamp_w1 = row_w1 + ((float)(x - ctx.stamp_min_x)) * ctx.d_w1_dx;
+            float stamp_w2 = row_w2 + ((float)(x - ctx.stamp_min_x)) * ctx.d_w2_dx;
 
             float lane_w0[16], lane_w1[16], lane_w2[16];
             
@@ -528,23 +530,15 @@ static void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuSt
             SimtVec3 fs_in_color = {0};
             uint16_t shade_mask = process_z_and_interpolate(x, y, exec_mask, lane_w0, lane_w1, lane_w2, &ctx, gpu, &fs_in_color);
             if (shade_mask == 0x0000) continue;
+            
             for (int lane = 0; lane < 16; lane++)
             {
                 int dx = lane % 4;
                 int dy = lane / 4;
 
-                // 1. Screen Space X and Y (centered at +0.5f) 
+                // Screen Space X and Y (centered at +0.5f)[cite: 1]
                 fs_in.gl_FragCoord.elem[0][lane] = (float)(x + dx) + 0.5f;
                 fs_in.gl_FragCoord.elem[1][lane] = (float)(y + dy) + 0.5f;
-
-                // // 2. Barycentric weights for this lane
-                // float w0 = lane_w0[lane];
-                // float w1 = lane_w1[lane];
-                // float w2 = lane_w2[lane];
-
-                // // 3. Interpolated Z (Depth) and W (1/W perspective term)
-                // fs_in.gl_FragCoord.z[lane] = w0 * ctx.v0_z     + w1 * ctx.v1_z     + w2 * ctx.v2_z;
-                // fs_in.gl_FragCoord.w[lane] = w0 * ctx.v0_inv_w + w1 * ctx.v1_inv_w + w2 * ctx.v2_inv_w;
             }
             execute_shader_and_write(x, y, shade_mask, gpu, &fs_in_color, &fs_in);
         }
