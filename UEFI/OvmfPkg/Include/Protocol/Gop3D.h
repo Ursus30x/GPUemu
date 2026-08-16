@@ -18,6 +18,8 @@ typedef struct GOP_3D_PROTOCOL GOP_3D_PROTOCOL;
 
 typedef UINT32 VRAMADDR;
 
+#define GPU_NULL_ADDR ((VRAMADDR)0)
+
 // Global DMA fence
 typedef struct{
   BOOLEAN               DmaBusy;
@@ -95,10 +97,23 @@ EFI_STATUS
  */
 typedef
 EFI_STATUS
-(EFIAPI *GOP_3D_BIND_RESOURCE)(
+(EFIAPI *GOP_3D_CMD_BIND_RESOURCE)(
   GOP_3D_PROTOCOL *This,
   VRAMADDR         Addr,
   UINT32           Size
+  );
+
+
+
+/**
+ * Frees VRAM allocated resource.
+ * @param GpuAddress  Adress under which resource is located.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_FREE_BUFFER)(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN VRAMADDR            *GpuAddress
   );
 
 /**
@@ -110,7 +125,7 @@ EFI_STATUS
  */
 typedef
 EFI_STATUS
-(EFIAPI *GOP_3D_TRANSFER_BUFFER)(
+(EFIAPI *GOP_3D_CMD_TRANSFER_BUFFER)(
   IN  GOP_3D_PROTOCOL     *This,
   IN  GOP_3D_BUFFER_TYPE  Type,
   IN  VOID                *HostData,
@@ -127,23 +142,12 @@ EFI_STATUS
  */
 typedef
 EFI_STATUS
-(EFIAPI *GOP_3D_UPDATE_BUFFER)(
+(EFIAPI *GOP_3D_CMD_UPDATE_BUFFER)(
   IN  GOP_3D_PROTOCOL     *This,
   IN  GOP_3D_BUFFER_TYPE  Type,
   IN  VOID                *HostData,
   IN  UINT32              Size,
   OUT VRAMADDR            *GpuAddress
-  );
-
-/**
- * Frees VRAM allocated resource.
- * @param GpuAddress  Adress under which resource is located.
- */
-typedef
-EFI_STATUS
-(EFIAPI *GOP_3D_FREE_BUFFER)(
-  IN  GOP_3D_PROTOCOL     *This,
-  IN VRAMADDR            *GpuAddress
   );
 
 /**
@@ -153,7 +157,7 @@ EFI_STATUS
  */
 typedef
 EFI_STATUS
-(EFIAPI *GOP_3D_DRAW)(
+(EFIAPI *GOP_3D_CMD_DRAW)(
   IN GOP_3D_PROTOCOL      *This,
   IN GOP_3D_TOPOLOGY      Topology,
   IN UINT32               VertexCount
@@ -165,7 +169,7 @@ EFI_STATUS
  */
 typedef
 EFI_STATUS
-(EFIAPI *GOP_3D_CLEAR_FRAME)(
+(EFIAPI *GOP_3D_CMD_CLEAR_FRAME)(
   IN GOP_3D_PROTOCOL      *This,
   IN UINT32               Color
   );
@@ -192,29 +196,30 @@ EFI_STATUS
 /* -------------------------- Protocol structure -------------------------- */
 
 struct GOP_3D_PROTOCOL {
-  GOP_3D_INIT               GpuInit;
-  GOP_3D_DESTROY            GpuDestroy;
+  GOP_3D_INIT                 GpuInit;
+  GOP_3D_DESTROY              GpuDestroy;
 
-  GOP_3D_SET_MODE           GpuSetMode;
+  GOP_3D_SET_MODE             GpuSetMode;
 
-  GOP_3D_CMD_BEGIN          GpuCmdBegin;
-  GOP_3D_CMD_END            GpuCmdEnd;
+  GOP_3D_CMD_BEGIN            GpuCmdBegin;
+  GOP_3D_CMD_END              GpuCmdEnd;
 
-  GOP_3D_BIND_RESOURCE      GpuBindUBO;
-  GOP_3D_BIND_RESOURCE      GpuBindVBO;
-  GOP_3D_BIND_RESOURCE      GpuBindIBO;
-  GOP_3D_BIND_RESOURCE      GpuBindFragShader;
-  GOP_3D_BIND_RESOURCE      GpuBindVertShader;
+  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindUBO;
+  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindVBO;
+  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindIBO;
+  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindFragShader;
+  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindVertShader;
 
-  GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer;
-  GOP_3D_UPDATE_BUFFER      GpuUpdateBuffer;
-  GOP_3D_FREE_BUFFER        GpuFreeBuffer;
+  GOP_3D_FREE_BUFFER          GpuFreeBuffer;
+  GOP_3D_CMD_TRANSFER_BUFFER  GpuCmdTransferBuffer;
+  GOP_3D_CMD_UPDATE_BUFFER    GpuCmdUpdateBuffer;
 
-  GOP_3D_DRAW               GpuDraw;
-  GOP_3D_CLEAR_FRAME        GpuClearFrame;
 
-  GOP_3D_SUBMIT_CMD         GpuSubmitCmd;
-  GOP_3D_PRESENT            GpuPresent;
+  GOP_3D_CMD_DRAW             GpuCmdDraw;
+  GOP_3D_CMD_CLEAR_FRAME      GpuCmdClearFrame;
+
+  GOP_3D_SUBMIT_CMD           GpuSubmitCmd;
+  GOP_3D_PRESENT              GpuPresent;
 };
 
 /* ----------------------------------------------------------------------- */

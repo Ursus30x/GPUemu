@@ -358,6 +358,42 @@ EFI_STATUS EFIAPI GpuVramSet(
  * MMIO Register Access Functions
  * ------------------------------------------------------------------------- */
 
+// --- 64-bit Registers ---
+
+EFI_STATUS EFIAPI GpuMmioWrite64(IN UINT32 Offset, IN UINT64 Value)
+{
+    if (gpuMemAllocator.PciIo == NULL) {
+        return EFI_NOT_READY;
+    }
+
+    return gpuMemAllocator.PciIo->Mem.Write(
+        gpuMemAllocator.PciIo,
+        EfiPciIoWidthUint64,
+        gpuMemAllocator.MmioBarIndex,
+        Offset,
+        1,
+        &Value
+    );
+}
+
+UINT64 EFIAPI GpuMmioRead64(IN UINT32 Offset)
+{
+    UINT64 Value = 0;
+
+    if (gpuMemAllocator.PciIo != NULL) {
+        gpuMemAllocator.PciIo->Mem.Read(
+            gpuMemAllocator.PciIo,
+            EfiPciIoWidthUint64,
+            gpuMemAllocator.MmioBarIndex,
+            Offset,
+            1,
+            &Value
+        );
+    }
+
+    return Value;
+}
+
 // --- 32-bit Registers ---
 
 EFI_STATUS EFIAPI GpuMmioWrite32(IN UINT32 Offset, IN UINT32 Value)

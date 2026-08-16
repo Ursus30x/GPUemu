@@ -144,7 +144,7 @@ static void handle_dma(GpuState *s)
 
     // Read MMIO registers
     const uint8_t direction = (s->dma_cmd >> 1) & 1;
-    const uint32_t host_addr = s->dma_addr;
+    const uint64_t host_addr = s->dma_addr;
     const uint32_t vram_offset = s->dma_vram;
     const uint32_t size = s->dma_size;
 
@@ -157,11 +157,11 @@ static void handle_dma(GpuState *s)
     // Determine transfer direction
     if (direction == GPU_DMA_CMD_FROM_VRAM)
     {
-        DEBUG_PRINT("GPU DMA: VRAM(0x%x) -> Host(0x%x), size 0x%x\n", vram_offset, host_addr, size);
+        DEBUG_PRINT("GPU DMA: VRAM(0x%x) -> Host(0x%" PRIx64 "), size 0x%x\n", vram_offset, host_addr, size);
         pci_dma_write(pdev, host_addr, s->vram_ptr + vram_offset, size);
     }
     else if(direction == GPU_DMA_CMD_TO_VRAM){
-        DEBUG_PRINT("GPU DMA: Host(0x%x) -> VRAM(0x%x), size 0x%x\n", host_addr, vram_offset, size);
+        DEBUG_PRINT("GPU DMA: Host(0x%" PRIx64 ") -> VRAM(0x%x), size 0x%x\n", host_addr, vram_offset, size);
         pci_dma_read(pdev, host_addr, s->vram_ptr + vram_offset, size);
     }
 
@@ -353,7 +353,7 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         target_reg = &s->int_mask;
         break;
     case REG_DMA_HOST_ADDR:
-        target_reg = &s->dma_addr;
+        target_reg = (uint32_t *)&s->dma_addr;
         break;
     case REG_DMA_VRAM_ADDR:
         target_reg = &s->dma_vram;
@@ -457,7 +457,7 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         reg_val = s->int_mask;
         break;
     case REG_DMA_HOST_ADDR:
-        reg_val = s->dma_addr;
+        reg_val = (uint32_t)s->dma_addr;
         break;
     case REG_DMA_VRAM_ADDR:
         reg_val = s->dma_vram;
