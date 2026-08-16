@@ -255,15 +255,16 @@ VOID Test3DTeapot(){
         Mat4_Mul(&proj, &model1, &mvp1);
 
 
-        if(hMVP1 == 0){
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
-        }
-        else{
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
-        }
-
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if(hMVP1 == 0){
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+        }
+        else{
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+        }
+
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
@@ -377,17 +378,18 @@ VOID Test3D(){
         Mat4_Mul(&trans2, &model2, &model2);
         Mat4_Mul(&proj, &model2, &mvp2);
 
-        if(hMVP1 == 0 || hMVP2 == 0){
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
-        }
-        else{
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
-        }
-
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if(hMVP1 == 0 || hMVP2 == 0){
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
+        }
+        else{
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
+        }
+
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
@@ -422,7 +424,6 @@ VOID Test3D(){
 
     FpsCounterShowStats();
 }
-
 
 
 
@@ -495,17 +496,16 @@ VOID Test3DTriangles(){
         Mat4_Mul(&trans, &model1, &model1);
         Mat4_Mul(&proj, &model1, &mvp1);
 
-
-
-        if(hMVP1 == 0){
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
-        }
-        else{
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
-        }
-
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if(hMVP1 == 0){
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+        }
+        else{
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
+        }
+
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
@@ -582,13 +582,14 @@ VOID FullScreenQuad() {
     while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
         GetTimeSeconds(&time);
         uniform.iTime = time;
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
         if(hMVP1 == 0){
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
         } else {
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
         }
 
-        mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
