@@ -180,6 +180,16 @@ static void handle_dma(GpuState *s)
     }
 }
 
+static uint32_t compute_shader_hash(const uint32_t *code, uint32_t words)
+{
+    uint32_t hash = 2166136261u;
+    for (uint32_t i = 0; i < words; i++) {
+        hash ^= code[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
 static void execute_command(GpuState *gpu, Command *cmd)
 {
     switch (cmd->opcode)
@@ -210,32 +220,69 @@ static void execute_command(GpuState *gpu, Command *cmd)
             break;
         case STATE_ID_VERTEX_SHADER_PTR:
         {   DEBUG_PRINT("[CMD] Vertex shader config\n");
-            uint32_t prev_addr =  gpu->vs_code_addr;
             gpu->vs_code_addr = cmd->payload.state.value.shader_ptrs.vs_addr;
-            if(!gpu->use_legacy_asm && (gpu->vs_shader_func == NULL ||  gpu->vs_code_addr != prev_addr))
+            if(!gpu->use_legacy_asm && gpu->vs_code_addr + sizeof(uint32_t) <= GPU_VRAM_SIZE)
             {
-                void* shader = gpu->vram_ptr+gpu->vs_code_addr;
-                uint32_t size =  *((uint32_t *)shader);
-                uint32_t* shader_code =  ((uint32_t *)(shader+ sizeof(uint32_t)));
-                free_jit(&gpu->jit_ctx_vs); 
-                init_jit(&gpu->jit_ctx_vs, VERTEX_SHADER); 
-                gpu->vs_shader_func = jit_compile_spirv(&gpu->jit_ctx_vs, shader_code, size / 4); 
+                void* shader = gpu->vram_ptr + gpu->vs_code_addr;
+                uint32_t size = *((uint32_t *)shader);
+                if (size > 0 && gpu->vs_code_addr + sizeof(uint32_t) + size <= GPU_VRAM_SIZE)
+                {
+                    uint32_t* shader_code = ((uint32_t *)(shader + sizeof(uint32_t)));
+                    uint32_t hash = compute_shader_hash(shader_code, size / 4);
+                    if (gpu->vs_shader_func == NULL || gpu->vs_hash != hash)
+                    {
+                        free_jit(&gpu->jit_ctx_vs); 
+                        init_jit(&gpu->jit_ctx_vs, VERTEX_SHADER); 
+                        gpu->vs_shader_func = jit_compile_spirv(&gpu->jit_ctx_vs, shader_code, size / 4);
+                        gpu->vs_hash = hash;
+                    }
+                }
             }
             break;
         }
         case STATE_ID_FRAGMENT_SHADER_PTR:
         {   
             DEBUG_PRINT("[CMD] Fragment shader config\n");
-            uint32_t prev_addr = gpu->fs_code_addr;
             gpu->fs_code_addr = cmd->payload.state.value.shader_ptrs.fs_addr;
-            if(!gpu->use_legacy_asm && (gpu->fs_shader_func == NULL || prev_addr !=  gpu->fs_code_addr))
+            if(!gpu->use_legacy_asm && gpu->fs_code_addr + sizeof(uint32_t) <= GPU_VRAM_SIZE)
             {
-                void* shader = gpu->vram_ptr+gpu->fs_code_addr;
-                uint32_t size =  *((uint32_t *)shader);
-                uint32_t* shader_code =  ((uint32_t *)(shader+ sizeof(uint32_t)));
-                free_jit(&gpu->jit_ctx_fs); 
-                init_jit(&gpu->jit_ctx_fs, FRAGMENT_SHADER); 
-                gpu->fs_shader_func = jit_compile_spirv(&gpu->jit_ctx_fs, shader_code, size / 4); 
+                void* shader = gpu->vram_ptr + gpu->fs_code_addr;
+                uint32_t size = *((uint32_t *)shader);
+                if (size > 0 && gpu->fs_code_addr + sizeof(uint32_t) + size <= GPU_VRAM_SIZE)
+                {
+                    uint32_t* shader_code = ((uint32_t *)(shader + sizeof(uint32_t)));
+                    uint32_t hash = compute_shader_hash(shader_code, size / 4);
+                    if (gpu->fs_shader_func == NULL || gpu->fs_hash != hash)
+                    {
+                        free_jit(&gpu->jit_ctx_fs); 
+                        init_jit(&gpu->jit_ctx_fs, FRAGMENT_SHADER); 
+                        gpu->fs_shader_func = jit_compile_spirv(&gpu->jit_ctx_fs, shader_code, size / 4);
+                        gpu->fs_hash = hash;
+                    }
+                }
+            }
+            break;
+        }
+        case STATE_ID_TEXTURE_CONFIG:
+        {
+            uint32_t slot = cmd->payload.state.value.texture_config.binding_slot;
+            uint32_t desc_addr = cmd->payload.state.value.texture_config.desc_vram_addr;
+            DEBUG_PRINT("[CMD] Texture config: slot %u, desc_addr 0x%x\n", slot, desc_addr);
+            if (slot < MAX_BINDINGS) {
+                gpu->texture_desc_addr[slot] = desc_addr;
+                if (desc_addr != 0 && desc_addr + sizeof(GpuTextureDescriptorVram) <= GPU_VRAM_SIZE) {
+                    GpuTextureDescriptorVram *vram_desc = (GpuTextureDescriptorVram *)(gpu->vram_ptr + desc_addr);
+                    gpu->textures[slot].data = (vram_desc->data_vram_addr != 0 && vram_desc->data_vram_addr < GPU_VRAM_SIZE)
+                                                ? (void *)(gpu->vram_ptr + vram_desc->data_vram_addr)
+                                                : NULL;
+                    gpu->textures[slot].width = vram_desc->width;
+                    gpu->textures[slot].height = vram_desc->height;
+                    gpu->textures[slot].channels = vram_desc->channels;
+                    gpu->textures[slot].filter = (FilterMode)vram_desc->filter;
+                    gpu->textures[slot].wrap = (WrapMode)vram_desc->wrap;
+                } else {
+                    memset(&gpu->textures[slot], 0, sizeof(TextureSamplerDescriptor));
+                }
             }
             break;
         }
@@ -340,6 +387,10 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     {
     case REG_GPU_MODE_ADDR:
         target_reg = &s->gpu_mode;
+        if (val == GPU_MODE_GOP) {
+            memset(s->texture_desc_addr, 0, sizeof(s->texture_desc_addr));
+            memset(s->textures, 0, sizeof(s->textures));
+        }
         break;
     case REG_RING_BUFFER_HEAD_ADDR:
         target_reg = &s->ring_buffer_head;
@@ -605,7 +656,9 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 
     gpu->con = graphic_console_init(DEVICE(pdev), 0, &ghwops, gpu);
     gpu->vs_shader_func = NULL;
-     gpu->fs_shader_func = NULL;
+    gpu->fs_shader_func = NULL;
+    gpu->vs_hash = 0;
+    gpu->fs_hash = 0;
     // init state
     gpu->height = 480;
     gpu->width = 640;

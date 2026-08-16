@@ -31,8 +31,29 @@ typedef enum {
   Gop3dBufferTypeVertex,
   Gop3dBufferTypeIndex,
   Gop3dBufferTypeUniform,
-  Gop3dBufferTypeShaderCode
+  Gop3dBufferTypeShaderCode,
+  Gop3dBufferTypeTexture,
+  Gop3dBufferTypeTextureDesc
 } GOP_3D_BUFFER_TYPE;
+
+typedef enum {
+  Gop3dFilterNearest = 0,
+  Gop3dFilterLinear  = 1
+} GOP_3D_FILTER_MODE;
+
+typedef enum {
+  Gop3dWrapRepeat = 0,
+  Gop3dWrapClamp  = 1
+} GOP_3D_WRAP_MODE;
+
+typedef struct {
+  VRAMADDR            DataAddr;    // VRAM offset where pixel bytes start
+  UINT32              Width;
+  UINT32              Height;
+  UINT32              Channels;    // 1, 2, 3, 4
+  GOP_3D_FILTER_MODE  Filter;      // 0: Nearest, 1: Linear
+  GOP_3D_WRAP_MODE    Wrap;        // 0: Repeat, 1: Clamp
+} GOP_3D_TEXTURE_DESC;
 
 // Needed for Draw command
 typedef enum {
@@ -99,6 +120,19 @@ EFI_STATUS
   GOP_3D_PROTOCOL *This,
   VRAMADDR         Addr,
   UINT32           Size
+  );
+
+/**
+ * Binds a texture descriptor in VRAM to a specific shader sampler binding slot.
+ * @param BindingSlot   The shader binding slot (e.g. layout(binding = X)).
+ * @param DescAddress   VRAM address of the texture descriptor.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_BIND_TEXTURE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               BindingSlot,
+  IN VRAMADDR             DescAddress
   );
 
 /**
@@ -205,6 +239,7 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_BIND_RESOURCE      GpuBindIBO;
   GOP_3D_BIND_RESOURCE      GpuBindFragShader;
   GOP_3D_BIND_RESOURCE      GpuBindVertShader;
+  GOP_3D_BIND_TEXTURE       GpuBindTexture;
 
   GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer;
   GOP_3D_UPDATE_BUFFER      GpuUpdateBuffer;

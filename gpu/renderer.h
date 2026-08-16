@@ -85,6 +85,9 @@ typedef struct {
 // UBO access macro: Get pointer to UBO data in VRAM
 #define UBO_DATA(gpu) (gpu->uinform_config.size > 0 ? (gpu->vram_ptr + gpu->uinform_config.addr) : NULL)
 
+// Texture descriptor access macro: Get pointer to Texture Descriptor in VRAM
+#define TEXTURE_DESC_DATA(gpu, slot) (((slot) < MAX_BINDINGS && (gpu)->texture_desc_addr[slot] > 0) ? (GpuTextureDescriptorVram*)((gpu)->vram_ptr + (gpu)->texture_desc_addr[slot]) : NULL)
+
 
 void init_thread_pool(void);
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color);

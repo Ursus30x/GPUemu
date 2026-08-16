@@ -174,6 +174,14 @@ static void worker_transform_vertices_impl(RenderThreadArgs *args) {
    
 }
 
+static inline uint8_t color_to_u8(float c)
+{
+    if (c <= 0.0f) return 0;
+    float scaled = c * 255.0f;
+    if (scaled >= 255.0f) return 255;
+    return (uint8_t)(scaled + 0.5f);
+}
+
 static void bind_ubo_to_context(GpuState *gpu, ExecutionContext *ectx)
 {
     if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0)
@@ -182,6 +190,37 @@ static void bind_ubo_to_context(GpuState *gpu, ExecutionContext *ectx)
         ectx->binding_buffers[0] = ubo_data;
     }
 }
+
+static void bind_resources_to_context(GpuState *gpu, ExecutionContext *ectx)
+{
+    bind_ubo_to_context(gpu, ectx);
+    for (int slot = 1; slot < MAX_BINDINGS; slot++)
+    {
+        if (gpu->texture_desc_addr[slot] != 0 && gpu->texture_desc_addr[slot] + sizeof(GpuTextureDescriptorVram) <= GPU_VRAM_SIZE)
+        {
+            GpuTextureDescriptorVram *vram_desc = (GpuTextureDescriptorVram *)(gpu->vram_ptr + gpu->texture_desc_addr[slot]);
+            if (vram_desc->data_vram_addr != 0 && vram_desc->data_vram_addr < GPU_VRAM_SIZE)
+            {
+                gpu->textures[slot].data = (void *)(gpu->vram_ptr + vram_desc->data_vram_addr);
+                gpu->textures[slot].width = vram_desc->width;
+                gpu->textures[slot].height = vram_desc->height;
+                gpu->textures[slot].channels = vram_desc->channels;
+                gpu->textures[slot].filter = (FilterMode)vram_desc->filter;
+                gpu->textures[slot].wrap = (WrapMode)vram_desc->wrap;
+                ectx->binding_buffers[slot] = &gpu->textures[slot];
+            }
+            else
+            {
+                ectx->binding_buffers[slot] = NULL;
+            }
+        }
+        else
+        {
+            ectx->binding_buffers[slot] = NULL;
+        }
+    }
+}
+
 void worker_transform_vertices_simt_impl(RenderThreadArgs *args) 
 {
     GpuState local_gpu = *(args->orig_gpu); 
@@ -220,7 +259,7 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
 
         ExecutionContext jit_ctx = {0};
         BuiltinVertexOutput vs_out = {0};
-        bind_ubo_to_context(gpu, &jit_ctx);
+        bind_resources_to_context(gpu, &jit_ctx);
         jit_ctx.location_in_buffers[0] = &in_vec;
         gpu->vs_shader_func(&jit_ctx, &vs_out, NULL);
         args->transformed_simt = vs_out.gl_Position;
@@ -335,17 +374,18 @@ static void setup_invariants(Col3 color, float inv_area, TriangleContext *ctx)
     ctx->d_w2_dx = (edge_func(ctx->s[0], ctx->s[1], p_dx1) - base2) * inv_area;
     ctx->d_w2_dy = (edge_func(ctx->s[0], ctx->s[1], p_dy1) - base2) * inv_area;
 
-    ctx->r_inv_w[0] = GET_R(color.a_col) * ctx->s_inv_w[0];
-    ctx->g_inv_w[0] = GET_G(color.a_col) * ctx->s_inv_w[0];
-    ctx->b_inv_w[0] = GET_B(color.a_col) * ctx->s_inv_w[0];
+    const float inv_255 = 1.0f / 255.0f;
+    ctx->r_inv_w[0] = (GET_R(color.a_col) * inv_255) * ctx->s_inv_w[0];
+    ctx->g_inv_w[0] = (GET_G(color.a_col) * inv_255) * ctx->s_inv_w[0];
+    ctx->b_inv_w[0] = (GET_B(color.a_col) * inv_255) * ctx->s_inv_w[0];
 
-    ctx->r_inv_w[1] = GET_R(color.b_col) * ctx->s_inv_w[1];
-    ctx->g_inv_w[1] = GET_G(color.b_col) * ctx->s_inv_w[1];
-    ctx->b_inv_w[1] = GET_B(color.b_col) * ctx->s_inv_w[1];
+    ctx->r_inv_w[1] = (GET_R(color.b_col) * inv_255) * ctx->s_inv_w[1];
+    ctx->g_inv_w[1] = (GET_G(color.b_col) * inv_255) * ctx->s_inv_w[1];
+    ctx->b_inv_w[1] = (GET_B(color.b_col) * inv_255) * ctx->s_inv_w[1];
 
-    ctx->r_inv_w[2] = GET_R(color.c_col) * ctx->s_inv_w[2];
-    ctx->g_inv_w[2] = GET_G(color.c_col) * ctx->s_inv_w[2];
-    ctx->b_inv_w[2] = GET_B(color.c_col) * ctx->s_inv_w[2];
+    ctx->r_inv_w[2] = (GET_R(color.c_col) * inv_255) * ctx->s_inv_w[2];
+    ctx->g_inv_w[2] = (GET_G(color.c_col) * inv_255) * ctx->s_inv_w[2];
+    ctx->b_inv_w[2] = (GET_B(color.c_col) * inv_255) * ctx->s_inv_w[2];
 
     Vec3 start_p = {ctx->stamp_min_x + 0.5f, ctx->stamp_min_y + 0.5f, 0};
     ctx->start_w0 = edge_func(ctx->s[1], ctx->s[2], start_p) * inv_area;
@@ -429,10 +469,10 @@ static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, floa
 // =================================================================
 static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState *gpu, SimtVec3 *fs_in_color, BuiltinFragmentInput* fs_input) 
 {
-    SimtVec3 out_color = {0};
+    SimtVec4 out_color = {0};
     ExecutionContext jit_ctx = {0};
     
-    bind_ubo_to_context(gpu, &jit_ctx);
+    bind_resources_to_context(gpu, &jit_ctx);
     
     jit_ctx.location_in_buffers[0] = fs_in_color;
     jit_ctx.location_out_buffers[0] = &out_color;
@@ -445,9 +485,9 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
         int px = x + (lane % 4);
         int py = y + (lane / 4);
 
-        uint8_t r = (uint8_t)out_color.elem[0][lane];
-        uint8_t g = (uint8_t)out_color.elem[1][lane];
-        uint8_t b = (uint8_t)out_color.elem[2][lane];
+        uint8_t r = color_to_u8(out_color.elem[0][lane]);
+        uint8_t g = color_to_u8(out_color.elem[1][lane]);
+        uint8_t b = color_to_u8(out_color.elem[2][lane]);
         put_pixel(gpu, px, py, RGB_TO_UINT(r, g, b));
     }
 }
