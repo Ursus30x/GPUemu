@@ -174,9 +174,9 @@ EFI_STATUS EFIAPI GpuFreeBuffer(
       return EFI_INVALID_PARAMETER;
     }
 
-    if (*GpuAddress != 0) {
+    if (*GpuAddress != GPU_NULL_ADDR) {
         GpuFreeMem(*GpuAddress);
-        *GpuAddress = 0;
+        *GpuAddress = GPU_NULL_ADDR;
     }
 
     return EFI_SUCCESS;
@@ -204,7 +204,7 @@ EFI_STATUS EFIAPI GpuCmdTransferBuffer(
 
     // Allocate VRAM
     VRAMADDR Addr = GpuAllocateMem(Size, Tag);
-    if (Addr == 0) {
+    if (Addr == GPU_NULL_ADDR) {
         return EFI_OUT_OF_RESOURCES;
     }
 
@@ -250,15 +250,15 @@ EFI_STATUS EFIAPI GpuCmdUpdateBuffer(
     }
 
     // If updated size is bigger, try to allocate new buffer first
-    VRAMADDR NewAddr = 0;
+    VRAMADDR NewAddr = GPU_NULL_ADDR;
     EFI_STATUS Status = GpuCmdTransferBuffer(This, Type, HostData, Size, &NewAddr);
 
-    if (EFI_ERROR(Status) || NewAddr == 0) {
+    if (EFI_ERROR(Status) || NewAddr == GPU_NULL_ADDR) {
         return EFI_OUT_OF_RESOURCES;
     }
 
     // TODO: Implement proper realloc mechanizm in memory allocator
-    if (OldAddr != 0) {
+    if (OldAddr != GPU_NULL_ADDR) {
         GpuFreeMem(OldAddr);
     }
 

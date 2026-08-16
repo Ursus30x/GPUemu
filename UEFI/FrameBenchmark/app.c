@@ -106,8 +106,8 @@ VOID TestFrame(){
 
     // STATIC DATA TIMER START
     BenchStart(&StaticDataTimer, L"Static Data Transfer");
-    VRAMADDR hVBO, hIBO, hVS, hFS;
-    VRAMADDR hMVP1 = 0;
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR;
+    VRAMADDR hMVP1 = GPU_NULL_ADDR;
 
     mGOP3D->GpuCmdBegin(mGOP3D);
     mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, cube_vertices, sizeof(cube_vertices), &hVBO);

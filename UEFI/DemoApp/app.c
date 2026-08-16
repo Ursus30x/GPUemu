@@ -210,8 +210,8 @@ VOID Test3DTeapot(){
     // --- Static Asset Transfer ---
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO, hIBO, hVS, hFS;
-    VRAMADDR hMVP1 = 0, hMVP2 = 0;
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR;
+    VRAMADDR hMVP1 = GPU_NULL_ADDR, hMVP2 = GPU_NULL_ADDR;
 
     mGOP3D->GpuCmdBegin(mGOP3D);
     mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, model_vertices, sizeof(model_vertices), &hVBO);
@@ -261,7 +261,7 @@ VOID Test3DTeapot(){
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
 
-        if(hMVP1 == 0){
+        if(hMVP1 == GPU_NULL_ADDR){
             mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
         }
         else{
@@ -325,8 +325,8 @@ VOID Test3D(){
     // --- Static Asset Transfer ---
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO, hIBO, hVS, hFS;
-    VRAMADDR hMVP1 = 0, hMVP2 = 0;
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR;
+    VRAMADDR hMVP1 = GPU_NULL_ADDR, hMVP2 = GPU_NULL_ADDR;
 
     mGOP3D->GpuCmdBegin(mGOP3D);
 
@@ -389,7 +389,7 @@ VOID Test3D(){
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
 
-        if(hMVP1 == 0 || hMVP2 == 0){
+        if(hMVP1 == GPU_NULL_ADDR || hMVP2 == GPU_NULL_ADDR){
             mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
             mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp2, sizeof(Mat4), &hMVP2);
         }
@@ -462,8 +462,8 @@ VOID Test3DTriangles(){
     // --- Static Asset Transfer ---
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO, hIBO, hVS, hFS;
-    VRAMADDR hMVP1 = 0;
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR;
+    VRAMADDR hMVP1 = GPU_NULL_ADDR;
 
     mGOP3D->GpuCmdBegin(mGOP3D);
     mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
@@ -510,7 +510,7 @@ VOID Test3DTriangles(){
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
 
-        if(hMVP1 == 0){
+        if(hMVP1 == GPU_NULL_ADDR){
             mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &mvp1, sizeof(Mat4), &hMVP1);
         }
         else{
@@ -569,7 +569,7 @@ VOID FullScreenQuad() {
 
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO, hIBO, hVS, hFS, hMVP1 = 0;
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR, hMVP1 = GPU_NULL_ADDR;
 
     mGOP3D->GpuCmdBegin(mGOP3D);
     mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
@@ -598,7 +598,7 @@ VOID FullScreenQuad() {
         uniform.iTime = time;
         mGOP3D->GpuCmdBegin(mGOP3D);
 
-        if(hMVP1 == 0){
+        if(hMVP1 == GPU_NULL_ADDR){
             mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
         } else {
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);

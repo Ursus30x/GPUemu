@@ -75,7 +75,7 @@ typedef struct GpuState {
     uint32_t zbuffer_addr;              // 0x2C
     uint32_t int_status;                // 0x30
     uint32_t int_mask;                  // 0x34
-    uint64_t dma_addr;                  // 0x38 (or 64-bit in command stream)
+    uint64_t dma_addr;                  // 0x38
     uint32_t dma_vram;                  // 0x3C
     uint32_t dma_size;                  // 0x40
     uint32_t dma_cmd;                   // 0x44

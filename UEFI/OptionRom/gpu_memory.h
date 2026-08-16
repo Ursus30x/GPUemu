@@ -83,6 +83,10 @@ EFI_STATUS EFIAPI GpuVramSet(IN VRAMADDR DestAddr, IN UINT8 Value, IN UINT32 Siz
 // These functions operate on the MMIO BAR (MmioBarIndex)
 // They read/write single values, not buffers.
 
+// --- 64-bit Registers ---
+EFI_STATUS EFIAPI GpuMmioWrite64(IN UINT32 Offset, IN UINT64 Value);
+UINT64     EFIAPI GpuMmioRead64(IN UINT32 Offset);
+
 // --- 32-bit Registers (Most Common) ---
 EFI_STATUS EFIAPI GpuMmioWrite32(IN UINT32 Offset, IN UINT32 Value);
 UINT32     EFIAPI GpuMmioRead32(IN UINT32 Offset);

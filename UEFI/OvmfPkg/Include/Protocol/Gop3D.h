@@ -18,6 +18,8 @@ typedef struct GOP_3D_PROTOCOL GOP_3D_PROTOCOL;
 
 typedef UINT32 VRAMADDR;
 
+#define GPU_NULL_ADDR ((VRAMADDR)0)
+
 // Global DMA fence
 typedef struct{
   BOOLEAN               DmaBusy;
