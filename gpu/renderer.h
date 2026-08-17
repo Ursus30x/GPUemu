@@ -24,12 +24,14 @@ typedef struct {
     float start_w0, start_w1, start_w2;
 
     float r_inv_w[3], g_inv_w[3], b_inv_w[3];
+    float u_inv_w[3], v_inv_w[3];  /* perspective-correct UV interpolants */
 } TriangleContext;
 
 
 typedef struct {
     Vec4 pos;
     uint32_t color;
+    float u, v;       /* per-vertex texture coordinates */
 } TransformedVertex;
 
 typedef struct {
@@ -46,6 +48,7 @@ typedef struct {
     uint32_t end_block;
     uint16_t raster_exec_mask;
     SimtVec4 transformed_simt;
+    SimtVec2 transformed_uv_simt;
 
     JitContext jit_ctx_vs; 
     JitContext jit_ctx_fs; 

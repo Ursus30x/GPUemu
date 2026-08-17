@@ -3,7 +3,8 @@
 
 #include <stdint.h>
 
-typedef struct { float x, y, z; uint32_t rgba; } Vec3;
+typedef struct { float x, y, z; uint32_t rgba; float u, v; } VertexData;
+typedef VertexData Vec3; /* backwards-compatible alias */
 typedef struct { float x, y, z; } Vec3Raw;
 typedef struct { uint32_t a, b; } Edge;
 typedef struct { uint32_t a, b, c; } Triangle;

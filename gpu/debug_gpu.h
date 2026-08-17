@@ -27,8 +27,8 @@ static void G_GNUC_UNUSED debug_dump_vertices(GpuState *gpu)
 
     for (uint32_t i = 0; i < count; i++) {
         // Print floats and Hex color
-        DEBUG_PRINT("  [%02u] X:%7.3f Y:%7.3f Z:%7.3f | Color: 0x%08X\n",
-               i, vertices[i].x, vertices[i].y, vertices[i].z, vertices[i].rgba);
+        DEBUG_PRINT("  [%02u] X:%7.3f Y:%7.3f Z:%7.3f | Color: 0x%08X | UV:(%6.3f, %6.3f)\n",
+               i, vertices[i].x, vertices[i].y, vertices[i].z, vertices[i].rgba, vertices[i].u, vertices[i].v);
     }
     DEBUG_PRINT("-------------------------------------------------------------\n");
 }
