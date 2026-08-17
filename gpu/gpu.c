@@ -562,7 +562,8 @@ static const GraphicHwOps ghwops = {
     .text_update = vga_update_text,
 };
 #include "hw/core/qdev-properties.h"
-static Property my_pci_properties[] = {
+#include "hw/core/qdev-properties-system.h"
+static const Property my_pci_properties[] = {
 
     DEFINE_PROP_BOOL("legacy_asm", GpuState, use_legacy_asm, false),
 };
