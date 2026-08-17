@@ -573,7 +573,6 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
 
     char *error = NULL;
    // LLVMDumpModule(ctx->module);
-    printf("GENERATED SPIRV\n");
     LLVMVerifyModule(ctx->module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
     //LLVMDumpModule(ctx->module);

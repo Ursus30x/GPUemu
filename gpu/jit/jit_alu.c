@@ -233,7 +233,6 @@ void handle_op_fmod(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 void handle_op_ext_instr(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     uint32_t instr_id = operands[1];
-    printf("Handling extended instruction with ID %d\n", instr_id);
     ctx->glsl_handlers[instr_id](ctx, res_id, &operands[2]);
 }
 
