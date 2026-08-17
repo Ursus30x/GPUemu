@@ -107,6 +107,8 @@ git submodule update --recursive
 # Remove old driver symlinks/files for driver implementation
 rm -f "$CWD/edk2/OptionRom"
 rm -f "$CWD/edk2/DemoApp"
+rm -f "$CWD/edk2/LegacyAsmApp"
+rm -f "$CWD/edk2/SpirvApp"
 rm -f "$CWD/edk2/FrameBenchmark"
 rm -f "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
 rm -f "$CWD/edk2/OptionRom/gpu_isa.h"
@@ -117,6 +119,8 @@ rm -f "$CWD/edk2/Conf/target.txt"
 # Symlink driver implementation to EDK2
 ln -sf "$CWD/UEFI/OptionRom"                        "$CWD/edk2/OptionRom"
 ln -sf "$CWD/UEFI/DemoApp"                          "$CWD/edk2/DemoApp"
+ln -sf "$CWD/UEFI/LegacyAsmApp"                     "$CWD/edk2/LegacyAsmApp"
+ln -sf "$CWD/UEFI/SpirvApp"                         "$CWD/edk2/SpirvApp"
 ln -sf "$CWD/UEFI/FrameBenchmark"                   "$CWD/edk2/FrameBenchmark"
 ln -sf "$CWD/UEFI/OvmfPkg/Include/Protocol/Gop3D.h" "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
 ln -sf "$CWD/include/gpu_isa.h"                     "$CWD/edk2/OptionRom/gpu_isa.h"
@@ -125,7 +129,7 @@ ln -sf "$CWD/include/vram.h"                        "$CWD/edk2/OptionRom/vram.h"
 ln -sf "$CWD/UEFI/target.txt"                       "$CWD/edk2/Conf/target.txt"
 
 # Apply dsc patches
-git apply "$CWD/UEFI/OvmfPkg.patch"
+git apply --ignore-space-change --ignore-whitespace "$CWD/UEFI/OvmfPkg.patch"
 
 make -C BaseTools
 

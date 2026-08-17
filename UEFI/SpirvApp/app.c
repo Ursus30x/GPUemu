@@ -1,0 +1,637 @@
+#include <Uefi.h>
+#include <stddef.h>
+#include <Protocol/PciIo.h>
+#include <Protocol/GraphicsOutput.h>
+#include <Protocol/Gop3D.h>
+#include <Library/UefiLib.h>
+#include <Library/DebugLib.h>
+#include <Library/MemoryAllocationLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/FrameBufferBltLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/UefiBootServicesTableLib.h> // gBS
+#include <Library/DevicePathLib.h>
+#include <Library/TimerLib.h>
+#include <IndustryStandard/Acpi.h>
+#include <IndustryStandard/Pci.h>
+
+
+#include "math3d.h"
+#include "fps_counter.h"
+
+#define WAIT_FOR_KEYPRESS() Status = gBS->WaitForEvent(1, &gST->ConIn->WaitForKey, NULL); \
+    if (!EFI_ERROR(Status)) { \
+        Status = gST->ConIn->ReadKeyStroke(gST->ConIn, &Key); \
+    }
+
+// ============================================================================
+// SIMT UBO Conversion Helper
+// ============================================================================
+// Converts a scalar Mat4 into SIMT-vectorized format (1024 bytes, 16 lanes)
+typedef struct {
+    // Each SimtFloat contains 16 lanes worth of data (16 floats = 64 bytes each)
+    float data[16 * 16];  // 4 rows x 4 cols x 16 lanes = 256 floats = 1024 bytes
+} SimtMat4UBO;
+
+void Mat4_ToSimtUBO(Mat4 *scalar_mat4, SimtMat4UBO *simt_ubo) {
+    // Layout: [Col 0: [Row 0 (16 lanes), Row 1 (16 lanes), ...], Col 1: [...], ...]
+    int base_offset = 0;
+    
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+            float value = scalar_mat4->m[row][col];
+            
+            // Write to all 16 lanes for this specific row in this specific column
+            for (int lane = 0; lane < 16; lane++) {
+                simt_ubo->data[base_offset + lane] = value;
+            }
+            // Advance by 16 floats (64 bytes) to the next row
+            base_offset += 16;
+        }
+    }
+}
+
+STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL *mGraphicsOutput = NULL;
+STATIC GOP_3D_PROTOCOL              *mGOP3D          = NULL;
+
+
+STATIC UINT64  mTimerFreq      = 0;
+STATIC UINT64  mLastTick       = 0;
+STATIC UINT64  mTotalTicks     = 0;
+STATIC UINT64  mTimerMask      = 0;
+STATIC BOOLEAN mTimerCountsUp  = TRUE;
+STATIC BOOLEAN mTimerInit      = FALSE;
+
+VOID GetTimeSeconds(OUT float *TimeOut) {
+    if (!mTimerInit) {
+        UINT64 StartVal = 0;
+        UINT64 EndVal   = 0;
+
+        mTimerFreq = GetPerformanceCounterProperties(&StartVal, &EndVal);
+
+        // Safety Fallback
+        if (mTimerFreq == 0) mTimerFreq = 1000000;
+
+        // Determine Direction and Mask
+        if (EndVal > StartVal) {
+            mTimerCountsUp = TRUE;
+            mTimerMask = EndVal;
+        } else {
+            mTimerCountsUp = FALSE;
+            mTimerMask = StartVal;
+        }
+
+        mLastTick = GetPerformanceCounter();
+        mTimerInit = TRUE;
+    }
+
+    UINT64 CurrentTick = GetPerformanceCounter();
+    UINT64 Delta = 0;
+
+    if (mTimerCountsUp) {
+        // Handle UP counter wrap (Current < Last)
+        // Using bitwise & with Mask handles the overflow math automatically
+        // IF the counter is a power-of-two size (standard).
+        Delta = (CurrentTick - mLastTick) & mTimerMask;
+    } else {
+        // Handle DOWN counter wrap
+        Delta = (mLastTick - CurrentTick) & mTimerMask;
+    }
+
+    // Accumulate the small delta
+    mTotalTicks += Delta;
+    mLastTick    = CurrentTick;
+
+    // Convert Total Ticks to Seconds
+    *TimeOut = (float)mTotalTicks / (float)mTimerFreq;
+}
+
+
+
+
+
+VOID Test3DTrianglesSimt(){
+    EFI_INPUT_KEY Key;
+
+    // --- Data Definitions ---
+    UINT32  bin_vertex_shader[]  = {
+    0x00000490, // <-- Size in bytes
+    0x07230203, 0x00010000, 0x000D000B, 0x00000023, 0x00000000, 0x00020011, 
+    0x00000001, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 
+    0x00000000, 0x0003000E, 0x00000000, 0x00000001, 0x0007000F, 0x00000000, 
+    0x00000004, 0x6E69616D, 0x00000000, 0x0000000D, 0x00000019, 0x00030003, 
+    0x00000002, 0x000001C2, 0x000A0004, 0x475F4C47, 0x4C474F4F, 0x70635F45, 
+    0x74735F70, 0x5F656C79, 0x656E696C, 0x7269645F, 0x69746365, 0x00006576, 
+    0x00080004, 0x475F4C47, 0x4C474F4F, 0x6E695F45, 0x64756C63, 0x69645F65, 
+    0x74636572, 0x00657669, 0x00040005, 0x00000004, 0x6E69616D, 0x00000000, 
+    0x00060005, 0x0000000B, 0x505F6C67, 0x65567265, 0x78657472, 0x00000000, 
+    0x00060006, 0x0000000B, 0x00000000, 0x505F6C67, 0x7469736F, 0x006E6F69, 
+    0x00070006, 0x0000000B, 0x00000001, 0x505F6C67, 0x746E696F, 0x657A6953, 
+    0x00000000, 0x00070006, 0x0000000B, 0x00000002, 0x435F6C67, 0x4470696C, 
+    0x61747369, 0x0065636E, 0x00070006, 0x0000000B, 0x00000003, 0x435F6C67, 
+    0x446C6C75, 0x61747369, 0x0065636E, 0x00030005, 0x0000000D, 0x00000000, 
+    0x00030005, 0x00000011, 0x004F4255, 0x00040006, 0x00000011, 0x00000000, 
+    0x0070766D, 0x00030005, 0x00000013, 0x006F6275, 0x00040005, 0x00000019, 
+    0x736F5061, 0x00000000, 0x00030047, 0x0000000B, 0x00000002, 0x00050048, 
+    0x0000000B, 0x00000000, 0x0000000B, 0x00000000, 0x00050048, 0x0000000B, 
+    0x00000001, 0x0000000B, 0x00000001, 0x00050048, 0x0000000B, 0x00000002, 
+    0x0000000B, 0x00000003, 0x00050048, 0x0000000B, 0x00000003, 0x0000000B, 
+    0x00000004, 0x00030047, 0x00000011, 0x00000002, 0x00040048, 0x00000011, 
+    0x00000000, 0x00000005, 0x00050048, 0x00000011, 0x00000000, 0x00000007, 
+    0x00000010, 0x00050048, 0x00000011, 0x00000000, 0x00000023, 0x00000000, 
+    0x00040047, 0x00000013, 0x00000021, 0x00000000, 0x00040047, 0x00000013, 
+    0x00000022, 0x00000000, 0x00040047, 0x00000019, 0x0000001E, 0x00000000, 
+    0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 
+    0x00000006, 0x00000020, 0x00040017, 0x00000007, 0x00000006, 0x00000004, 
+    0x00040015, 0x00000008, 0x00000020, 0x00000000, 0x0004002B, 0x00000008, 
+    0x00000009, 0x00000001, 0x0004001C, 0x0000000A, 0x00000006, 0x00000009, 
+    0x0006001E, 0x0000000B, 0x00000007, 0x00000006, 0x0000000A, 0x0000000A, 
+    0x00040020, 0x0000000C, 0x00000003, 0x0000000B, 0x0004003B, 0x0000000C, 
+    0x0000000D, 0x00000003, 0x00040015, 0x0000000E, 0x00000020, 0x00000001, 
+    0x0004002B, 0x0000000E, 0x0000000F, 0x00000000, 0x00040018, 0x00000010, 
+    0x00000007, 0x00000004, 0x0003001E, 0x00000011, 0x00000010, 0x00040020, 
+    0x00000012, 0x00000002, 0x00000011, 0x0004003B, 0x00000012, 0x00000013, 
+    0x00000002, 0x00040020, 0x00000014, 0x00000002, 0x00000010, 0x00040017, 
+    0x00000017, 0x00000006, 0x00000003, 0x00040020, 0x00000018, 0x00000001, 
+    0x00000017, 0x0004003B, 0x00000018, 0x00000019, 0x00000001, 0x0004002B, 
+    0x00000006, 0x0000001B, 0x3F800000, 0x00040020, 0x00000021, 0x00000003, 
+    0x00000007, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 
+    0x000200F8, 0x00000005, 0x00050041, 0x00000014, 0x00000015, 0x00000013, 
+    0x0000000F, 0x0004003D, 0x00000010, 0x00000016, 0x00000015, 0x0004003D, 
+    0x00000017, 0x0000001A, 0x00000019, 0x00050051, 0x00000006, 0x0000001C, 
+    0x0000001A, 0x00000000, 0x00050051, 0x00000006, 0x0000001D, 0x0000001A, 
+    0x00000001, 0x00050051, 0x00000006, 0x0000001E, 0x0000001A, 0x00000002, 
+    0x00070050, 0x00000007, 0x0000001F, 0x0000001C, 0x0000001D, 0x0000001E, 
+    0x0000001B, 0x00050091, 0x00000007, 0x00000020, 0x00000016, 0x0000001F, 
+    0x00050041, 0x00000021, 0x00000022, 0x0000000D, 0x0000000F, 0x0003003E, 
+    0x00000022, 0x00000020, 0x000100FD, 0x00010038, 
+};
+//     UINT32  bin_vertex_shader[] = { 0x00000380,
+//     0x07230203, 0x00010000, 0x000D000B, 0x0000001B, 0x00000000, 0x00020011, 
+//     0x00000001, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 
+//     0x00000000, 0x0003000E, 0x00000000, 0x00000001, 0x0007000F, 0x00000000, 
+//     0x00000004, 0x6E69616D, 0x00000000, 0x0000000D, 0x00000012, 0x00030003, 
+//     0x00000002, 0x000001C2, 0x000A0004, 0x475F4C47, 0x4C474F4F, 0x70635F45, 
+//     0x74735F70, 0x5F656C79, 0x656E696C, 0x7269645F, 0x69746365, 0x00006576, 
+//     0x00080004, 0x475F4C47, 0x4C474F4F, 0x6E695F45, 0x64756C63, 0x69645F65, 
+//     0x74636572, 0x00657669, 0x00040005, 0x00000004, 0x6E69616D, 0x00000000, 
+//     0x00060005, 0x0000000B, 0x505F6C67, 0x65567265, 0x78657472, 0x00000000, 
+//     0x00060006, 0x0000000B, 0x00000000, 0x505F6C67, 0x7469736F, 0x006E6F69, 
+//     0x00070006, 0x0000000B, 0x00000001, 0x505F6C67, 0x746E696F, 0x657A6953, 
+//     0x00000000, 0x00070006, 0x0000000B, 0x00000002, 0x435F6C67, 0x4470696C, 
+//     0x61747369, 0x0065636E, 0x00070006, 0x0000000B, 0x00000003, 0x435F6C67, 
+//     0x446C6C75, 0x61747369, 0x0065636E, 0x00030005, 0x0000000D, 0x00000000, 
+//     0x00040005, 0x00000012, 0x736F5061, 0x00000000, 0x00030047, 0x0000000B, 
+//     0x00000002, 0x00050048, 0x0000000B, 0x00000000, 0x0000000B, 0x00000000, 
+//     0x00050048, 0x0000000B, 0x00000001, 0x0000000B, 0x00000001, 0x00050048, 
+//     0x0000000B, 0x00000002, 0x0000000B, 0x00000003, 0x00050048, 0x0000000B, 
+//     0x00000003, 0x0000000B, 0x00000004, 0x00040047, 0x00000012, 0x0000001E, 
+//     0x00000000, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 
+//     0x00030016, 0x00000006, 0x00000020, 0x00040017, 0x00000007, 0x00000006, 
+//     0x00000004, 0x00040015, 0x00000008, 0x00000020, 0x00000000, 0x0004002B, 
+//     0x00000008, 0x00000009, 0x00000001, 0x0004001C, 0x0000000A, 0x00000006, 
+//     0x00000009, 0x0006001E, 0x0000000B, 0x00000007, 0x00000006, 0x0000000A, 
+//     0x0000000A, 0x00040020, 0x0000000C, 0x00000003, 0x0000000B, 0x0004003B, 
+//     0x0000000C, 0x0000000D, 0x00000003, 0x00040015, 0x0000000E, 0x00000020, 
+//     0x00000001, 0x0004002B, 0x0000000E, 0x0000000F, 0x00000000, 0x00040017, 
+//     0x00000010, 0x00000006, 0x00000003, 0x00040020, 0x00000011, 0x00000001, 
+//     0x00000010, 0x0004003B, 0x00000011, 0x00000012, 0x00000001, 0x0004002B, 
+//     0x00000006, 0x00000014, 0x3F800000, 0x00040020, 0x00000019, 0x00000003, 
+//     0x00000007, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 
+//     0x000200F8, 0x00000005, 0x0004003D, 0x00000010, 0x00000013, 0x00000012, 
+//     0x00050051, 0x00000006, 0x00000015, 0x00000013, 0x00000000, 0x00050051, 
+//     0x00000006, 0x00000016, 0x00000013, 0x00000001, 0x00050051, 0x00000006, 
+//     0x00000017, 0x00000013, 0x00000002, 0x00070050, 0x00000007, 0x00000018, 
+//     0x00000015, 0x00000016, 0x00000017, 0x00000014, 0x00050041, 0x00000019, 
+//     0x0000001A, 0x0000000D, 0x0000000F, 0x0003003E, 0x0000001A, 0x00000018, 
+//     0x000100FD, 0x00010038, 
+// };
+    UINT32 bin_fragment_shader[]= {
+    0x000001C4, // <-- Size in bytes
+    0x07230203, 0x00010000, 0x000D000B, 0x0000000D, 0x00000000, 0x00020011, 
+    0x00000001, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 
+    0x00000000, 0x0003000E, 0x00000000, 0x00000001, 0x0007000F, 0x00000004, 
+    0x00000004, 0x6E69616D, 0x00000000, 0x00000009, 0x0000000B, 0x00030010, 
+    0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001C2, 0x000A0004, 
+    0x475F4C47, 0x4C474F4F, 0x70635F45, 0x74735F70, 0x5F656C79, 0x656E696C, 
+    0x7269645F, 0x69746365, 0x00006576, 0x00080004, 0x475F4C47, 0x4C474F4F, 
+    0x6E695F45, 0x64756C63, 0x69645F65, 0x74636572, 0x00657669, 0x00040005, 
+    0x00000004, 0x6E69616D, 0x00000000, 0x00050005, 0x00000009, 0x4374756F, 
+    0x726F6C6F, 0x00000000, 0x00050005, 0x0000000B, 0x67617266, 0x6F6C6F43, 
+    0x00000072, 0x00040047, 0x00000009, 0x0000001E, 0x00000000, 0x00040047, 
+    0x0000000B, 0x0000001E, 0x00000000, 0x00020013, 0x00000002, 0x00030021, 
+    0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020, 0x00040017, 
+    0x00000007, 0x00000006, 0x00000003, 0x00040020, 0x00000008, 0x00000003, 
+    0x00000007, 0x0004003B, 0x00000008, 0x00000009, 0x00000003, 0x00040020, 
+    0x0000000A, 0x00000001, 0x00000007, 0x0004003B, 0x0000000A, 0x0000000B, 
+    0x00000001, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 
+    0x000200F8, 0x00000005, 0x0004003D, 0x00000007, 0x0000000C, 0x0000000B, 
+    0x0003003E, 0x00000009, 0x0000000C, 0x000100FD, 0x00010038, 
+};
+
+
+  
+    Vec3 vertices[] = {
+        {-0.5, -0.5,  0.5, 0xFF0000}, { 0.5, -0.5,  0.5, 0xFF0000}, { 0.5,  0.5,  0.5, 0xFF0000}, {-0.5,  0.5,  0.5, 0x0000FF},
+        {-0.5, -0.5, -0.5,0x0000FF}, { 0.5, -0.5, -0.5, 0x0000FF}, { 0.5,  0.5, -0.5,  0x00FFFF}, {-0.5,  0.5, -0.5,  0x00FFFF}
+    };
+    Triangle indices[] = {
+        {0, 1, 2}, {0, 2, 3}, {1, 5, 6}, {1, 6, 2},
+        {5, 4, 7}, {5, 7, 6}, {4, 0, 3}, {4, 3, 7},
+        {3, 2, 6}, {3, 6, 7}, {4, 5, 1}, {4, 1, 0}
+    };
+
+    UINT32 IndexCount = (sizeof(indices) / sizeof(Triangle)) * 2;
+
+    // --- Static Asset Transfer ---
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
+    VRAMADDR hVBO, hIBO, hVS, hFS;
+    VRAMADDR hMVP1 = 0;
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+
+    float angle = 0.0f;
+    Print(L"Animating... Press Key to Exit.\n");
+
+    // --- START BENCHMARK ---
+    FpsCounterStart();
+
+    // Reset timer base for this run
+    mTimerInit = FALSE;
+
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        float time;
+
+        GetTimeSeconds(&time);
+
+        INT32 Seconds = (INT32)time;
+        INT32 Millis  = (INT32)((time - Seconds) * 1000); // 3 decimal places
+
+        DEBUG((EFI_D_INFO, "Time: %d.%03d s\n", Seconds, Millis));
+
+        float rotation_period = 2.0;
+        angle = (2.0 * PI * time) / rotation_period;
+
+        Mat4 ry, rx, trans, proj;
+        Mat4 model1, mvp1;
+
+        Mat4_RotateY(angle, &ry);
+        Mat4_RotateX(0.2f, &rx);
+        Mat4_Translate(0.0f, 0.0f, 5.0f, &trans);
+        Mat4_Perspective(PI/3.0f, 640.0f/480.0f, 1.0f, 10.0f, &proj);
+
+        Mat4_Mul(&ry, &rx, &model1);
+        Mat4_Mul(&trans, &model1, &model1);
+        Mat4_Mul(&proj, &model1, &mvp1);
+
+        // Convert scalar Mat4 to SIMT-vectorized format
+        SimtMat4UBO simt_mvp1;
+        Mat4_ToSimtUBO(&mvp1, &simt_mvp1);
+
+        if(hMVP1 == 0){
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        }
+        else{
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        }
+
+        // --- RENDER ---
+        mGOP3D->GpuCmdBegin(mGOP3D);
+        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+        
+        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 8);
+        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 12);
+
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+
+
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);
+
+        // --- TICK ---
+        FpsCounterTick();
+    }
+
+    // --- STOP & SHOW STATS ---
+    FpsCounterStop();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);
+
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+
+    FpsCounterShowStats();
+}
+
+VOID TestShaderArt() {
+    EFI_INPUT_KEY Key;
+
+    Vec3 vertices[] = {
+        {-1.0f, -1.0f, 0.0f, 0xFFFF00},
+        { 1.0f, -1.0f, 0.0f, 0xFFFF00},
+        {-1.0f,  1.0f, 0.0f, 0xFFFF00},
+        { 1.0f,  1.0f, 0.0f, 0xFFFF00}
+    };
+
+    Triangle indices[] = {
+        {0, 1, 2},
+        {1, 3, 2}
+    };
+
+    UINT32 IndexCount = 6;
+
+// --- Data Definitions ---
+    UINT32  bin_vertex_shader[]  = {
+        0x00000380, // <-- Size in bytes
+        0x07230203, 0x00010000, 0x000D000B, 0x0000001B, 0x00000000, 0x00020011, 
+        0x00000001, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 
+        0x00000000, 0x0003000E, 0x00000000, 0x00000001, 0x0007000F, 0x00000000, 
+        0x00000004, 0x6E69616D, 0x00000000, 0x0000000D, 0x00000012, 0x00030003, 
+        0x00000002, 0x000001C2, 0x000A0004, 0x475F4C47, 0x4C474F4F, 0x70635F45, 
+        0x74735F70, 0x5F656C79, 0x656E696C, 0x7269645F, 0x69746365, 0x00006576, 
+        0x00080004, 0x475F4C47, 0x4C474F4F, 0x6E695F45, 0x64756C63, 0x69645F65, 
+        0x74636572, 0x00657669, 0x00040005, 0x00000004, 0x6E69616D, 0x00000000, 
+        0x00060005, 0x0000000B, 0x505F6C67, 0x65567265, 0x78657472, 0x00000000, 
+        0x00060006, 0x0000000B, 0x00000000, 0x505F6C67, 0x7469736F, 0x006E6F69, 
+        0x00070006, 0x0000000B, 0x00000001, 0x505F6C67, 0x746E696F, 0x657A6953, 
+        0x00000000, 0x00070006, 0x0000000B, 0x00000002, 0x435F6C67, 0x4470696C, 
+        0x61747369, 0x0065636E, 0x00070006, 0x0000000B, 0x00000003, 0x435F6C67, 
+        0x446C6C75, 0x61747369, 0x0065636E, 0x00030005, 0x0000000D, 0x00000000, 
+        0x00040005, 0x00000012, 0x736F5061, 0x00000000, 0x00030047, 0x0000000B, 
+        0x00000002, 0x00050048, 0x0000000B, 0x00000000, 0x0000000B, 0x00000000, 
+        0x00050048, 0x0000000B, 0x00000001, 0x0000000B, 0x00000001, 0x00050048, 
+        0x0000000B, 0x00000002, 0x0000000B, 0x00000003, 0x00050048, 0x0000000B, 
+        0x00000003, 0x0000000B, 0x00000004, 0x00040047, 0x00000012, 0x0000001E, 
+        0x00000000, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 
+        0x00030016, 0x00000006, 0x00000020, 0x00040017, 0x00000007, 0x00000006, 
+        0x00000004, 0x00040015, 0x00000008, 0x00000020, 0x00000000, 0x0004002B, 
+        0x00000008, 0x00000009, 0x00000001, 0x0004001C, 0x0000000A, 0x00000006, 
+        0x00000009, 0x0006001E, 0x0000000B, 0x00000007, 0x00000006, 0x0000000A, 
+        0x0000000A, 0x00040020, 0x0000000C, 0x00000003, 0x0000000B, 0x0004003B, 
+        0x0000000C, 0x0000000D, 0x00000003, 0x00040015, 0x0000000E, 0x00000020, 
+        0x00000001, 0x0004002B, 0x0000000E, 0x0000000F, 0x00000000, 0x00040017, 
+        0x00000010, 0x00000006, 0x00000003, 0x00040020, 0x00000011, 0x00000001, 
+        0x00000010, 0x0004003B, 0x00000011, 0x00000012, 0x00000001, 0x0004002B, 
+        0x00000006, 0x00000014, 0x3F800000, 0x00040020, 0x00000019, 0x00000003, 
+        0x00000007, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 
+        0x000200F8, 0x00000005, 0x0004003D, 0x00000010, 0x00000013, 0x00000012, 
+        0x00050051, 0x00000006, 0x00000015, 0x00000013, 0x00000000, 0x00050051, 
+        0x00000006, 0x00000016, 0x00000013, 0x00000001, 0x00050051, 0x00000006, 
+        0x00000017, 0x00000013, 0x00000002, 0x00070050, 0x00000007, 0x00000018, 
+        0x00000015, 0x00000016, 0x00000017, 0x00000014, 0x00050041, 0x00000019, 
+        0x0000001A, 0x0000000D, 0x0000000F, 0x0003003E, 0x0000001A, 0x00000018, 
+        0x000100FD, 0x00010038, 
+    };        
+    UINT32 bin_fragment_shader[]  = {
+        0x00000A24, // <-- Size in bytes
+        0x07230203, 0x00010000, 0x000D000B, 0x0000006F, 0x00000000, 0x00020011, 
+        0x00000001, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 
+        0x00000000, 0x0003000E, 0x00000000, 0x00000001, 0x0007000F, 0x00000004, 
+        0x00000004, 0x6E69616D, 0x00000000, 0x0000000C, 0x00000069, 0x00030010, 
+        0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001C2, 0x000A0004, 
+        0x475F4C47, 0x4C474F4F, 0x70635F45, 0x74735F70, 0x5F656C79, 0x656E696C, 
+        0x7269645F, 0x69746365, 0x00006576, 0x00080004, 0x475F4C47, 0x4C474F4F, 
+        0x6E695F45, 0x64756C63, 0x69645F65, 0x74636572, 0x00657669, 0x00040005, 
+        0x00000004, 0x6E69616D, 0x00000000, 0x00030005, 0x00000009, 0x00007675, 
+        0x00060005, 0x0000000C, 0x465F6C67, 0x43676172, 0x64726F6F, 0x00000000, 
+        0x00040005, 0x00000021, 0x6C676E61, 0x00000065, 0x00040005, 0x00000028, 
+        0x69646172, 0x00007375, 0x00040005, 0x0000002B, 0x65766177, 0x00000000, 
+        0x00050005, 0x0000002F, 0x66696E55, 0x736D726F, 0x00000000, 0x00050006, 
+        0x0000002F, 0x00000000, 0x656D6974, 0x00000000, 0x00030005, 0x00000031, 
+        0x00000075, 0x00040005, 0x0000003A, 0x74746170, 0x006E7265, 0x00040005, 
+        0x00000047, 0x6F6C6F63, 0x00000072, 0x00050005, 0x00000069, 0x4374756F, 
+        0x726F6C6F, 0x00000000, 0x00040047, 0x0000000C, 0x0000000B, 0x0000000F, 
+        0x00030047, 0x0000002F, 0x00000002, 0x00050048, 0x0000002F, 0x00000000, 
+        0x00000023, 0x00000000, 0x00040047, 0x00000031, 0x00000021, 0x00000000, 
+        0x00040047, 0x00000031, 0x00000022, 0x00000000, 0x00040047, 0x00000069, 
+        0x0000001E, 0x00000000, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 
+        0x00000002, 0x00030016, 0x00000006, 0x00000020, 0x00040017, 0x00000007, 
+        0x00000006, 0x00000002, 0x00040020, 0x00000008, 0x00000007, 0x00000007, 
+        0x00040017, 0x0000000A, 0x00000006, 0x00000004, 0x00040020, 0x0000000B, 
+        0x00000001, 0x0000000A, 0x0004003B, 0x0000000B, 0x0000000C, 0x00000001, 
+        0x0004002B, 0x00000006, 0x0000000F, 0x44200000, 0x0004002B, 0x00000006, 
+        0x00000010, 0x43F00000, 0x0005002C, 0x00000007, 0x00000011, 0x0000000F, 
+        0x00000010, 0x0004002B, 0x00000006, 0x00000014, 0x40000000, 0x0004002B, 
+        0x00000006, 0x00000016, 0x3F800000, 0x0004002B, 0x00000006, 0x00000019, 
+        0x3FAAAAAB, 0x00040015, 0x0000001A, 0x00000020, 0x00000000, 0x0004002B, 
+        0x0000001A, 0x0000001B, 0x00000000, 0x00040020, 0x0000001C, 0x00000007, 
+        0x00000006, 0x0004002B, 0x0000001A, 0x00000022, 0x00000001, 0x0004002B, 
+        0x00000006, 0x0000002D, 0x41200000, 0x0003001E, 0x0000002F, 0x00000006, 
+        0x00040020, 0x00000030, 0x00000002, 0x0000002F, 0x0004003B, 0x00000030, 
+        0x00000031, 0x00000002, 0x00040015, 0x00000032, 0x00000020, 0x00000001, 
+        0x0004002B, 0x00000032, 0x00000033, 0x00000000, 0x00040020, 0x00000034, 
+        0x00000002, 0x00000006, 0x0004002B, 0x00000006, 0x00000040, 0x40400000, 
+        0x00040017, 0x00000045, 0x00000006, 0x00000003, 0x00040020, 0x00000046, 
+        0x00000007, 0x00000045, 0x0004002B, 0x00000006, 0x00000050, 0x3F000000, 
+        0x0004002B, 0x00000006, 0x00000056, 0x3E99999A, 0x0004002B, 0x00000006, 
+        0x00000059, 0x3F333333, 0x00040020, 0x00000068, 0x00000003, 0x0000000A, 
+        0x0004003B, 0x00000068, 0x00000069, 0x00000003, 0x00050036, 0x00000002, 
+        0x00000004, 0x00000000, 0x00000003, 0x000200F8, 0x00000005, 0x0004003B, 
+        0x00000008, 0x00000009, 0x00000007, 0x0004003B, 0x0000001C, 0x00000021, 
+        0x00000007, 0x0004003B, 0x0000001C, 0x00000028, 0x00000007, 0x0004003B, 
+        0x0000001C, 0x0000002B, 0x00000007, 0x0004003B, 0x0000001C, 0x0000003A, 
+        0x00000007, 0x0004003B, 0x00000046, 0x00000047, 0x00000007, 0x0004003D, 
+        0x0000000A, 0x0000000D, 0x0000000C, 0x0007004F, 0x00000007, 0x0000000E, 
+        0x0000000D, 0x0000000D, 0x00000000, 0x00000001, 0x00050088, 0x00000007, 
+        0x00000012, 0x0000000E, 0x00000011, 0x0003003E, 0x00000009, 0x00000012, 
+        0x0004003D, 0x00000007, 0x00000013, 0x00000009, 0x0005008E, 0x00000007, 
+        0x00000015, 0x00000013, 0x00000014, 0x00050050, 0x00000007, 0x00000017, 
+        0x00000016, 0x00000016, 0x00050083, 0x00000007, 0x00000018, 0x00000015, 
+        0x00000017, 0x0003003E, 0x00000009, 0x00000018, 0x00050041, 0x0000001C, 
+        0x0000001D, 0x00000009, 0x0000001B, 0x0004003D, 0x00000006, 0x0000001E, 
+        0x0000001D, 0x00050085, 0x00000006, 0x0000001F, 0x0000001E, 0x00000019, 
+        0x00050041, 0x0000001C, 0x00000020, 0x00000009, 0x0000001B, 0x0003003E, 
+        0x00000020, 0x0000001F, 0x00050041, 0x0000001C, 0x00000023, 0x00000009, 
+        0x00000022, 0x0004003D, 0x00000006, 0x00000024, 0x00000023, 0x00050041, 
+        0x0000001C, 0x00000025, 0x00000009, 0x0000001B, 0x0004003D, 0x00000006, 
+        0x00000026, 0x00000025, 0x0007000C, 0x00000006, 0x00000027, 0x00000001, 
+        0x00000019, 0x00000024, 0x00000026, 0x0003003E, 0x00000021, 0x00000027, 
+        0x0004003D, 0x00000007, 0x00000029, 0x00000009, 0x0006000C, 0x00000006, 
+        0x0000002A, 0x00000001, 0x00000042, 0x00000029, 0x0003003E, 0x00000028, 
+        0x0000002A, 0x0004003D, 0x00000006, 0x0000002C, 0x00000028, 0x00050085, 
+        0x00000006, 0x0000002E, 0x0000002C, 0x0000002D, 0x00050041, 0x00000034, 
+        0x00000035, 0x00000031, 0x00000033, 0x0004003D, 0x00000006, 0x00000036, 
+        0x00000035, 0x00050085, 0x00000006, 0x00000037, 0x00000036, 0x00000014, 
+        0x00050083, 0x00000006, 0x00000038, 0x0000002E, 0x00000037, 0x0006000C, 
+        0x00000006, 0x00000039, 0x00000001, 0x0000000D, 0x00000038, 0x0003003E, 
+        0x0000002B, 0x00000039, 0x0004003D, 0x00000006, 0x0000003B, 0x0000002B, 
+        0x0004003D, 0x00000006, 0x0000003C, 0x00000021, 0x00050085, 0x00000006, 
+        0x0000003D, 0x0000003C, 0x0000002D, 0x00050041, 0x00000034, 0x0000003E, 
+        0x00000031, 0x00000033, 0x0004003D, 0x00000006, 0x0000003F, 0x0000003E, 
+        0x00050085, 0x00000006, 0x00000041, 0x0000003F, 0x00000040, 0x00050081, 
+        0x00000006, 0x00000042, 0x0000003D, 0x00000041, 0x0006000C, 0x00000006, 
+        0x00000043, 0x00000001, 0x0000000E, 0x00000042, 0x00050081, 0x00000006, 
+        0x00000044, 0x0000003B, 0x00000043, 0x0003003E, 0x0000003A, 0x00000044, 
+        0x0004003D, 0x00000006, 0x00000048, 0x0000003A, 0x00050041, 0x00000034, 
+        0x00000049, 0x00000031, 0x00000033, 0x0004003D, 0x00000006, 0x0000004A, 
+        0x00000049, 0x00050081, 0x00000006, 0x0000004B, 0x00000048, 0x0000004A, 
+        0x0006000C, 0x00000006, 0x0000004C, 0x00000001, 0x0000000F, 0x0000004B, 
+        0x0004003D, 0x00000006, 0x0000004D, 0x0000003A, 0x00050041, 0x00000034, 
+        0x0000004E, 0x00000031, 0x00000033, 0x0004003D, 0x00000006, 0x0000004F, 
+        0x0000004E, 0x00050085, 0x00000006, 0x00000051, 0x0000004F, 0x00000050, 
+        0x00050083, 0x00000006, 0x00000052, 0x0000004D, 0x00000051, 0x0006000C, 
+        0x00000006, 0x00000053, 0x00000001, 0x0000000F, 0x00000052, 0x00050041, 
+        0x00000034, 0x00000054, 0x00000031, 0x00000033, 0x0004003D, 0x00000006, 
+        0x00000055, 0x00000054, 0x00050085, 0x00000006, 0x00000057, 0x00000055, 
+        0x00000056, 0x0004003D, 0x00000006, 0x00000058, 0x0000003A, 0x00050085, 
+        0x00000006, 0x0000005A, 0x00000058, 0x00000059, 0x00050081, 0x00000006, 
+        0x0000005B, 0x00000057, 0x0000005A, 0x0006000C, 0x00000006, 0x0000005C, 
+        0x00000001, 0x0000000F, 0x0000005B, 0x00060050, 0x00000045, 0x0000005D, 
+        0x0000004C, 0x00000053, 0x0000005C, 0x0003003E, 0x00000047, 0x0000005D, 
+        0x0004003D, 0x00000045, 0x0000005E, 0x00000047, 0x0005008E, 0x00000045, 
+        0x0000005F, 0x0000005E, 0x00000050, 0x00060050, 0x00000045, 0x00000060, 
+        0x00000050, 0x00000050, 0x00000050, 0x00050081, 0x00000045, 0x00000061, 
+        0x0000005F, 0x00000060, 0x0003003E, 0x00000047, 0x00000061, 0x0004003D, 
+        0x00000006, 0x00000062, 0x00000028, 0x0004007F, 0x00000006, 0x00000063, 
+        0x00000062, 0x00050085, 0x00000006, 0x00000064, 0x00000063, 0x00000040, 
+        0x0006000C, 0x00000006, 0x00000065, 0x00000001, 0x0000001B, 0x00000064, 
+        0x0004003D, 0x00000045, 0x00000066, 0x00000047, 0x0005008E, 0x00000045, 
+        0x00000067, 0x00000066, 0x00000065, 0x0003003E, 0x00000047, 0x00000067, 
+        0x0004003D, 0x00000045, 0x0000006A, 0x00000047, 0x00050051, 0x00000006, 
+        0x0000006B, 0x0000006A, 0x00000000, 0x00050051, 0x00000006, 0x0000006C, 
+        0x0000006A, 0x00000001, 0x00050051, 0x00000006, 0x0000006D, 0x0000006A, 
+        0x00000002, 0x00070050, 0x0000000A, 0x0000006E, 0x0000006B, 0x0000006C, 
+        0x0000006D, 0x00000016, 0x0003003E, 0x00000069, 0x0000006E, 0x000100FD, 
+        0x00010038, 
+    };
+
+
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
+    VRAMADDR hVBO, hIBO, hVS, hFS, hMVP1 = 0;
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+
+    Print(L"Rendering Full Screen Quad... Press Key to Exit.\n");
+    FpsCounterStart();
+    mTimerInit = FALSE;
+
+
+    struct  UniformBuffer {
+        float iTime[16];
+    } uniform;
+
+    float time = 0.0f;
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        GetTimeSeconds(&time);
+        for(UINT32 i = 0; i<16; i++)
+        {
+            uniform.iTime[i] = time;
+        }
+        if(hMVP1 == 0){
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
+        } else {
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
+        }
+
+        mGOP3D->GpuCmdBegin(mGOP3D);
+        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+
+        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 4);
+        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 2);
+
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(struct UniformBuffer));
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);
+
+        FpsCounterTick();
+    }
+
+    // --- Cleanup ---
+    FpsCounterStop();
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+    FpsCounterShowStats();
+}
+EFI_STATUS EFIAPI Test() {
+    EFI_STATUS Status;
+    EFI_INPUT_KEY Key;
+
+    DEBUG((EFI_D_INFO, "TestGop start\n"));
+
+    Status = gBS->LocateProtocol(
+        &gEfiGraphicsOutputProtocolGuid,
+        NULL,
+        (VOID **)&mGraphicsOutput
+    );
+
+    Status = gBS->LocateProtocol(
+        &gGop3dProtocolGuid,
+        NULL,
+        (VOID **)&mGOP3D
+    );
+
+    if (EFI_ERROR(Status)) {
+        Print(L"Failed to locate GOP: %r\n", Status);
+        return Status;
+    }
+    Print(L"====================================================\n");
+    Print(L"   GPUemu UEFI SPIR-V SIMT JIT Shader Application   \n");
+    Print(L"====================================================\n");
+    // Print GOP information
+    Print(L"GOP Located Successfully!\n");
+    Print(L"Current Mode: %d\n", mGraphicsOutput->Mode->Mode);
+    Print(L"Resolution: %dx%d\n",
+          mGraphicsOutput->Mode->Info->HorizontalResolution,
+          mGraphicsOutput->Mode->Info->VerticalResolution);
+    Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
+    Print(L"Press key for SPIR-V 3D SIMT Triangles Demo...\n");
+
+    WAIT_FOR_KEYPRESS()
+
+
+    Test3DTrianglesSimt();
+
+    WAIT_FOR_KEYPRESS()
+
+    TestShaderArt();
+
+    WAIT_FOR_KEYPRESS()
+
+    DEBUG((EFI_D_INFO, "Test end\n"));
+    return EFI_SUCCESS;
+}
+
+
+/*==========================================================================*/
+/*                               MAIN APP ENTRY                             */
+/*==========================================================================*/
+
+
+EFI_STATUS EFIAPI SpirvAppEntry(
+    IN EFI_HANDLE ImageHandle,
+    IN EFI_SYSTEM_TABLE *SystemTable) {
+
+    EFI_STATUS Status;
+
+    Status = Test();
+
+    ASSERT_EFI_ERROR(Status);
+
+    return Status;
+}
+
+EFI_STATUS EFIAPI SpirvAppEntryUnload (IN  EFI_HANDLE  ImageHandle) {
+    return EFI_SUCCESS;
+}
