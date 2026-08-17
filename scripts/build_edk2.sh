@@ -39,6 +39,22 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
+echo "=== Building LegacyAsmApp ==="
+build -p OvmfPkg/OvmfPkgX64.dsc -m LegacyAsmApp/LegacyAsmApp.inf -b "$BUILD_TYPE"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to build LegacyAsmApp"
+    exit 1
+fi
+
+echo ""
+echo "=== Building SpirvApp ==="
+build -p OvmfPkg/OvmfPkgX64.dsc -m SpirvApp/SpirvApp.inf -b "$BUILD_TYPE"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to build SpirvApp"
+    exit 1
+fi
+
+echo ""
 echo "=== Building FrameBenchmark ==="
 build -p OvmfPkg/OvmfPkgX64.dsc -m FrameBenchmark/FrameBenchmark.inf -b "$BUILD_TYPE"
 if [ $? -ne 0 ]; then

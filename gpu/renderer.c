@@ -11,23 +11,23 @@ static RendererThreads render;
 
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
-    // if(gpu->use_legacy_asm) 
-    // {
-    //     gpu->pRegs[REG_PX].f32 = (float)x;
-    //     gpu->pRegs[REG_PY].f32 = (float)y;
-    //     uint8_t r  = (color >> 16) & 0xFF;
-    //     uint8_t g  = (color >> 8) & 0xFF;
-    //     uint8_t b  = color & 0xFF;
-    //     gpu->pRegs[REG_PR].u32 = r;
-    //     gpu->pRegs[REG_PG].u32 = g;
-    //     gpu->pRegs[REG_PB].u32 = b;
-    //     exec_shader(gpu, gpu->fs_code_addr);
-    //     color = (gpu->pRegs[REG_PR].u32 << 16) |
-    //             (gpu->pRegs[REG_PG].u32 << 8)  |
-    //                 gpu->pRegs[REG_PB].u32;
-    // }
+    if(gpu->use_legacy_asm) 
+    {
+        gpu->pRegs[REG_PX].f32 = (float)x;
+        gpu->pRegs[REG_PY].f32 = (float)y;
+        uint8_t r  = (color >> 16) & 0xFF;
+        uint8_t g  = (color >> 8) & 0xFF;
+        uint8_t b  = color & 0xFF;
+        gpu->pRegs[REG_PR].u32 = r;
+        gpu->pRegs[REG_PG].u32 = g;
+        gpu->pRegs[REG_PB].u32 = b;
+        exec_shader(gpu, gpu->fs_code_addr);
+        color = (gpu->pRegs[REG_PR].u32 << 16) |
+                (gpu->pRegs[REG_PG].u32 << 8)  |
+                    gpu->pRegs[REG_PB].u32;
+    }
 
-    FB(gpu)[y * GPU_FB_WIDTH + x] = color;
+    FB(gpu)[y * gpu->width + x] = color;
 }
 
 void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, uint32_t color2) 
@@ -633,11 +633,11 @@ static void* worker_thread(void* arg)
 
 void init_thread_pool(void) 
 {
+    if (render.threads_initialized) return;
+
     render.work_generation = 0;
     render.completed_workers = 0;
     render.current_task = TASK_NONE;
-    render.threads_initialized = 0;
-    if (render.threads_initialized) return;
 
     qemu_mutex_init(&render.pool_mutex);
     qemu_cond_init(&render.pool_cond);

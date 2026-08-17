@@ -37,6 +37,15 @@ You can enter this directory from the UEFI shell by typing `FS0:` in the UEFI sh
 
 <img width="640" height="480" alt="gpu-test" src="https://github.com/user-attachments/assets/7f997a02-8cee-4be2-8ce5-7e9d8b3ab094" />
 
+## Legacy ASM Mode
+
+The GPU supports two shader execution backends. The default path JIT-compiles SPIR-V shaders into native code. The **legacy ASM** path instead interprets shaders written in the GPU's custom ISA (see `compiler/`). To enable it, set `legacy_asm=on` on the device flag in `scripts/run.sh`:
+
+```
+-device AREK,...,legacy_asm=on
+```
+
+The `LegacyAsmApp` UEFI application (`UEFI/LegacyAsmApp/`) demonstrates this mode with hand-assembled vertex and fragment shaders.
 
 ## Documentation
 
