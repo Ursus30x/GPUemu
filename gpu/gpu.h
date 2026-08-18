@@ -53,6 +53,19 @@
 #define REG_RB_START(s)      (*(uint32_t*)&s->cmd[REG_RING_BUFFER_START])
 #define REG_RB_END(s)        (*(uint32_t*)&s->cmd[REG_RING_BUFFER_END])
 
+typedef enum {
+    GPU_BLEND_FACTOR_ZERO                = 0,
+    GPU_BLEND_FACTOR_ONE                 = 1,
+    GPU_BLEND_FACTOR_SRC_ALPHA           = 2,
+    GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA = 3,
+    GPU_BLEND_FACTOR_DST_ALPHA           = 4,
+    GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA = 5,
+    GPU_BLEND_FACTOR_SRC_COLOR           = 6,
+    GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR = 7,
+    GPU_BLEND_FACTOR_DST_COLOR           = 8,
+    GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR = 9
+} GpuBlendFactor;
+
 
 typedef struct GpuState {
     PCIDevice pdev;
@@ -100,17 +113,22 @@ typedef struct GpuState {
     QemuThread refresh_thread;
 
     bool threads_exit;
-
+    // STATE 
     GenericBufferConfig vbo_config;
     GenericBufferConfig edge_config;
     GenericBufferConfig uinform_config;
 
     uint32_t texture_desc_addr[MAX_BINDINGS];
     TextureSamplerDescriptor textures[MAX_BINDINGS];
+    
+    uint8_t         blend_enable;          
+    GpuBlendFactor  blend_src_factor;     
+    GpuBlendFactor  blend_dst_factor;     
+    uint8_t         depth_write_enable; 
 
+    //LEGACY ASM
     Mat4 regs[REG_MAT_SIZE];
     Preg pRegs[REG_P_GEN_SIZE];
-
     // fragment pseudo regs
     float px, py;
     uint32_t pr, pg, pb;

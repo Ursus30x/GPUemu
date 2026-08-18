@@ -1045,7 +1045,220 @@ VOID TestTextureSampling() {
     mGOP3D->GpuSetMode(mGOP3D, 0);
     FpsCounterShowStats();
 }
+VOID TestBlendingSimt() {
+    EFI_INPUT_KEY Key;
 
+    // --- Data Definitions ---
+    UINT32  bin_vertex_shader[]  = {
+        0x00000490, // <-- Size in bytes
+        0x07230203, 0x00010000, 0x000D000B, 0x00000023, 0x00000000, 0x00020011, 
+        0x00000001, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 
+        0x00000000, 0x0003000E, 0x00000000, 0x00000001, 0x0007000F, 0x00000000, 
+        0x00000004, 0x6E69616D, 0x00000000, 0x0000000D, 0x00000019, 0x00030003, 
+        0x00000002, 0x000001C2, 0x000A0004, 0x475F4C47, 0x4C474F4F, 0x70635F45, 
+        0x74735F70, 0x5F656C79, 0x656E696C, 0x7269645F, 0x69746365, 0x00006576, 
+        0x00080004, 0x475F4C47, 0x4C474F4F, 0x6E695F45, 0x64756C63, 0x69645F65, 
+        0x74636572, 0x00657669, 0x00040005, 0x00000004, 0x6E69616D, 0x00000000, 
+        0x00060005, 0x0000000B, 0x505F6C67, 0x65567265, 0x78657472, 0x00000000, 
+        0x00060006, 0x0000000B, 0x00000000, 0x505F6C67, 0x7469736F, 0x006E6F69, 
+        0x00070006, 0x0000000B, 0x00000001, 0x505F6C67, 0x746E696F, 0x657A6953, 
+        0x00000000, 0x00070006, 0x0000000B, 0x00000002, 0x435F6C67, 0x4470696C, 
+        0x61747369, 0x0065636E, 0x00070006, 0x0000000B, 0x00000003, 0x435F6C67, 
+        0x446C6C75, 0x61747369, 0x0065636E, 0x00030005, 0x0000000D, 0x00000000, 
+        0x00030005, 0x00000011, 0x004F4255, 0x00040006, 0x00000011, 0x00000000, 
+        0x0070766D, 0x00030005, 0x00000013, 0x006F6275, 0x00040005, 0x00000019, 
+        0x736F5061, 0x00000000, 0x00030047, 0x0000000B, 0x00000002, 0x00050048, 
+        0x0000000B, 0x00000000, 0x0000000B, 0x00000000, 0x00050048, 0x0000000B, 
+        0x00000001, 0x0000000B, 0x00000001, 0x00050048, 0x0000000B, 0x00000002, 
+        0x0000000B, 0x00000003, 0x00050048, 0x0000000B, 0x00000003, 0x0000000B, 
+        0x00000004, 0x00030047, 0x00000011, 0x00000002, 0x00040048, 0x00000011, 
+        0x00000000, 0x00000005, 0x00050048, 0x00000011, 0x00000000, 0x00000007, 
+        0x00000010, 0x00050048, 0x00000011, 0x00000000, 0x00000023, 0x00000000, 
+        0x00040047, 0x00000013, 0x00000021, 0x00000000, 0x00040047, 0x00000013, 
+        0x00000022, 0x00000000, 0x00040047, 0x00000019, 0x0000001E, 0x00000000, 
+        0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 
+        0x00000006, 0x00000020, 0x00040017, 0x00000007, 0x00000006, 0x00000004, 
+        0x00040015, 0x00000008, 0x00000020, 0x00000000, 0x0004002B, 0x00000008, 
+        0x00000009, 0x00000001, 0x0004001C, 0x0000000A, 0x00000006, 0x00000009, 
+        0x0006001E, 0x0000000B, 0x00000007, 0x00000006, 0x0000000A, 0x0000000A, 
+        0x00040020, 0x0000000C, 0x00000003, 0x0000000B, 0x0004003B, 0x0000000C, 
+        0x0000000D, 0x00000003, 0x00040015, 0x0000000E, 0x00000020, 0x00000001, 
+        0x0004002B, 0x0000000E, 0x0000000F, 0x00000000, 0x00040018, 0x00000010, 
+        0x00000007, 0x00000004, 0x0003001E, 0x00000011, 0x00000010, 0x00040020, 
+        0x00000012, 0x00000002, 0x00000011, 0x0004003B, 0x00000012, 0x00000013, 
+        0x00000002, 0x00040020, 0x00000014, 0x00000002, 0x00000010, 0x00040017, 
+        0x00000017, 0x00000006, 0x00000003, 0x00040020, 0x00000018, 0x00000001, 
+        0x00000017, 0x0004003B, 0x00000018, 0x00000019, 0x00000001, 0x0004002B, 
+        0x00000006, 0x0000001B, 0x3F800000, 0x00040020, 0x00000021, 0x00000003, 
+        0x00000007, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 
+        0x000200F8, 0x00000005, 0x00050041, 0x00000014, 0x00000015, 0x00000013, 
+        0x0000000F, 0x0004003D, 0x00000010, 0x00000016, 0x00000015, 0x0004003D, 
+        0x00000017, 0x0000001A, 0x00000019, 0x00050051, 0x00000006, 0x0000001C, 
+        0x0000001A, 0x00000000, 0x00050051, 0x00000006, 0x0000001D, 0x0000001A, 
+        0x00000001, 0x00050051, 0x00000006, 0x0000001E, 0x0000001A, 0x00000002, 
+        0x00070050, 0x00000007, 0x0000001F, 0x0000001C, 0x0000001D, 0x0000001E, 
+        0x0000001B, 0x00050091, 0x00000007, 0x00000020, 0x00000016, 0x0000001F, 
+        0x00050041, 0x00000021, 0x00000022, 0x0000000D, 0x0000000F, 0x0003003E, 
+        0x00000022, 0x00000020, 0x000100FD, 0x00010038, 
+    };
+
+    UINT32 bin_fragment_shader[]= {
+        0x000001C4, // <-- Size in bytes
+        0x07230203, 0x00010000, 0x000D000B, 0x0000000D, 0x00000000, 0x00020011, 
+        0x00000001, 0x0006000B, 0x00000001, 0x4C534C47, 0x6474732E, 0x3035342E, 
+        0x00000000, 0x0003000E, 0x00000000, 0x00000001, 0x0007000F, 0x00000004, 
+        0x00000004, 0x6E69616D, 0x00000000, 0x00000009, 0x0000000B, 0x00030010, 
+        0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001C2, 0x000A0004, 
+        0x475F4C47, 0x4C474F4F, 0x70635F45, 0x74735F70, 0x5F656C79, 0x656E696C, 
+        0x7269645F, 0x69746365, 0x00006576, 0x00080004, 0x475F4C47, 0x4C474F4F, 
+        0x6E695F45, 0x64756C63, 0x69645F65, 0x74636572, 0x00657669, 0x00040005, 
+        0x00000004, 0x6E69616D, 0x00000000, 0x00050005, 0x00000009, 0x4374756F, 
+        0x726F6C6F, 0x00000000, 0x00050005, 0x0000000B, 0x67617266, 0x6F6C6F43, 
+        0x00000072, 0x00040047, 0x00000009, 0x0000001E, 0x00000000, 0x00040047, 
+        0x0000000B, 0x0000001E, 0x00000000, 0x00020013, 0x00000002, 0x00030021, 
+        0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020, 0x00040017, 
+        0x00000007, 0x00000006, 0x00000003, 0x00040020, 0x00000008, 0x00000003, 
+        0x00000007, 0x0004003B, 0x00000008, 0x00000009, 0x00000003, 0x00040020, 
+        0x0000000A, 0x00000001, 0x00000007, 0x0004003B, 0x0000000A, 0x0000000B, 
+        0x00000001, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 
+        0x000200F8, 0x00000005, 0x0004003D, 0x00000007, 0x0000000C, 0x0000000B, 
+        0x0003003E, 0x00000009, 0x0000000C, 0x000100FD, 0x00010038, 
+    };
+
+    // --- Mesh 1: Solid Opaque Background Cube (Alpha = 0xFF) ---
+    Vec3 vertices_opaque[] = {
+        {-0.5, -0.5,  0.5, 0xFFFF0000}, { 0.5, -0.5,  0.5, 0xFFFF0000}, { 0.5,  0.5,  0.5, 0xFFFF0000}, {-0.5,  0.5,  0.5, 0xFF0000FF},
+        {-0.5, -0.5, -0.5, 0xFF0000FF}, { 0.5, -0.5, -0.5, 0xFF0000FF}, { 0.5,  0.5, -0.5, 0xFF00FFFF}, {-0.5,  0.5, -0.5, 0xFF00FFFF}
+    };
+
+    // --- Mesh 2: Semi-Transparent Foreground Cube (Alpha = 0x80 -> ~50% Opacity) ---
+    Vec3 vertices_transparent[] = {
+        {-0.5, -0.5,  0.5, 0x8000FF00}, { 0.5, -0.5,  0.5, 0x8000FF00}, { 0.5,  0.5,  0.5, 0x8000FF00}, {-0.5,  0.5,  0.5, 0x80FFFF00},
+        {-0.5, -0.5, -0.5, 0x80FFFF00}, { 0.5, -0.5, -0.5, 0x80FFFF00}, { 0.5,  0.5, -0.5, 0x8000FFFF}, {-0.5,  0.5, -0.5, 0x8000FFFF}
+    };
+
+    Triangle indices[] = {
+        {0, 1, 2}, {0, 2, 3}, {1, 5, 6}, {1, 6, 2},
+        {5, 4, 7}, {5, 7, 6}, {4, 0, 3}, {4, 3, 7},
+        {3, 2, 6}, {3, 6, 7}, {4, 5, 1}, {4, 1, 0}
+    };
+
+    UINT32 IndexCount = (sizeof(indices) / sizeof(Triangle)) * 2;
+
+    // --- Static Asset Transfer ---
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
+    VRAMADDR hVBO_Opaque, hVBO_Transparent, hIBO, hVS, hFS;
+    VRAMADDR hMVP1 = 0;
+    VRAMADDR hMVP2 = 0;
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices_opaque,      sizeof(vertices_opaque),      &hVBO_Opaque);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices_transparent, sizeof(vertices_transparent), &hVBO_Transparent);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,             sizeof(indices),             &hIBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader,   sizeof(bin_vertex_shader),   &hVS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+
+    float angle = 0.0f;
+    Print(L"Testing Alpha Blending & Depth Masking... Press Key to Exit.\n");
+
+    FpsCounterStart();
+    mTimerInit = FALSE;
+
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        float time;
+        GetTimeSeconds(&time);
+
+        float rotation_period = 2.0f;
+        angle = (2.0f * PI * time) / rotation_period;
+
+        Mat4 ry1, ry2, rx, trans1, trans2, proj;
+        Mat4 model1, mvp1, model2, mvp2;
+
+        // Model 1 (Opaque Background): Slightly behind at z = 5.0f
+        Mat4_RotateY(angle, &ry1);
+        Mat4_Translate(-0.2f, 0.0f, 5.0f, &trans1);
+
+        // Model 2 (Transparent Foreground): Positioned in front at z = 4.3f to overlap Model 1
+        Mat4_RotateY(-angle * 1.5f, &ry2);
+        Mat4_Translate(0.2f, 0.0f, 4.3f, &trans2);
+        
+        Mat4_RotateX(0.2f, &rx);
+        Mat4_Perspective(PI / 3.0f, 640.0f / 480.0f, 1.0f, 10.0f, &proj);
+
+        // Build Matrices
+        Mat4_Mul(&ry1, &rx, &model1);
+        Mat4_Mul(&trans1, &model1, &model1);
+        Mat4_Mul(&proj, &model1, &mvp1);
+
+        Mat4_Mul(&ry2, &rx, &model2);
+        Mat4_Mul(&trans2, &model2, &model2);
+        Mat4_Mul(&proj, &model2, &mvp2);
+
+        SimtMat4UBO simt_mvp1, simt_mvp2;
+        Mat4_ToSimtUBO(&mvp1, &simt_mvp1);
+        Mat4_ToSimtUBO(&mvp2, &simt_mvp2);
+
+        if (hMVP1 == 0) {
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        } else {
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        }
+
+        if (hMVP2 == 0) {
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
+        } else {
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
+        }
+
+        // --- RENDER PASS ---
+        mGOP3D->GpuCmdBegin(mGOP3D);
+        mGOP3D->GpuClearFrame(mGOP3D, 0xFF101010); // Clear to dark gray
+        
+        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 12);
+
+        // ---------------------------------------------------------------------
+        // PASS 1: Render Opaque Object (Solid Red/Blue Cube)
+        // ---------------------------------------------------------------------
+        mGOP3D->GpuSetBlendState(mGOP3D, FALSE, Gop3dBlendFactorOne, Gop3dBlendFactorZero);
+        mGOP3D->GpuSetDepthWrite(mGOP3D, TRUE); // Enable Z-buffer updates
+
+        mGOP3D->GpuBindVBO(mGOP3D, hVBO_Opaque, 8);
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+
+        // ---------------------------------------------------------------------
+        // PASS 2: Render Transparent Object with Alpha Blending
+        // ---------------------------------------------------------------------
+        mGOP3D->GpuSetBlendState(mGOP3D, TRUE, Gop3dBlendFactorSrcAlpha, Gop3dBlendFactorOneMinusSrcAlpha);
+        mGOP3D->GpuSetDepthWrite(mGOP3D, FALSE); // Disable Z-writes to avoid blocking subsequent geometry
+
+        mGOP3D->GpuBindVBO(mGOP3D, hVBO_Transparent, 8);
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP2, sizeof(SimtMat4UBO));
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);
+
+        FpsCounterTick();
+    }
+
+    // --- CLEANUP ---
+    FpsCounterStop();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO_Opaque);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO_Transparent);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP2);
+
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+
+    FpsCounterShowStats();
+}
 EFI_STATUS EFIAPI Test() {
     EFI_STATUS Status;
     EFI_INPUT_KEY Key;
@@ -1082,7 +1295,6 @@ EFI_STATUS EFIAPI Test() {
 
     WAIT_FOR_KEYPRESS()
 
-
     Test3DTrianglesSimt();
 
     WAIT_FOR_KEYPRESS()
@@ -1094,9 +1306,15 @@ EFI_STATUS EFIAPI Test() {
     TestTextureSampling();
     
     WAIT_FOR_KEYPRESS()
+
     Test3DObszar();
 
     WAIT_FOR_KEYPRESS()
+
+    TestBlendingSimt();
+    
+    WAIT_FOR_KEYPRESS()
+
     DEBUG((EFI_D_INFO, "Test end\n"));
     return EFI_SUCCESS;
 }

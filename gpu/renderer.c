@@ -9,6 +9,29 @@
 
 static RendererThreads render;
 
+static inline float get_blend_factor(GpuBlendFactor factor, float src_a, float dst_a, float src_c, float dst_c) 
+{
+    switch (factor) {
+        case GPU_BLEND_FACTOR_ZERO:                return 0.0f;
+        case GPU_BLEND_FACTOR_ONE:                 return 1.0f;
+        case GPU_BLEND_FACTOR_SRC_ALPHA:           return src_a;
+        case GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA: return 1.0f - src_a;
+        case GPU_BLEND_FACTOR_DST_ALPHA:           return dst_a;
+        case GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA: return 1.0f - dst_a;
+        case GPU_BLEND_FACTOR_SRC_COLOR:           return src_c;
+        case GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR: return 1.0f - src_c;
+        case GPU_BLEND_FACTOR_DST_COLOR:           return dst_c;
+        case GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR: return 1.0f - dst_c;
+        default:                                   return 1.0f;
+    }
+}
+static inline uint8_t color_to_u8(float c)
+{
+    if (c <= 0.0f) return 0;
+    float scaled = c * 255.0f;
+    if (scaled >= 255.0f) return 255;
+    return (uint8_t)(scaled + 0.5f);
+}
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
     if(gpu->use_legacy_asm) 
@@ -26,8 +49,43 @@ void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
                 (gpu->pRegs[REG_PG].u32 << 8)  |
                     gpu->pRegs[REG_PB].u32;
     }
+    int idx = y * gpu->width + x;
 
-    FB(gpu)[y * gpu->width + x] = color;
+    if (!gpu->blend_enable) {
+        FB(gpu)[idx] = color;
+        return;
+    }
+
+    float src_b = (color & 0xFF) / 255.0f;
+    float src_g = ((color >> 8) & 0xFF) / 255.0f;
+    float src_r = ((color >> 16) & 0xFF) / 255.0f;
+    float src_a = ((color >> 24) & 0xFF) / 255.0f;
+
+    uint32_t dst_u32 = FB(gpu)[idx];
+    float dst_b = (dst_u32 & 0xFF) / 255.0f;
+    float dst_g = ((dst_u32 >> 8) & 0xFF) / 255.0f;
+    float dst_r = ((dst_u32 >> 16) & 0xFF) / 255.0f;
+    float dst_a = ((dst_u32 >> 24) & 0xFF) / 255.0f;
+
+    float f_src_r = get_blend_factor(gpu->blend_src_factor, src_a, dst_a, src_r, dst_r);
+    float f_src_g = get_blend_factor(gpu->blend_src_factor, src_a, dst_a, src_g, dst_g);
+    float f_src_b = get_blend_factor(gpu->blend_src_factor, src_a, dst_a, src_b, dst_b);
+
+    float f_dst_r = get_blend_factor(gpu->blend_dst_factor, src_a, dst_a, src_r, dst_r);
+    float f_dst_g = get_blend_factor(gpu->blend_dst_factor, src_a, dst_a, src_g, dst_g);
+    float f_dst_b = get_blend_factor(gpu->blend_dst_factor, src_a, dst_a, src_b, dst_b);
+
+    float out_r = src_r * f_src_r + dst_r * f_dst_r;
+    float out_g = src_g * f_src_g + dst_g * f_dst_g;
+    float out_b = src_b * f_src_b + dst_b * f_dst_b;
+    float out_a = src_a + dst_a * (1.0f - src_a);
+
+    uint8_t r = color_to_u8(out_r);
+    uint8_t g = color_to_u8(out_g);
+    uint8_t b = color_to_u8(out_b);
+    uint8_t a = color_to_u8(out_a);
+
+    FB(gpu)[idx] = ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
 void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, uint32_t color2) 
@@ -127,7 +185,10 @@ static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *
 
                 if (z < Z_BUFFER(gpu)[idx]) 
                 {
-                    Z_BUFFER(gpu)[idx] = z;
+                    if(gpu->depth_write_enable == 1)
+                    {
+                        Z_BUFFER(gpu)[idx] = z;
+                    }
                     uint8_t r = (uint8_t)(w0 * GET_R(color.a_col) + w1 * GET_R(color.b_col) + w2 * GET_R(color.c_col));
                     uint8_t g = (uint8_t)(w0 * GET_G(color.a_col) + w1 * GET_G(color.b_col) + w2 * GET_G(color.c_col));
                     uint8_t b = (uint8_t)(w0 * GET_B(color.a_col) + w1 * GET_B(color.b_col) + w2 * GET_B(color.c_col));
@@ -176,13 +237,7 @@ static void worker_transform_vertices_impl(RenderThreadArgs *args) {
    
 }
 
-static inline uint8_t color_to_u8(float c)
-{
-    if (c <= 0.0f) return 0;
-    float scaled = c * 255.0f;
-    if (scaled >= 255.0f) return 255;
-    return (uint8_t)(scaled + 0.5f);
-}
+
 
 static void bind_ubo_to_context(GpuState *gpu, ExecutionContext *ectx)
 {
@@ -390,14 +445,17 @@ static void setup_invariants(Col3 color, float u[3], float v[3], float inv_area,
     ctx->r_inv_w[0] = (GET_R(color.a_col) * inv_255) * ctx->s_inv_w[0];
     ctx->g_inv_w[0] = (GET_G(color.a_col) * inv_255) * ctx->s_inv_w[0];
     ctx->b_inv_w[0] = (GET_B(color.a_col) * inv_255) * ctx->s_inv_w[0];
+    ctx->a_inv_w[0] = (GET_A(color.a_col) * inv_255) * ctx->s_inv_w[0];
 
     ctx->r_inv_w[1] = (GET_R(color.b_col) * inv_255) * ctx->s_inv_w[1];
     ctx->g_inv_w[1] = (GET_G(color.b_col) * inv_255) * ctx->s_inv_w[1];
     ctx->b_inv_w[1] = (GET_B(color.b_col) * inv_255) * ctx->s_inv_w[1];
+    ctx->a_inv_w[1] = (GET_A(color.b_col) * inv_255) * ctx->s_inv_w[1];
 
     ctx->r_inv_w[2] = (GET_R(color.c_col) * inv_255) * ctx->s_inv_w[2];
     ctx->g_inv_w[2] = (GET_G(color.c_col) * inv_255) * ctx->s_inv_w[2];
     ctx->b_inv_w[2] = (GET_B(color.c_col) * inv_255) * ctx->s_inv_w[2];
+    ctx->a_inv_w[2] = (GET_A(color.c_col) * inv_255) * ctx->s_inv_w[2];
 
     ctx->u_inv_w[0] = u[0] * ctx->s_inv_w[0];
     ctx->u_inv_w[1] = u[1] * ctx->s_inv_w[1];
@@ -407,16 +465,22 @@ static void setup_invariants(Col3 color, float u[3], float v[3], float inv_area,
     ctx->v_inv_w[1] = v[1] * ctx->s_inv_w[1];
     ctx->v_inv_w[2] = v[2] * ctx->s_inv_w[2];
 
+    ctx->d_w3_dx = ctx->d_w0_dx * ctx->a_inv_w[0] + ctx->d_w1_dx * ctx->a_inv_w[1] + ctx->d_w2_dx * ctx->a_inv_w[2];
+    ctx->d_w3_dy = ctx->d_w0_dy * ctx->a_inv_w[0] + ctx->d_w1_dy * ctx->a_inv_w[1] + ctx->d_w2_dy * ctx->a_inv_w[2];
+
     Vec3 start_p = {ctx->stamp_min_x + 0.5f, ctx->stamp_min_y + 0.5f, 0};
     ctx->start_w0 = edge_func(ctx->s[1], ctx->s[2], start_p) * inv_area;
     ctx->start_w1 = edge_func(ctx->s[2], ctx->s[0], start_p) * inv_area;
     ctx->start_w2 = edge_func(ctx->s[0], ctx->s[1], start_p) * inv_area;
+
+
+    ctx->start_w3 = ctx->start_w0 * ctx->a_inv_w[0] + ctx->start_w1 * ctx->a_inv_w[1] + ctx->start_w2 * ctx->a_inv_w[2];
 }
 
 // =================================================================
 // PHASE 3: Stamp Coverage Evaluation (Step A)
 // =================================================================
-static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stamp_w1, float stamp_w2, TriangleContext *ctx, float *lane_w0, float *lane_w1, float *lane_w2) 
+static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stamp_w1, float stamp_w2, float stamp_w3, TriangleContext *ctx, float *lane_w0, float *lane_w1, float *lane_w2, float *lane_w3) 
 {
     uint16_t exec_mask = 0x0000;
 
@@ -430,10 +494,12 @@ static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stam
         float w0 = stamp_w0 + (lx * ctx->d_w0_dx) + (ly * ctx->d_w0_dy);
         float w1 = stamp_w1 + (lx * ctx->d_w1_dx) + (ly * ctx->d_w1_dy);
         float w2 = stamp_w2 + (lx * ctx->d_w2_dx) + (ly * ctx->d_w2_dy);
-
+        float w3 = stamp_w3 + (lx * ctx->d_w3_dx) + (ly * ctx->d_w3_dy);
+        
         lane_w0[lane] = w0;
         lane_w1[lane] = w1;
         lane_w2[lane] = w2;
+        lane_w3[lane] = w3;
 
         bool in_bounds = (px >= ctx->min_x && px <= ctx->max_x && py >= ctx->min_y && py <= ctx->max_y);
         
@@ -449,7 +515,7 @@ static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stam
 // =================================================================
 // PHASE 4: Early-Z and Varying Interpolation 
 // =================================================================
-static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, float *lane_w0, float *lane_w1, float *lane_w2, TriangleContext *ctx, GpuState *gpu, SimtVec3 *fs_in_color, SimtVec2 *fs_in_uv) 
+static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, float *lane_w0, float *lane_w1, float *lane_w2, float *lane_a, TriangleContext *ctx, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv) 
 {
     uint16_t shade_mask = 0x0000;
     uint32_t width = gpu->width;
@@ -470,7 +536,10 @@ static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, floa
         
         if (z < Z_BUFFER(gpu)[idx]) 
         {
-            Z_BUFFER(gpu)[idx] = z;
+            if(gpu->depth_write_enable == 1)
+            {
+                Z_BUFFER(gpu)[idx] = z;
+            }
             shade_mask |= (1 << lane);
 
             float pixel_inv_w = w0 * ctx->s_inv_w[0] + w1 * ctx->s_inv_w[1] + w2 * ctx->s_inv_w[2];
@@ -479,6 +548,7 @@ static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, floa
             fs_in_color->elem[0][lane] = (w0 * ctx->r_inv_w[0] + w1 * ctx->r_inv_w[1] + w2 * ctx->r_inv_w[2]) * pixel_w;
             fs_in_color->elem[1][lane] = (w0 * ctx->g_inv_w[0] + w1 * ctx->g_inv_w[1] + w2 * ctx->g_inv_w[2]) * pixel_w;
             fs_in_color->elem[2][lane] = (w0 * ctx->b_inv_w[0] + w1 * ctx->b_inv_w[1] + w2 * ctx->b_inv_w[2]) * pixel_w;
+            fs_in_color->elem[3][lane] = lane_a[lane];
 
             fs_in_uv->elem[0][lane] = (w0 * ctx->u_inv_w[0] + w1 * ctx->u_inv_w[1] + w2 * ctx->u_inv_w[2]) * pixel_w;
             fs_in_uv->elem[1][lane] = (w0 * ctx->v_inv_w[0] + w1 * ctx->v_inv_w[1] + w2 * ctx->v_inv_w[2]) * pixel_w;
@@ -490,7 +560,7 @@ static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, floa
 // =================================================================
 // PHASE 5: Shading and Output (Step C & D)
 // =================================================================
-static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState *gpu, SimtVec3 *fs_in_color, SimtVec2 *fs_in_uv, BuiltinFragmentInput* fs_input) 
+static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv, BuiltinFragmentInput* fs_input) 
 {
     SimtVec4 out_color = {0};
     ExecutionContext jit_ctx = {0};
@@ -512,7 +582,8 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
         uint8_t r = color_to_u8(out_color.elem[0][lane]);
         uint8_t g = color_to_u8(out_color.elem[1][lane]);
         uint8_t b = color_to_u8(out_color.elem[2][lane]);
-        put_pixel(gpu, px, py, RGB_TO_UINT(r, g, b));
+        uint8_t a = color_to_u8(fs_in_color->elem[3][lane]);
+        put_pixel(gpu, px, py, RGBA_TO_UINT(r, g, b, a));
     }
 }
 
@@ -536,24 +607,26 @@ static void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, float
         float row_w0 = ctx.start_w0 + ((float)(sy - ctx.stamp_min_y)) * ctx.d_w0_dy;
         float row_w1 = ctx.start_w1 + ((float)(sy - ctx.stamp_min_y)) * ctx.d_w1_dy;
         float row_w2 = ctx.start_w2 + ((float)(sy - ctx.stamp_min_y)) * ctx.d_w2_dy;
+        float row_w3 = ctx.start_w3 + ((float)(sy - ctx.stamp_min_y)) * ctx.d_w3_dy;
 
         for (int sx = ctx.stamp_min_x; sx <= ctx.stamp_max_x; sx += 4) 
         {
             float stamp_w0 = row_w0 + ((float)(sx - ctx.stamp_min_x)) * ctx.d_w0_dx;
             float stamp_w1 = row_w1 + ((float)(sx - ctx.stamp_min_x)) * ctx.d_w1_dx;
             float stamp_w2 = row_w2 + ((float)(sx - ctx.stamp_min_x)) * ctx.d_w2_dx;
+            float stamp_w3 = row_w3 + ((float)(sx - ctx.stamp_min_x)) * ctx.d_w3_dx;
 
-            float lane_w0[16], lane_w1[16], lane_w2[16];
+            float lane_w0[16], lane_w1[16], lane_w2[16], lane_w3[16];
             
-            uint16_t exec_mask = evaluate_stamp_coverage(sx, sy, stamp_w0, stamp_w1, stamp_w2, &ctx, lane_w0, lane_w1, lane_w2);
+            uint16_t exec_mask = evaluate_stamp_coverage(sx, sy, stamp_w0, stamp_w1, stamp_w2, stamp_w3, &ctx, lane_w0, lane_w1, lane_w2, lane_w3);
 
             if (exec_mask == 0x0000) continue;
 
             args->raster_exec_mask = exec_mask;
 
-            SimtVec3 fs_in_color = {0};
+            SimtVec4 fs_in_color = {0};
             SimtVec2 fs_in_uv    = {0};
-            uint16_t shade_mask = process_z_and_interpolate(sx, sy, exec_mask, lane_w0, lane_w1, lane_w2, &ctx, gpu, &fs_in_color, &fs_in_uv);
+            uint16_t shade_mask = process_z_and_interpolate(sx, sy, exec_mask, lane_w0, lane_w1, lane_w2, lane_w3, &ctx, gpu, &fs_in_color, &fs_in_uv);
             if (shade_mask == 0x0000) continue;
             
             for (int lane = 0; lane < 16; lane++)
