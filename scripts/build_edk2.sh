@@ -8,10 +8,8 @@ if [ -z "$1" ]; then
     BUILD_TYPE="DEBUG"
 else
     BUILD_TYPE="$1"
+    shift
 fi
-
-# Clear provided parameters
-shift
 
 cd "$CWD/edk2"
 

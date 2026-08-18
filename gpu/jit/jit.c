@@ -3,6 +3,7 @@
 #include "jit_decorators.h"
 #include "jit_flow.h"
 #include "jit_mem.h"
+#include "jit_smpl.h"
 #include <llvm-c/Transforms/PassBuilder.h>
 #include "debug_gpu.h"
 
@@ -412,6 +413,36 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpEntryPoint:
             handle_op_entry_point(ctx, operands, operand_count);
             break;
+        case SpvOpTypeImage:
+            handle_op_type_image(ctx, res_id, operands);
+            break;
+        case SpvOpTypeSampler:
+            handle_op_type_sampler(ctx, res_id);
+            break;
+        case SpvOpTypeSampledImage:
+            handle_op_type_sampled_image(ctx, res_id, operands[0]);
+            break;
+        case SpvOpSampledImage:
+            handle_op_sampled_image(ctx, res_id, operands);
+            break;
+        case SpvOpImage:
+            handle_op_image(ctx, res_id, operands);
+            break;
+        case SpvOpImageSampleImplicitLod:
+            handle_op_image_sample_implicit_lod(ctx, res_id, operands);
+            break;
+        case SpvOpImageSampleExplicitLod:
+            handle_op_image_sample_explicit_lod(ctx, res_id, operands);
+            break;
+        case SpvOpImageFetch:
+            handle_op_image_fetch(ctx, res_id, operands);
+            break;
+        case SpvOpImageQuerySizeLod:
+            handle_op_image_query_size_lod(ctx, res_id, operands);
+            break;
+        case SpvOpImageQuerySize:
+            handle_op_image_query_size(ctx, res_id, operands);
+            break;
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
             break;
@@ -482,6 +513,12 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
         case SpvOpTypeStruct: 
             //TO-DO
             return LLVMStructTypeInContext(ctx->context, NULL, 0, 0);
+        case SpvOpTypeSampler:
+        case SpvOpTypeSampledImage:
+        case SpvOpTypeImage:
+        {
+            return ctx->ptr_type;
+        }
 
         default:
             DEBUG_PRINT("Unsupported type opcode: %d\n", info->opcode);
@@ -572,7 +609,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     
 
     char *error = NULL;
-   // LLVMDumpModule(ctx->module);
+    //LLVMDumpModule(ctx->module);
     LLVMVerifyModule(ctx->module, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
     //LLVMDumpModule(ctx->module);

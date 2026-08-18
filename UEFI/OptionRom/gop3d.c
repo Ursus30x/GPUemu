@@ -159,6 +159,21 @@ EFI_STATUS EFIAPI GpuCmdBindFragShader(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
+EFI_STATUS EFIAPI GpuCmdBindTexture(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32 BindingSlot,
+  IN VRAMADDR DescAddress
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_TEXTURE_CONFIG;
+    cmd.payload.state.value.texture_config.binding_slot = BindingSlot;
+    cmd.payload.state.value.texture_config.desc_vram_addr = DescAddress;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
 /* -------------------------------------------------------------------------
  * Data Transfer
  * ------------------------------------------------------------------------- */
@@ -199,6 +214,8 @@ EFI_STATUS EFIAPI GpuCmdTransferBuffer(
     else if (Type == Gop3dBufferTypeIndex) Tag = "IBO";
     else if (Type == Gop3dBufferTypeUniform) Tag = "UBO";
     else if (Type == Gop3dBufferTypeShaderCode) Tag = "SHADER";
+    else if (Type == Gop3dBufferTypeTexture) Tag = "TEX";
+    else if (Type == Gop3dBufferTypeTextureDesc) Tag = "TEXDESC";
 
     (VOID)Tag; // Suppress "unused variable" error if debug is disabled
 
@@ -361,6 +378,7 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuCmdBindUBO        = GpuCmdBindUBO;
   Private->Gop3dProtocol.GpuCmdBindVertShader = GpuCmdBindVertShader;
   Private->Gop3dProtocol.GpuCmdBindFragShader = GpuCmdBindFragShader;
+  Private->Gop3dProtocol.GpuCmdBindTexture    = GpuCmdBindTexture;
 
   Private->Gop3dProtocol.GpuFreeBuffer        = GpuFreeBuffer;
 
