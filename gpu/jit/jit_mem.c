@@ -24,7 +24,7 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
             ctx->globals[idx].storage_class = storage_class;
             
             // Store binding for Uniforms/Buffers, Location for Inputs/Outputs
-            if (storage_class == SpvStorageClassUniform || storage_class == SpvStorageClassStorageBuffer)
+            if (storage_class == SpvStorageClassUniform || storage_class == SpvStorageClassStorageBuffer || storage_class == SpvStorageClassUniformConstant)
                 ctx->globals[idx].binding_or_loc = deco->binding;
             else
                 ctx->globals[idx].binding_or_loc = deco->location;
@@ -58,6 +58,7 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
         set_val(ctx, res_id, alloca_inst);
     }
     else if (storage_class == SpvStorageClassUniform || storage_class == SpvStorageClassStorageBuffer ||
+             storage_class == SpvStorageClassUniformConstant ||
              storage_class == SpvStorageClassInput || storage_class == SpvStorageClassOutput)
     {
         // If a variable with these classes is defined inside a function (rare but possible in some SPIR-V),
@@ -66,7 +67,7 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
         uint32_t field_idx = 0;
         int32_t offset = 0;
 
-        if (storage_class == SpvStorageClassUniform) { field_idx = 0; offset = deco->binding; }
+        if (storage_class == SpvStorageClassUniform || storage_class == SpvStorageClassStorageBuffer || storage_class == SpvStorageClassUniformConstant) { field_idx = 0; offset = deco->binding; }
         else if (storage_class == SpvStorageClassInput) { field_idx = 1; offset = deco->location; }
         else if (storage_class == SpvStorageClassOutput) { field_idx = 2; offset = deco->location; }
 
@@ -128,6 +129,15 @@ void handle_op_load(JitContext* ctx, uint32_t res_id, uint32_t res_type_id, uint
     uint32_t ptr_id = operands[0];
     LLVMValueRef ptr = get_val(ctx, ptr_id);
     
+    SpvTypeInfo* type_info = &ctx->type_info[res_type_id];
+    if (type_info->opcode == SpvOpTypeSampledImage || 
+        type_info->opcode == SpvOpTypeImage || 
+        type_info->opcode == SpvOpTypeSampler)
+    {
+        set_val(ctx, res_id, ptr);
+        return;
+    }
+
     LLVMTypeRef result_llvm_type = map_spv_to_llvm_type(ctx, res_type_id);
 
     if (LLVMIsConstant(ptr) && LLVMIsNull(ptr)) 

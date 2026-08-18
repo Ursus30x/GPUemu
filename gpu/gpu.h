@@ -17,6 +17,7 @@
 #include "gpu_hw.h"
 #include "vram.h"
 #include "jit.h"
+#include "jit_smpl.h"
 
 #ifndef GPU_H
 #define GPU_H
@@ -104,6 +105,9 @@ typedef struct GpuState {
     GenericBufferConfig edge_config;
     GenericBufferConfig uinform_config;
 
+    uint32_t texture_desc_addr[MAX_BINDINGS];
+    TextureSamplerDescriptor textures[MAX_BINDINGS];
+
     Mat4 regs[REG_MAT_SIZE];
     Preg pRegs[REG_P_GEN_SIZE];
 
@@ -123,6 +127,8 @@ typedef struct GpuState {
     JitContext jit_ctx_fs; 
     jitted_func_t vs_shader_func; 
     jitted_func_t fs_shader_func; 
+    uint32_t vs_hash;
+    uint32_t fs_hash;
 
 } GpuState;
 

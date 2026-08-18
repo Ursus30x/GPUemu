@@ -1,6 +1,7 @@
 #define JIT
 #include "debug_gpu.h"
 #include "jit.h"
+#include "jit_smpl.h"
 
 #include <stdio.h> 
 #include <stdlib.h>
@@ -9,8 +10,10 @@
 
 #define SPLAT(value) (SimtFloat){value, value, value, value, value, value, value, value, value, value, value, value, value, value, value, value}
 #define CREATE_SIMT_F32(name, values) SimtFloat name = values;
-#define CREATE_SIMT_VEC3(name, a, b, c) SimtVec3 name = { a,  b,  c};
-#define CREATE_SIMT_VEC4(name, a, b, c, d) SimtVec4 name = { a,  b,  c, d};
+#define CREATE_SIMT_VEC3(name, a, b, c) SimtVec3 name = { .elem = { a,  b,  c } };
+#define CREATE_SIMT_VEC4(name, a, b, c, d) SimtVec4 name = { .elem = { a,  b,  c, d } };
+#define CREATE_SIMT_VEC2(name, a, b) SimtVec2 name = { .elem = { a,  b } };
+
 
 #define SIMT_VEC4(a, b, c, d) (SimtVec4){ a,  b,  c, d };
 #define CREATE_MAT4(name, elems) SimtFloat name = (SimtFloat) elems;
@@ -46,6 +49,12 @@
     { \
         printf("lane%d: [%f, %f, %f, %f]\n", i, name.elem[0][i], name.elem[1][i], name.elem[2][i], name.elem[3][i]); \
     }
+#define PRINT_VEC2(caption, name)  \
+    printf("%s", caption); \
+    for(uint32_t i = 0; i < SIMT_WIDTH; i++) \
+    { \
+        printf("lane%d: [%f, %f]\n", i, name.elem[0][i], name.elem[1][i]); \
+    }
 
 
 #define ASSERT_EQ_VEC4(val, expected)  \
@@ -55,6 +64,19 @@
             printf("asset failed\n"); \
             return 1; \
         }\
+    }
+#define ASSERT_NEAR_VEC4(val, expected, eps) \
+    for(uint32_t i = 0; i < SIMT_WIDTH; i++) \
+    { \
+        if(fabsf(val.elem[0][i] - expected.elem[0][i]) > eps || \
+           fabsf(val.elem[1][i] - expected.elem[1][i]) > eps || \
+           fabsf(val.elem[2][i] - expected.elem[2][i]) > eps || \
+           fabsf(val.elem[3][i] - expected.elem[3][i]) > eps) { \
+            printf("assert near failed at lane %u: [%f,%f,%f,%f] vs [%f,%f,%f,%f]\n", \
+                   i, val.elem[0][i], val.elem[1][i], val.elem[2][i], val.elem[3][i], \
+                   expected.elem[0][i], expected.elem[1][i], expected.elem[2][i], expected.elem[3][i]); \
+            return 1; \
+        } \
     }
 #define ASSERT_EQ_MAT4(val, expected)                                  \
     for (uint32_t i = 0; i < SIMT_WIDTH; i++)                          \

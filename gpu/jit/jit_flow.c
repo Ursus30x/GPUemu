@@ -276,7 +276,7 @@ void resolve_pending_globals(JitContext* ctx)
         GlobalResolution* g = &ctx->globals[i];
         
         uint32_t field_idx = 0;
-        if (g->storage_class == SpvStorageClassUniform || g->storage_class == SpvStorageClassStorageBuffer)
+        if (g->storage_class == SpvStorageClassUniform || g->storage_class == SpvStorageClassStorageBuffer ||  g->storage_class ==  SpvStorageClassUniformConstant)
             field_idx = 0;
         else if (g->storage_class == SpvStorageClassInput)
             field_idx = 1;

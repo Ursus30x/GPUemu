@@ -68,8 +68,23 @@ typedef enum {
     STATE_ID_EDGE_CONFIG,
     STATE_ID_UNIFORM_CONFIG,
     STATE_ID_VERTEX_SHADER_PTR,
-    STATE_ID_FRAGMENT_SHADER_PTR
+    STATE_ID_FRAGMENT_SHADER_PTR,
+    STATE_ID_TEXTURE_CONFIG
 } StateID;
+
+typedef struct __attribute__((packed)) {
+    uint32_t data_vram_addr; // VRAM offset where pixel bytes start
+    uint32_t width;
+    uint32_t height;
+    uint32_t channels;       // 1, 2, 3, 4
+    uint32_t filter;         // 0: FILTER_NEAREST, 1: FILTER_LINEAR
+    uint32_t wrap;           // 0: WRAP_REPEAT,    1: WRAP_CLAMP
+} GpuTextureDescriptorVram;
+
+typedef struct __attribute__((packed)) {
+    uint32_t binding_slot;   // 1..MAX_BINDINGS-1
+    uint32_t desc_vram_addr; // VRAM offset of GpuTextureDescriptorVram
+} SetTexturePayload;
 
 
 typedef enum {
@@ -92,6 +107,7 @@ typedef struct __attribute__((packed)) {
             uint32_t vs_addr;
             uint32_t fs_addr;
         } shader_ptrs;
+        SetTexturePayload texture_config;
 
     } value;
 } SetStatePayload;
@@ -204,6 +220,20 @@ typedef struct __attribute__((packed)) {
                 .vs_addr = vs \
             } \
     }}; \
+    memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
+    current_offset += cmd_size; \
+}
+
+#define CMD_SET_TEXTURE(ring_buffer_base, slot, desc_addr) \
+{ \
+    Command cmd1 = { \
+        .opcode = CMD_SET_STATE, \
+        .payload.state = { \
+            .state_id = STATE_ID_TEXTURE_CONFIG, \
+            .value.texture_config = { \
+                .binding_slot = slot, \
+                .desc_vram_addr = desc_addr \
+            }}}; \
     memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
     current_offset += cmd_size; \
 }
