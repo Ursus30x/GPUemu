@@ -336,10 +336,10 @@ VOID Test3D(){
     //UINT64 bin_fragment_shader[] = { 0xFF000A0900, 0x0, 0xB0900, 0x0, 0xC0900, 0x0, 0x801000408, 0x12C, 0x64000C0800, 0x0, 0xA0800, 0x0, 0x907, 0x0 };
      UINT64 bin_fragment_shader[] = { 0x90007, 0x0};
     Vec3 cube_vertices[] = {
-        { -1.0f, -1.0f, -1.0f, 0xFFFF0000 }, {  1.0f, -1.0f, -1.0f, 0xFF00FF00 },
-        {  1.0f,  1.0f, -1.0f, 0xFF0000FF }, { -1.0f,  1.0f, -1.0f, 0xFFFFFF00 },
-        { -1.0f, -1.0f,  1.0f, 0xFFFF00FF }, {  1.0f, -1.0f,  1.0f, 0xFF00FFFF },
-        {  1.0f,  1.0f,  1.0f, 0xFFFFFFFF }, { -1.0f,  1.0f,  1.0f, 0xFF808080 }
+        { -1.0f, -1.0f, -1.0f, 0xFFFF0000, 0.0f, 0.0f }, {  1.0f, -1.0f, -1.0f, 0xFF00FF00, 1.0f, 0.0f },
+        {  1.0f,  1.0f, -1.0f, 0xFF0000FF, 1.0f, 1.0f }, { -1.0f,  1.0f, -1.0f, 0xFFFFFF00, 0.0f, 1.0f },
+        { -1.0f, -1.0f,  1.0f, 0xFFFF00FF, 0.0f, 0.0f }, {  1.0f, -1.0f,  1.0f, 0xFF00FFFF, 1.0f, 0.0f },
+        {  1.0f,  1.0f,  1.0f, 0xFFFFFFFF, 1.0f, 1.0f }, { -1.0f,  1.0f,  1.0f, 0xFF808080, 0.0f, 1.0f }
     };
 
     Edge cube_edges[] = {
@@ -475,8 +475,8 @@ VOID Test3DTriangles(){
 
 
     Vec3 vertices[] = {
-        {-0.5, -0.5,  0.5, 0xFF0000}, { 0.5, -0.5,  0.5, 0xFF0000}, { 0.5,  0.5,  0.5, 0xFF0000}, {-0.5,  0.5,  0.5, 0x0000FF},
-        {-0.5, -0.5, -0.5,0x0000FF}, { 0.5, -0.5, -0.5, 0x0000FF}, { 0.5,  0.5, -0.5,  0x00FFFF}, {-0.5,  0.5, -0.5,  0x00FFFF}
+        {-0.5, -0.5,  0.5, 0xFF0000, 0.0f, 0.0f}, { 0.5, -0.5,  0.5, 0xFF0000, 1.0f, 0.0f}, { 0.5,  0.5,  0.5, 0xFF0000, 1.0f, 1.0f}, {-0.5,  0.5,  0.5, 0x0000FF, 0.0f, 1.0f},
+        {-0.5, -0.5, -0.5, 0x0000FF, 0.0f, 0.0f}, { 0.5, -0.5, -0.5, 0x0000FF, 1.0f, 0.0f}, { 0.5,  0.5, -0.5,  0x00FFFF, 1.0f, 1.0f}, {-0.5,  0.5, -0.5,  0x00FFFF, 0.0f, 1.0f}
     };
     Triangle indices[] = {
         {0, 1, 2}, {0, 2, 3}, {1, 5, 6}, {1, 6, 2},
@@ -699,8 +699,8 @@ VOID Test3DTrianglesSimt(){
 
   
     Vec3 vertices[] = {
-        {-0.5, -0.5,  0.5, 0xFF0000}, { 0.5, -0.5,  0.5, 0xFF0000}, { 0.5,  0.5,  0.5, 0xFF0000}, {-0.5,  0.5,  0.5, 0x0000FF},
-        {-0.5, -0.5, -0.5,0x0000FF}, { 0.5, -0.5, -0.5, 0x0000FF}, { 0.5,  0.5, -0.5,  0x00FFFF}, {-0.5,  0.5, -0.5,  0x00FFFF}
+        {-0.5, -0.5,  0.5, 0xFF0000, 0.0f, 0.0f}, { 0.5, -0.5,  0.5, 0xFF0000, 1.0f, 0.0f}, { 0.5,  0.5,  0.5, 0xFF0000, 1.0f, 1.0f}, {-0.5,  0.5,  0.5, 0x0000FF, 0.0f, 1.0f},
+        {-0.5, -0.5, -0.5, 0x0000FF, 0.0f, 0.0f}, { 0.5, -0.5, -0.5, 0x0000FF, 1.0f, 0.0f}, { 0.5,  0.5, -0.5,  0x00FFFF, 1.0f, 1.0f}, {-0.5,  0.5, -0.5,  0x00FFFF, 0.0f, 1.0f}
     };
     Triangle indices[] = {
         {0, 1, 2}, {0, 2, 3}, {1, 5, 6}, {1, 6, 2},
@@ -803,10 +803,10 @@ VOID FullScreenQuad() {
     EFI_INPUT_KEY Key;
 
     Vec3 vertices[] = {
-        {-0.5f, -0.5f, 0.0f, 0xFFFF00},
-        { 0.5f, -0.5f, 0.0f, 0xFFFF00},
-        {-0.5f,  0.5f, 0.0f, 0xFFFF00},
-        { 0.5f,  0.5f, 0.0f, 0xFFFF00}
+        {-0.5f, -0.5f, 0.0f, 0xFFFF00, 0.0f, 0.0f},
+        { 0.5f, -0.5f, 0.0f, 0xFFFF00, 1.0f, 0.0f},
+        {-0.5f,  0.5f, 0.0f, 0xFFFF00, 0.0f, 1.0f},
+        { 0.5f,  0.5f, 0.0f, 0xFFFF00, 1.0f, 1.0f}
     };
 
     Triangle indices[] = {
@@ -887,10 +887,10 @@ VOID TestShaderArt() {
     EFI_INPUT_KEY Key;
 
     Vec3 vertices[] = {
-        {-1.0f, -1.0f, 0.0f, 0xFFFF00},
-        { 1.0f, -1.0f, 0.0f, 0xFFFF00},
-        {-1.0f,  1.0f, 0.0f, 0xFFFF00},
-        { 1.0f,  1.0f, 0.0f, 0xFFFF00}
+        {-1.0f, -1.0f, 0.0f, 0xFFFF00, 0.0f, 0.0f},
+        { 1.0f, -1.0f, 0.0f, 0xFFFF00, 1.0f, 0.0f},
+        {-1.0f,  1.0f, 0.0f, 0xFFFF00, 0.0f, 1.0f},
+        { 1.0f,  1.0f, 0.0f, 0xFFFF00, 1.0f, 1.0f}
     };
 
     Triangle indices[] = {
@@ -1114,6 +1114,8 @@ VOID TestShaderArt() {
     mGOP3D->GpuSetMode(mGOP3D, 0);
     FpsCounterShowStats();
 }
+
+
 EFI_STATUS EFIAPI Test() {
     EFI_STATUS Status;
     EFI_INPUT_KEY Key;
@@ -1146,17 +1148,24 @@ EFI_STATUS EFIAPI Test() {
     Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
     Print(L"\nPress any key to draw test pattern.\n");
 
-    WAIT_FOR_KEYPRESS()
+    // WAIT_FOR_KEYPRESS()
 
-    DrawTestPattern();
+    // DrawTestPattern();
 
-    WAIT_FOR_KEYPRESS()
+    // WAIT_FOR_KEYPRESS()
 
-    Print(L"Test pattern complete!\n");
+    // Print(L"Test pattern complete!\n");
 
     WAIT_FOR_KEYPRESS()
 
     Print(L"Test 3D capabilities\n\nPress any key to test 3D\n");
+    
+    WAIT_FOR_KEYPRESS()
+    //Test3DObszar();
+
+    WAIT_FOR_KEYPRESS()
+   // TestTextureSampling();
+
     WAIT_FOR_KEYPRESS()
 
     TestShaderArt();

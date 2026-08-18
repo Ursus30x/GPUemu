@@ -2,9 +2,204 @@
 #include <sys/wait.h>
 #include <time.h>
 
-TEST(fs_art, "out/art.spv", FRAGMENT_SHADER, {
+TEST(fs_smpl_nearest, "out/sampler.spv", FRAGMENT_SHADER, {
+    // 2x2 Texture: Red, Green, Blue, Yellow
+    uint8_t tex_data[2 * 2 * 4] = {
+        255,   0,   0, 255, // (0,0) = Red
+          0, 255,   0, 255, // (1,0) = Green
+          0,   0, 255, 255, // (0,1) = Blue
+        255, 255,   0, 255  // (1,1) = Yellow
+    };
+    TextureSamplerDescriptor desc = {
+        .data = tex_data,
+        .width = 2,
+        .height = 2,
+        .channels = 4,
+        .filter = FILTER_NEAREST,
+        .wrap = WRAP_REPEAT
+    };
+    CREATE_BINDING(1, desc);
+
+    SimtFloat u = {0};
+    SimtFloat v = {0};
+    SimtVec4 expected = {0};
+
+    for (int i = 0; i < 4; i++) {
+        u[i] = 0.25f; v[i] = 0.25f; // (0,0) Red
+        expected.elem[0][i] = 1.0f; expected.elem[1][i] = 0.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
+    }
+    for (int i = 4; i < 8; i++)
+     {
+        u[i] = 0.75f; v[i] = 0.25f; // (1,0) Green
+        expected.elem[0][i] = 0.0f; expected.elem[1][i] = 1.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
+    }
+    for (int i = 8; i < 12; i++) 
+    {
+        u[i] = 0.25f; v[i] = 0.75f; // (0,1) Blue
+        expected.elem[0][i] = 0.0f; expected.elem[1][i] = 0.0f; expected.elem[2][i] = 1.0f; expected.elem[3][i] = 1.0f;
+    }
+    for (int i = 12; i < 16; i++)
+     {
+        u[i] = 0.75f; v[i] = 0.75f; // (1,1) Yellow
+        expected.elem[0][i] = 1.0f; expected.elem[1][i] = 1.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
+    }
+
+    CREATE_SIMT_VEC2(vTexCoord, u, v);
+    BIND_IN_LOCATION(0, vTexCoord);
+
+    CREATE_SIMT_VEC4(outCol, SPLAT(0.0), SPLAT(0.0), SPLAT(0.0), SPLAT(0.0));
+    BIND_OUT_LOCATION(0, outCol);
+
+    RUN_JIT();
+
+    PRINT_VEC4("outCol:\n", outCol);
+    ASSERT_NEAR_VEC4(outCol, expected, 1e-4f);
 })
 
+TEST(fs_smpl_linear, "out/sampler.spv", FRAGMENT_SHADER, {
+    // 2x2 Texture: Red, Green, Blue, Yellow
+    uint8_t tex_data[2 * 2 * 4] = {
+        255,   0,   0, 255, // (0,0) = Red
+          0, 255,   0, 255, // (1,0) = Green
+          0,   0, 255, 255, // (0,1) = Blue
+        255, 255,   0, 255  // (1,1) = Yellow
+    };
+    TextureSamplerDescriptor desc = {
+        .data = tex_data,
+        .width = 2,
+        .height = 2,
+        .channels = 4,
+        .filter = FILTER_LINEAR,
+        .wrap = WRAP_REPEAT
+    };
+    CREATE_BINDING(1, desc);
+
+    SimtFloat u = SPLAT(0.5f);
+    SimtFloat v = SPLAT(0.5f);
+    CREATE_SIMT_VEC2(vTexCoord, u, v);
+    BIND_IN_LOCATION(0, vTexCoord);
+
+    CREATE_SIMT_VEC4(outCol, SPLAT(0.0), SPLAT(0.0), SPLAT(0.0), SPLAT(0.0));
+    BIND_OUT_LOCATION(0, outCol);
+
+    RUN_JIT();
+
+    PRINT_VEC4("outCol:\n", outCol);
+    // Center of 4 texels: (255+0+0+255)/4=127.5/255=0.5, (0+255+0+255)/4=0.5, (0+0+255+0)/4=0.25, A=1.0
+    CREATE_SIMT_VEC4(expected, SPLAT(0.5f), SPLAT(0.5f), SPLAT(0.25f), SPLAT(1.0f));
+    ASSERT_NEAR_VEC4(outCol, expected, 1e-3f);
+})
+
+TEST(fs_smpl_repeat, "out/sampler.spv", FRAGMENT_SHADER, {
+    uint8_t tex_data[2 * 2 * 4] = {
+        255,   0,   0, 255, // (0,0) = Red
+          0, 255,   0, 255, // (1,0) = Green
+          0,   0, 255, 255, // (0,1) = Blue
+        255, 255,   0, 255  // (1,1) = Yellow
+    };
+    TextureSamplerDescriptor desc = {
+        .data = tex_data,
+        .width = 2,
+        .height = 2,
+        .channels = 4,
+        .filter = FILTER_NEAREST,
+        .wrap = WRAP_REPEAT
+    };
+    CREATE_BINDING(1, desc);
+
+    SimtFloat u = {0};
+    SimtFloat v = {0};
+    SimtVec4 expected = {0};
+
+    for (int i = 0; i < 4; i++) {
+        u[i] = 1.25f; v[i] = 1.25f; // wraps to (0.25, 0.25) -> Red
+        expected.elem[0][i] = 1.0f; expected.elem[1][i] = 0.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
+    }
+    for (int i = 4; i < 8; i++) {
+        u[i] = -0.25f; v[i] = 0.25f; // wraps to (0.75, 0.25) -> Green
+        expected.elem[0][i] = 0.0f; expected.elem[1][i] = 1.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
+    }
+    for (int i = 8; i < 12; i++) {
+        u[i] = 2.25f; v[i] = -0.25f; // wraps to (0.25, 0.75) -> Blue
+        expected.elem[0][i] = 0.0f; expected.elem[1][i] = 0.0f; expected.elem[2][i] = 1.0f; expected.elem[3][i] = 1.0f;
+    }
+    for (int i = 12; i < 16; i++) {
+        u[i] = -1.25f; v[i] = -1.25f; // wraps to (0.75, 0.75) -> Yellow
+        expected.elem[0][i] = 1.0f; expected.elem[1][i] = 1.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
+    }
+
+    CREATE_SIMT_VEC2(vTexCoord, u, v);
+    BIND_IN_LOCATION(0, vTexCoord);
+
+    CREATE_SIMT_VEC4(outCol, SPLAT(0.0), SPLAT(0.0), SPLAT(0.0), SPLAT(0.0));
+    BIND_OUT_LOCATION(0, outCol);
+
+    RUN_JIT();
+
+    PRINT_VEC4("outCol:\n", outCol);
+    ASSERT_NEAR_VEC4(outCol, expected, 1e-4f);
+})
+
+TEST(fs_smpl_clamp, "out/sampler.spv", FRAGMENT_SHADER, {
+    uint8_t tex_data[2 * 2 * 4] = {
+        255,   0,   0, 255, // (0,0) = Red
+          0, 255,   0, 255, // (1,0) = Green
+          0,   0, 255, 255, // (0,1) = Blue
+        255, 255,   0, 255  // (1,1) = Yellow
+    };
+    TextureSamplerDescriptor desc = {
+        .data = tex_data,
+        .width = 2,
+        .height = 2,
+        .channels = 4,
+        .filter = FILTER_NEAREST,
+        .wrap = WRAP_CLAMP
+    };
+    CREATE_BINDING(1, desc);
+
+    SimtFloat u = {0};
+    SimtFloat v = {0};
+    SimtVec4 expected = {0};
+
+    for (int i = 0; i < 8; i++) {
+        u[i] = 2.0f; v[i] = 0.0f; // clamps to (1.0, 0.0) -> Green
+        expected.elem[0][i] = 0.0f; expected.elem[1][i] = 1.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
+    }
+    for (int i = 8; i < 16; i++) {
+        u[i] = 0.0f; v[i] = 2.0f; // clamps to (0.0, 1.0) -> Blue
+        expected.elem[0][i] = 0.0f; expected.elem[1][i] = 0.0f; expected.elem[2][i] = 1.0f; expected.elem[3][i] = 1.0f;
+    }
+
+    CREATE_SIMT_VEC2(vTexCoord, u, v);
+    BIND_IN_LOCATION(0, vTexCoord);
+
+    CREATE_SIMT_VEC4(outCol, SPLAT(0.0), SPLAT(0.0), SPLAT(0.0), SPLAT(0.0));
+    BIND_OUT_LOCATION(0, outCol);
+
+    RUN_JIT();
+
+    PRINT_VEC4("outCol:\n", outCol);
+    ASSERT_NEAR_VEC4(outCol, expected, 1e-4f);
+})
+TEST(fs_art, "out/art.spv", FRAGMENT_SHADER, {
+    struct ubo_t {
+        SimtFloat time;
+    };
+    struct ubo_t ubo;
+    ubo.time = SPLAT(1.0f);
+    CREATE_BINDING(0, ubo);
+
+    SimtFloat x = SPLAT(320.0f);
+    SimtFloat y = SPLAT(240.0f);
+    CREATE_SIMT_VEC4(glFragCord, x, y, SPLAT(0.0), SPLAT(0.0));
+    SET_GL_FRAGCORD(glFragCord);
+
+    CREATE_SIMT_VEC4(outCol, SPLAT(0.0), SPLAT(0.0), SPLAT(0.0), SPLAT(0.0));
+    BIND_OUT_LOCATION(0, outCol);
+
+    RUN_JIT();
+    PRINT_VEC4("outCol:\n", outCol);
+})
 TEST(fs_cord, "out/fs_cord.spv", FRAGMENT_SHADER, {
     RAND_FLOAT(x);
     RAND_FLOAT(y);
@@ -19,8 +214,6 @@ TEST(fs_cord, "out/fs_cord.spv", FRAGMENT_SHADER, {
     ASSERT_EQ_VEC4(outCol, expected);
 })
 
-
-
 TEST(simple_fs, "out/simple_fs.spv", FRAGMENT_SHADER, {
     CREATE_SIMT_VEC3(aCol, SPLAT(1.0), SPLAT(0.021), SPLAT(0.12));
     PRINT_VEC3("aCol:\n", aCol);
@@ -32,7 +225,6 @@ TEST(simple_fs, "out/simple_fs.spv", FRAGMENT_SHADER, {
     CREATE_SIMT_VEC4(expected, SPLAT(1.0), SPLAT(0.021), SPLAT(0.12), SPLAT(1.0));
     ASSERT_EQ_VEC4(outCol, expected);
 })
-
 
 TEST(simple_vs, "out/simple_vs.spv", VERTEX_SHADER, {
     SET_VERTEX_SHADER
@@ -59,7 +251,6 @@ TEST(vec_math, "out/vec_math.spv", VERTEX_SHADER,  {
     RUN_JIT();
     GET_GL_POS();
     PRINT_VEC4("gl_Position:\n", glPos);
-    
 })
 
 SimtVec4 simt_mat4_mul_vec4(SimtMat4 m, SimtVec4 v)
@@ -97,7 +288,7 @@ SimtVec4 simt_mat4_mul_vec4(SimtMat4 m, SimtVec4 v)
     return result;
 }
 
-TEST(vec_mvp, "out/mvp.spv", VERTEX_SHADER,({
+TEST(vec_mvp, "out/mvp.spv", VERTEX_SHADER, {
     struct ubo_t {
         SimtMat4 mvp;
     };
@@ -117,7 +308,6 @@ TEST(vec_mvp, "out/mvp.spv", VERTEX_SHADER,({
     BIND_IN_LOCATION(0, aPos);
     CREATE_BINDING(0, ubo);
 
-    
     RUN_JIT();
     GET_GL_POS();
     PRINT_VEC4("gl_Position:\n", glPos);
@@ -125,8 +315,7 @@ TEST(vec_mvp, "out/mvp.spv", VERTEX_SHADER,({
     SimtVec4 out = simt_mat4_mul_vec4(ubo.mvp, v);
     PRINT_VEC4("gold: \n", out);
     ASSERT_EQ_VEC4(glPos, out)
-    
-}))
+})
 
 TEST(cfg_if, "out/cfg_if.spv", VERTEX_SHADER, {
     CREATE_SIMT_VEC3(aPos, SPLAT(1.5), SPLAT(0.0), SPLAT(0.0));
@@ -157,7 +346,7 @@ TEST(cfg_loop, "out/cfg_loop.spv", VERTEX_SHADER, {
         z_vals[lane] = (float)(3 + lane);
     }
 
-    SimtVec3 aPos = { x_vals, y_vals, z_vals };
+    CREATE_SIMT_VEC3(aPos, x_vals, y_vals, z_vals);
     BIND_IN_LOCATION(0, aPos);
     RUN_JIT();
     GET_GL_POS();
@@ -170,11 +359,10 @@ TEST(cfg_loop, "out/cfg_loop.spv", VERTEX_SHADER, {
         expected.elem[3][lane] = 1.0f;
     }
     PRINT_VEC4("glPos: \n", glPos);
-        PRINT_VEC4("expected: \n", expected);
+    PRINT_VEC4("expected: \n", expected);
 
     ASSERT_EQ_VEC4(glPos, expected);
 })
-
 
 TEST(cfg_loop_if, "out/cfg_loop_if.spv", VERTEX_SHADER, {
     SimtFloat x_vals;
@@ -187,7 +375,7 @@ TEST(cfg_loop_if, "out/cfg_loop_if.spv", VERTEX_SHADER, {
         z_vals[lane] = (float)(10 + lane);
     }
 
-    SimtVec3 aPos = { x_vals, y_vals, z_vals };
+    CREATE_SIMT_VEC3(aPos, x_vals, y_vals, z_vals);
     BIND_IN_LOCATION(0, aPos);
 
     RUN_JIT();
@@ -201,8 +389,9 @@ TEST(cfg_loop_if, "out/cfg_loop_if.spv", VERTEX_SHADER, {
         expected.elem[2][lane] = z_vals[lane];
         expected.elem[3][lane] = 1.0f;
     }
-     PRINT_VEC4("glPos: \n", glPos);
-PRINT_VEC4("expected: \n", expected);
+    PRINT_VEC4("glPos: \n", glPos);
+    PRINT_VEC4("expected: \n", expected);
+
     ASSERT_EQ_VEC4(glPos, expected);
 })
 

@@ -72,6 +72,13 @@ typedef struct
 
 } SimtVec3;
 
+typedef struct
+{
+    // [4 x <16 x float>]
+    SimtFloat elem[4];
+
+} SimtVec2;
+
 typedef struct {
     SimtFloat cols[4][4];
 } SimtMat4;
@@ -133,12 +140,45 @@ typedef struct {
     uint32_t base_type;
 } GlobalResolution;
 
+typedef enum {
+    DIM_1D,
+    DIM_2D,
+    DIM_3D,
+    DIM_CUBE,
+    DIM_RECT,
+    DIM_BUFFER,
+    DIM_SUBPASS_DATA
+} ImageDim;
 
+typedef enum {
+    SPV_IMAGE_FORMAT_UNKNOWN,
+    SPV_IMAGE_FORMAT_R32F,
+    SPV_IMAGE_FORMAT_R32I,
+    SPV_IMAGE_FORMAT_R32UI,
+} SpvImageFormat;
+
+typedef struct {
+    uint32_t sampled_type;       /* Result of Sampled Type */
+    ImageDim dim;
+    uint32_t depth;              /* 0, 1, or 2 */
+    uint32_t arrayed;            /* 0 or 1 */
+    uint32_t ms;                 /* 0 or 1 */
+    uint32_t sampled;            /* 0, 1, or 2 */
+    SpvImageFormat format;
+
+    /* Optional Access Qualifier */
+    uint32_t has_access_qualifier;
+    uint32_t access_qualifier;
+} ImageType;
 typedef struct {
     SpvOp opcode;           
     uint32_t base_type_id;  
     uint32_t* member_types;
     uint32_t member_count;
+    ImageType image_type;
+    struct {
+        uint32_t image_type_id;
+    } sampled_image;
 } SpvTypeInfo;
 typedef struct JitContext JitContext;
 typedef void (*AluHandler)(JitContext* ctx, uint32_t res_id, uint32_t* operands);
