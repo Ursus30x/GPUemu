@@ -69,7 +69,9 @@ typedef enum {
     STATE_ID_UNIFORM_CONFIG,
     STATE_ID_VERTEX_SHADER_PTR,
     STATE_ID_FRAGMENT_SHADER_PTR,
-    STATE_ID_TEXTURE_CONFIG
+    STATE_ID_TEXTURE_CONFIG,
+    STATE_ID_BLEND_CONFIG,
+    STATE_ID_DEPTH_CONFIG
 } StateID;
 
 typedef struct __attribute__((packed)) {
@@ -85,6 +87,20 @@ typedef struct __attribute__((packed)) {
     uint32_t binding_slot;   // 1..MAX_BINDINGS-1
     uint32_t desc_vram_addr; // VRAM offset of GpuTextureDescriptorVram
 } SetTexturePayload;
+
+
+typedef struct __attribute__((packed)) {
+    uint8_t  enable;
+    uint8_t  src_factor;
+    uint8_t  dst_factor;
+    uint8_t  reserved;
+} SetBlendPayload;
+
+typedef struct __attribute__((packed)) {
+    uint8_t  depth_test_enable;
+    uint8_t  depth_write_enable;
+    uint16_t reserved;
+} SetDepthPayload;
 
 
 typedef enum {
@@ -108,7 +124,8 @@ typedef struct __attribute__((packed)) {
             uint32_t fs_addr;
         } shader_ptrs;
         SetTexturePayload texture_config;
-
+        SetDepthPayload depth_config;
+        SetBlendPayload blend_config;
     } value;
 } SetStatePayload;
 

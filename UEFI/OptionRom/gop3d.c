@@ -173,6 +173,37 @@ EFI_STATUS EFIAPI GpuBindTexture(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
+
+EFI_STATUS EFIAPI GpuSetBlendState(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableBlend,
+  IN GOP_3D_BLEND_FACTOR  SrcFactor,
+  IN GOP_3D_BLEND_FACTOR  DstFactor
+)
+{
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_BLEND_CONFIG;
+  cmd.payload.state.value.blend_config.enable = EnableBlend;
+  cmd.payload.state.value.blend_config.dst_factor = DstFactor;
+  cmd.payload.state.value.blend_config.src_factor = SrcFactor;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+EFI_STATUS EFIAPI GpuSetDepthWrite(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableDepthWrite
+)
+{
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_DEPTH_CONFIG;
+  cmd.payload.state.value.depth_config.depth_write_enable = EnableDepthWrite;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+
 /* -------------------------------------------------------------------------
  * Data Transfer
  * ------------------------------------------------------------------------- */
@@ -366,6 +397,9 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuBindVertShader = GpuBindVertShader;
   Private->Gop3dProtocol.GpuBindFragShader = GpuBindFragShader;
   Private->Gop3dProtocol.GpuBindTexture    = GpuBindTexture;
+  Private->Gop3dProtocol.GpuSetBlendState  = GpuSetBlendState;
+  Private->Gop3dProtocol.GpuSetDepthWrite  = GpuSetDepthWrite;
+
 
   Private->Gop3dProtocol.GpuTransferBuffer = GpuTransferBuffer;
   Private->Gop3dProtocol.GpuUpdateBuffer   = GpuUpdateBuffer;

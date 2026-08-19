@@ -62,6 +62,15 @@ typedef enum {
   Gop3dTopologyTriangles
 } GOP_3D_TOPOLOGY;
 
+typedef enum {
+  Gop3dBlendFactorZero,
+  Gop3dBlendFactorOne,
+  Gop3dBlendFactorSrcAlpha,
+  Gop3dBlendFactorOneMinusSrcAlpha,
+  Gop3dBlendFactorDstAlpha,
+  Gop3dBlendFactorOneMinusDstAlpha
+} GOP_3D_BLEND_FACTOR;
+
 /* ------------------------- Function declarations ------------------------ */
 
 /**
@@ -223,6 +232,22 @@ EFI_STATUS
   );
 
 
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_SET_BLEND_STATE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableBlend,
+  IN GOP_3D_BLEND_FACTOR  SrcFactor,
+  IN GOP_3D_BLEND_FACTOR  DstFactor
+);
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_SET_DEPTH_WRITE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableDepthWrite
+);
+
 /* -------------------------- Protocol structure -------------------------- */
 
 struct GOP_3D_PROTOCOL {
@@ -239,7 +264,10 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_BIND_RESOURCE      GpuBindIBO;
   GOP_3D_BIND_RESOURCE      GpuBindFragShader;
   GOP_3D_BIND_RESOURCE      GpuBindVertShader;
+  
   GOP_3D_BIND_TEXTURE       GpuBindTexture;
+  GOP_3D_SET_BLEND_STATE    GpuSetBlendState;
+  GOP_3D_SET_DEPTH_WRITE    GpuSetDepthWrite;
 
   GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer;
   GOP_3D_UPDATE_BUFFER      GpuUpdateBuffer;

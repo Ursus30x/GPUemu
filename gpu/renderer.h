@@ -20,10 +20,11 @@ typedef struct {
     float d_w0_dx, d_w0_dy;
     float d_w1_dx, d_w1_dy;
     float d_w2_dx, d_w2_dy;
+    float d_w3_dx, d_w3_dy;
 
-    float start_w0, start_w1, start_w2;
+    float start_w0, start_w1, start_w2, start_w3;
 
-    float r_inv_w[3], g_inv_w[3], b_inv_w[3];
+    float r_inv_w[3], g_inv_w[3], b_inv_w[3], a_inv_w[3];
     float u_inv_w[3], v_inv_w[3];  /* perspective-correct UV interpolants */
 } TriangleContext;
 
@@ -79,11 +80,13 @@ typedef struct {
     uint32_t threads_initialized;
 } RendererThreads;
 
+#define GET_A(color) ((uint8_t)(((color) >> 24) & 0xFF))
 #define GET_R(color) (uint8_t)(((color) >> 16) & 0xFF)
 #define GET_G(color) (uint8_t)(((color) >> 8) & 0xFF)
 #define GET_B(color) (uint8_t)((color) & 0xFF)
 
-#define RGB_TO_UINT(r, g, b) (((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
+#define RGB_TO_UINT(r, g, b)     (((uint32_t)(0xFF) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
+#define RGBA_TO_UINT(r, g, b, a)     (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 
 // UBO access macro: Get pointer to UBO data in VRAM
 #define UBO_DATA(gpu) (gpu->uinform_config.size > 0 ? (gpu->vram_ptr + gpu->uinform_config.addr) : NULL)
