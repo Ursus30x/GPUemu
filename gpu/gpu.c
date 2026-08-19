@@ -286,6 +286,29 @@ static void execute_command(GpuState *gpu, Command *cmd)
             }
             break;
         }
+        case STATE_ID_BLEND_CONFIG:
+        {
+            SetBlendPayload blend_config = cmd->payload.state.value.blend_config;
+
+            uint8_t enable = blend_config.enable;
+            GpuBlendFactor src = blend_config.src_factor;
+            GpuBlendFactor dst = blend_config.dst_factor;
+            DEBUG_PRINT("[CMD] Blend config: enable %u, src %u, dst %u\n", enable, src, dst);
+            
+            gpu->blend_enable = enable;
+            gpu->blend_src_factor = src;
+            gpu->blend_dst_factor = dst;
+            break;
+        }
+        case STATE_ID_DEPTH_CONFIG:
+        {
+            SetDepthPayload depth_config = cmd->payload.state.value.depth_config;
+
+            DEBUG_PRINT("[CMD] depth config: enable write %u,\n", depth_config.depth_write_enable);
+
+            gpu->depth_write_enable = depth_config.depth_write_enable;
+            break;
+        }
         default:
             break;
         }
@@ -612,6 +635,7 @@ static const GraphicHwOps ghwops = {
     .gfx_update = vga_update_display,
     .text_update = vga_update_text,
 };
+
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-properties-system.h"
 static const Property my_pci_properties[] = {
@@ -664,6 +688,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->width = 640;
     gpu->gpu_mode = GPU_MODE_GOP;
     gpu->framebuffer_vram_offset = 0x0000000;
+    gpu->depth_write_enable = 1;
 
     /* Initialize MSI */
     msi_init(pdev, 0, 1, true, false, errp);

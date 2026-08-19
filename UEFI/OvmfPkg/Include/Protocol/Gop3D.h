@@ -64,6 +64,15 @@ typedef enum {
   Gop3dTopologyTriangles
 } GOP_3D_TOPOLOGY;
 
+typedef enum {
+  Gop3dBlendFactorZero,
+  Gop3dBlendFactorOne,
+  Gop3dBlendFactorSrcAlpha,
+  Gop3dBlendFactorOneMinusSrcAlpha,
+  Gop3dBlendFactorDstAlpha,
+  Gop3dBlendFactorOneMinusDstAlpha
+} GOP_3D_BLEND_FACTOR;
+
 /* ------------------------- Function declarations ------------------------ */
 
 /**
@@ -227,6 +236,22 @@ EFI_STATUS
   );
 
 
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_BLEND_STATE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableBlend,
+  IN GOP_3D_BLEND_FACTOR  SrcFactor,
+  IN GOP_3D_BLEND_FACTOR  DstFactor
+);
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_DEPTH_WRITE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableDepthWrite
+);
+
 /* -------------------------- Protocol structure -------------------------- */
 
 struct GOP_3D_PROTOCOL {
@@ -238,20 +263,15 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_CMD_BEGIN            GpuCmdBegin;
   GOP_3D_CMD_END              GpuCmdEnd;
 
-<<<<<<< HEAD
   GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindUBO;
   GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindVBO;
   GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindIBO;
   GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindFragShader;
   GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindVertShader;
-=======
-  GOP_3D_BIND_RESOURCE      GpuBindUBO;
-  GOP_3D_BIND_RESOURCE      GpuBindVBO;
-  GOP_3D_BIND_RESOURCE      GpuBindIBO;
-  GOP_3D_BIND_RESOURCE      GpuBindFragShader;
-  GOP_3D_BIND_RESOURCE      GpuBindVertShader;
-  GOP_3D_CMD_BIND_TEXTURE       GpuCmdBindTexture;
->>>>>>> e4b03ff ([QEMU][UEFI][JITTER] Sampler 2D support (#32))
+  GOP_3D_CMD_BIND_TEXTURE     GpuCmdBindTexture;
+
+  GOP_3D_CMD_SET_BLEND_STATE  GpuCmdSetBlendState;
+  GOP_3D_CMD_SET_DEPTH_WRITE  GpuCmdSetDepthWrite;
 
   GOP_3D_FREE_BUFFER          GpuFreeBuffer;
   GOP_3D_CMD_TRANSFER_BUFFER  GpuCmdTransferBuffer;
