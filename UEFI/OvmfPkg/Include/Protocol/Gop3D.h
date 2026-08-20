@@ -59,7 +59,11 @@ typedef struct {
 typedef enum {
   Gop3dTopologyPoints,
   Gop3dTopologyLines,
-  Gop3dTopologyTriangles
+  Gop3dTopologyLineStrip,
+  Gop3dTopologyTriangles,
+  Gop3dTopologyTriangleStrip,
+  Gop3dTopologyTriangleFan,
+  Gop3dTopologyQuads
 } GOP_3D_TOPOLOGY;
 
 typedef enum {
