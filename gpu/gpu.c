@@ -273,7 +273,8 @@ static void execute_command(GpuState *gpu, Command *cmd)
             DEBUG_PRINT("[CMD] Texture config: slot %u, desc_addr 0x%x\n", slot, desc_addr);
             if (slot < MAX_BINDINGS) {
                 gpu->texture_desc_addr[slot] = desc_addr;
-                if (desc_addr != 0 && desc_addr + sizeof(GpuTextureDescriptorVram) <= GPU_VRAM_SIZE) {
+                if (desc_addr != 0 && desc_addr + sizeof(GpuTextureDescriptorVram) <= GPU_VRAM_SIZE) 
+                {
                     GpuTextureDescriptorVram *vram_desc = (GpuTextureDescriptorVram *)(gpu->vram_ptr + desc_addr);
                     gpu->textures[slot].data = (vram_desc->data_vram_addr != 0 && vram_desc->data_vram_addr < GPU_VRAM_SIZE)
                                                 ? (void *)(gpu->vram_ptr + vram_desc->data_vram_addr)
@@ -281,8 +282,25 @@ static void execute_command(GpuState *gpu, Command *cmd)
                     gpu->textures[slot].width = vram_desc->width;
                     gpu->textures[slot].height = vram_desc->height;
                     gpu->textures[slot].channels = vram_desc->channels;
+                    gpu->textures[slot].depth = vram_desc->depth;
+                    gpu->textures[slot].dimension = (GpuTextureDimension)vram_desc->dimension;
                     gpu->textures[slot].filter = (FilterMode)vram_desc->filter;
                     gpu->textures[slot].wrap = (WrapMode)vram_desc->wrap;
+                    gpu->textures[slot].wrap_u = (WrapMode)vram_desc->wrap_u;
+                    gpu->textures[slot].wrap_v = (WrapMode)vram_desc->wrap_v;
+                    gpu->textures[slot].wrap_w = (WrapMode)vram_desc->wrap_w;
+                    gpu->textures[slot].num_mip_levels = vram_desc->num_mip_levels;
+                    gpu->textures[slot].max_anisotropy = vram_desc->max_anisotropy;
+                    gpu->textures[slot].min_lod = vram_desc->min_lod;
+                    gpu->textures[slot].max_lod = vram_desc->max_lod;
+                    gpu->textures[slot].lod_bias = vram_desc->lod_bias;
+                    for (int lvl = 0; lvl < vram_desc->num_mip_levels && lvl < MAX_MIP_LEVELS; lvl++)
+                    {
+                        uint32_t mip_vram = vram_desc->data_vram_addr + vram_desc->mip_vram_addr[lvl];
+                        gpu->textures[slot].mip_addr[lvl] = (void *)(gpu->vram_ptr + mip_vram);
+                    }
+
+
                 } else {
                     memset(&gpu->textures[slot], 0, sizeof(TextureSamplerDescriptor));
                 }

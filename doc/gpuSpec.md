@@ -671,7 +671,7 @@ while (gpu->ring_buffer_head != gpu->ring_buffer_tail) {
 
 The **GOP 3D Protocol** (`gGop3dProtocolGuid`) is the primary software interface for UEFI applications to interact with the GPU. It provides a set of function pointers that abstract away direct MMIO register access and command buffer management.
 
-**Protocol Location:** `Protocol/Gop3D.h`
+**Protocol Name:** `GOP_3D_PROTOCOL`
 
 **Protocol GUID:** `{ 0x12345678, 0x1234, 0x5678, { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0 } }`
 

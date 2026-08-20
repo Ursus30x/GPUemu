@@ -1,6 +1,8 @@
 #ifndef __GOP_3D_H__
 #define __GOP_3D_H__
 
+#define MAX_MIP_LEVELS 14
+
 #include <Uefi.h>
 #include <Protocol/PciIo.h>
 #include <Library/UefiLib.h>
@@ -17,7 +19,7 @@ typedef struct GOP_3D_PROTOCOL GOP_3D_PROTOCOL;
 /* ---------------------------- Data structures --------------------------- */
 
 typedef UINT32 VRAMADDR;
-
+#define MAX_MIP_LEVELS 14
 // Global DMA fence
 typedef struct{
   BOOLEAN               DmaBusy;
@@ -37,22 +39,44 @@ typedef enum {
 } GOP_3D_BUFFER_TYPE;
 
 typedef enum {
-  Gop3dFilterNearest = 0,
-  Gop3dFilterLinear  = 1
+  Gop3dTexture2D   = 0,
+  Gop3dTexture3D   = 1,
+  Gop3dTextureCube = 2
+} GOP_3D_TEXTURE_DEMENSION;
+
+typedef enum {
+  Gop3dFilterNearest               = 0,
+  Gop3dFilterLinear                = 1,
+  Gop3dFilterNearestMipmapNearest  = 2,
+  Gop3dFilterLinearMipmapNearest   = 3,
+  Gop3dFilterNearestMipmapLinear   = 4,
+  Gop3dFilterLinearMipmapLinear    = 5  // Trilinear filtering
 } GOP_3D_FILTER_MODE;
 
 typedef enum {
   Gop3dWrapRepeat = 0,
-  Gop3dWrapClamp  = 1
+  Gop3dWrapClamp  = 1,
+  Gop3dWrapMirror = 2
 } GOP_3D_WRAP_MODE;
 
-typedef struct {
-  VRAMADDR            DataAddr;    // VRAM offset where pixel bytes start
-  UINT32              Width;
-  UINT32              Height;
-  UINT32              Channels;    // 1, 2, 3, 4
-  GOP_3D_FILTER_MODE  Filter;      // 0: Nearest, 1: Linear
-  GOP_3D_WRAP_MODE    Wrap;        // 0: Repeat, 1: Clamp
+typedef struct __attribute__((packed))  {
+  VRAMADDR                  DataAddr;    // VRAM offset where pixel bytes start
+  VRAMADDR                  MipData[MAX_MIP_LEVELS]; 
+  UINT32                    Width;
+  UINT32                    Height;
+  UINT32                    Depth;
+  UINT32                    Channels;    // 1, 2, 3, 4
+  GOP_3D_TEXTURE_DEMENSION  Dimention;
+  GOP_3D_FILTER_MODE        Filter;      
+  GOP_3D_WRAP_MODE          Wrap;       
+  GOP_3D_WRAP_MODE          WrapU;
+  GOP_3D_WRAP_MODE          WrapV;
+  GOP_3D_WRAP_MODE          WrapW;
+  UINT32                    NumMipLevels;
+  float                     MaxAnisotropy;
+  float                     MinLod;
+  float                     MaxLod;
+  float                     LodBias;
 } GOP_3D_TEXTURE_DESC;
 
 // Needed for Draw command
