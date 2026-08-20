@@ -35,6 +35,16 @@ typedef struct {
     float u, v;       /* per-vertex texture coordinates */
 } TransformedVertex;
 
+typedef enum {
+    GPU_PRIM_POINTS         = 0,
+    GPU_PRIM_LINES          = 1,
+    GPU_PRIM_LINE_STRIP     = 2,
+    GPU_PRIM_TRIANGLES      = 3,
+    GPU_PRIM_TRIANGLE_STRIP = 4,
+    GPU_PRIM_TRIANGLE_FAN   = 5,
+    GPU_PRIM_QUADS          = 6
+} GpuPrimitiveType;
+
 typedef struct {
     GpuState *orig_gpu;
     uint32_t start_idx;
@@ -51,10 +61,20 @@ typedef struct {
     SimtVec4 transformed_simt;
     SimtVec2 transformed_uv_simt;
 
+    /* Assembled primitive buffer (triangles or line pairs) */
+    Triangle *assembled_triangles;
+    uint32_t  assembled_triangle_count;
+    uint32_t  line_start_idx;     /* first line pair index for this thread */
+    uint32_t  line_end_idx;       /* past-end line pair index for this thread */
+
+    /* Primitive type state */
+    GpuPrimitiveType primitive_type;
+    float point_size;
+    float line_width;
+
     JitContext jit_ctx_vs; 
     JitContext jit_ctx_fs; 
 } RenderThreadArgs;
-
 
 typedef enum {
     TASK_NONE = 0,
@@ -62,6 +82,8 @@ typedef enum {
     TASK_TRANSFORM_VERTICES_SIMT,
     TASK_RASTERIZE_BANDS,
     TASK_RASTERIZE_BANDS_SIMT,
+    TASK_RASTERIZE_POINTS_SIMT,
+    TASK_RASTERIZE_LINES_SIMT,
     TASK_WIREFRAME_VERTICES,
     TASK_WIREFRAME_EDGES,
     TASK_EXIT
@@ -104,5 +126,5 @@ void gpu_render_triangles(void *opaque);
 float edge_func(Vec3 a, Vec3 b, Vec3 c);
 void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu);
 void gpu_render_triangles_simt(void *opaque);
-void worker_transform_vertices_simt_impl(RenderThreadArgs *args) ;
+void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float point_size, float line_width);
 #endif

@@ -104,9 +104,13 @@ typedef struct __attribute__((packed)) {
 
 
 typedef enum {
-    PRIMITIVE_TYPE_POINTS  = 0x01, //TO-DO IN FUTURE
-    PRIMITIVE_TYPE_LINES   = 0x02,
-    PRIMITIVE_TYPE_TRIANGLES = 0x03, // TO-DO IN FUTURE
+    PRIMITIVE_TYPE_POINTS         = 0x01,
+    PRIMITIVE_TYPE_LINES          = 0x02,
+    PRIMITIVE_TYPE_LINE_STRIP     = 0x03,
+    PRIMITIVE_TYPE_TRIANGLES      = 0x04,
+    PRIMITIVE_TYPE_TRIANGLE_STRIP = 0x05,
+    PRIMITIVE_TYPE_TRIANGLE_FAN   = 0x06,
+    PRIMITIVE_TYPE_QUADS          = 0x07,
 } PrimitiveType;
 
 

@@ -634,6 +634,140 @@ VOID TestBlendingSimt() {
 
     FpsCounterShowStats();
 }
+
+VOID TestPrimitivesSimt() {
+    EFI_INPUT_KEY Key;
+    EFI_STATUS Status;
+
+    #include "mvp.h"
+    #include "simple_fs.h"
+
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
+    VRAMADDR hVS, hFS, hMVP;
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+
+    Mat4 identity;
+    Mat4_Identity(&identity);
+    SimtMat4UBO simt_mvp;
+    Mat4_ToSimtUBO(&identity, &simt_mvp);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp, sizeof(SimtMat4UBO), &hMVP);
+
+    Print(L"Testing New Primitives (Points, Lines, LineStrip, TriStrip, TriFan, Quads)...\n");
+
+    // 1. Points
+    Vec3 point_verts[] = {
+        {-0.6f,  0.5f, 0.5f, 0xFF0000},
+        {-0.2f,  0.5f, 0.5f, 0x00FF00},
+        { 0.2f,  0.5f, 0.5f, 0x0000FF},
+        { 0.6f,  0.5f, 0.5f, 0xFFFF00}
+    };
+    VRAMADDR hVBO_Points;
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, point_verts, sizeof(point_verts), &hVBO_Points);
+
+    // 2. Lines
+    Vec3 line_verts[] = {
+        {-0.8f,  0.2f, 0.5f, 0xFF0000}, {-0.4f,  0.2f, 0.5f, 0x00FF00},
+        { 0.4f,  0.2f, 0.5f, 0x0000FF}, { 0.8f,  0.2f, 0.5f, 0xFFFF00}
+    };
+    VRAMADDR hVBO_Lines;
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, line_verts, sizeof(line_verts), &hVBO_Lines);
+
+    // 3. Line Strip
+    Vec3 line_strip_verts[] = {
+        {-0.8f, -0.1f, 0.5f, 0xFF0000},
+        {-0.4f,  0.1f, 0.5f, 0x00FF00},
+        { 0.0f, -0.1f, 0.5f, 0x0000FF},
+        { 0.4f,  0.1f, 0.5f, 0xFFFF00},
+        { 0.8f, -0.1f, 0.5f, 0x00FFFF}
+    };
+    VRAMADDR hVBO_LineStrip;
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, line_strip_verts, sizeof(line_strip_verts), &hVBO_LineStrip);
+
+    // 4. Triangle Strip
+    Vec3 tri_strip_verts[] = {
+        {-0.8f, -0.5f, 0.5f, 0xFF0000},
+        {-0.8f, -0.2f, 0.5f, 0x00FF00},
+        {-0.5f, -0.5f, 0.5f, 0x0000FF},
+        {-0.5f, -0.2f, 0.5f, 0xFFFF00}
+    };
+    VRAMADDR hVBO_TriStrip;
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, tri_strip_verts, sizeof(tri_strip_verts), &hVBO_TriStrip);
+
+    // 5. Triangle Fan
+    Vec3 tri_fan_verts[] = {
+        { 0.0f, -0.35f, 0.5f, 0xFF0000},
+        {-0.2f, -0.5f,  0.5f, 0xFF0000},
+        { 0.0f, -0.6f,  0.5f, 0x00FF00},
+        { 0.2f, -0.5f,  0.5f, 0x0000FF},
+        { 0.1f, -0.2f,  0.5f, 0xFFFF00}
+    };
+    VRAMADDR hVBO_TriFan;
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, tri_fan_verts, sizeof(tri_fan_verts), &hVBO_TriFan);
+
+    // 6. Quads
+    Vec3 quad_verts[] = {
+        { 0.4f, -0.6f, 0.5f, 0xFF0000},
+        { 0.8f, -0.6f, 0.5f, 0x00FF00},
+        { 0.8f, -0.2f, 0.5f, 0x0000FF},
+        { 0.4f, -0.2f, 0.5f, 0xFFFF00}
+    };
+    VRAMADDR hVBO_Quads;
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, quad_verts, sizeof(quad_verts), &hVBO_Quads);
+
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuClearFrame(mGOP3D, 0xFF101010);
+    mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+    mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+
+    // Render Points
+    mGOP3D->GpuBindVBO(mGOP3D, hVBO_Points, 4);
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyPoints, 4);
+
+    // Render Lines
+    mGOP3D->GpuBindVBO(mGOP3D, hVBO_Lines, 4);
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, 4);
+
+    // Render Line Strip
+    mGOP3D->GpuBindVBO(mGOP3D, hVBO_LineStrip, 5);
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLineStrip, 5);
+
+    // Render Triangle Strip
+    mGOP3D->GpuBindVBO(mGOP3D, hVBO_TriStrip, 4);
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangleStrip, 4);
+
+    // Render Triangle Fan
+    mGOP3D->GpuBindVBO(mGOP3D, hVBO_TriFan, 5);
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangleFan, 5);
+
+    // Render Quads
+    mGOP3D->GpuBindVBO(mGOP3D, hVBO_Quads, 4);
+    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyQuads, 4);
+
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuPresent(mGOP3D);
+
+    Print(L"Rendered Points, Lines, LineStrip, TriStrip, TriFan, Quads! Press key...\n");
+    WAIT_FOR_KEYPRESS();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO_Points);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO_Lines);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO_LineStrip);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO_TriStrip);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO_TriFan);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO_Quads);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP);
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+}
 EFI_STATUS EFIAPI Test() {
     EFI_STATUS Status;
     EFI_INPUT_KEY Key;
@@ -666,6 +800,12 @@ EFI_STATUS EFIAPI Test() {
           mGraphicsOutput->Mode->Info->HorizontalResolution,
           mGraphicsOutput->Mode->Info->VerticalResolution);
     Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
+    Print(L"Press key for SPIR-V Primitives Demo (Points, Lines, LineStrip, TriStrip, TriFan, Quads)...\n");
+
+    WAIT_FOR_KEYPRESS()
+
+    TestPrimitivesSimt();
+
     Print(L"Press key for SPIR-V 3D SIMT Triangles Demo...\n");
 
     WAIT_FOR_KEYPRESS()
