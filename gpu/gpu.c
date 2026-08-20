@@ -105,8 +105,11 @@ static void triangles_3d_mode(GpuState *gpu)
     {
         if(gpu->use_legacy_asm)
             gpu_render_triangles(gpu);
-        else
-           gpu_render_triangles_simt(gpu);
+        else {
+            float psize = gpu->point_size > 0.0f ? gpu->point_size : 1.0f;
+            float lwidth = gpu->line_width > 0.0f ? gpu->line_width : 1.0f;
+            gpu_render_primitives_simt(gpu, (GpuPrimitiveType)gpu->primitive_type, psize, lwidth);
+        }
     }
 }
 static void gpu_print_mmio(GpuState *s)
@@ -324,11 +327,41 @@ static void execute_command(GpuState *gpu, Command *cmd)
         break;
 
     case CMD_DRAW_PRIMITIVE:
-        if(cmd->payload.draw.type == PRIMITIVE_TYPE_LINES)
-            wireframe_3d_mode(gpu);
-        else if(cmd->payload.draw.type == PRIMITIVE_TYPE_TRIANGLES)
-            triangles_3d_mode(gpu);
-        //printf("[CMD] Draw primitive\n");
+        switch (cmd->payload.draw.type) {
+            case PRIMITIVE_TYPE_POINTS:
+                gpu->primitive_type = GPU_PRIM_POINTS;
+                triangles_3d_mode(gpu);
+                break;
+            case PRIMITIVE_TYPE_LINES:
+                if (gpu->use_legacy_asm)
+                    wireframe_3d_mode(gpu);
+                else {
+                    gpu->primitive_type = GPU_PRIM_LINES;
+                    triangles_3d_mode(gpu);
+                }
+                break;
+            case PRIMITIVE_TYPE_LINE_STRIP:
+                gpu->primitive_type = GPU_PRIM_LINE_STRIP;
+                triangles_3d_mode(gpu);
+                break;
+            case PRIMITIVE_TYPE_TRIANGLE_STRIP:
+                gpu->primitive_type = GPU_PRIM_TRIANGLE_STRIP;
+                triangles_3d_mode(gpu);
+                break;
+            case PRIMITIVE_TYPE_TRIANGLE_FAN:
+                gpu->primitive_type = GPU_PRIM_TRIANGLE_FAN;
+                triangles_3d_mode(gpu);
+                break;
+            case PRIMITIVE_TYPE_QUADS:
+                gpu->primitive_type = GPU_PRIM_QUADS;
+                triangles_3d_mode(gpu);
+                break;
+            case PRIMITIVE_TYPE_TRIANGLES:
+            default:
+                gpu->primitive_type = GPU_PRIM_TRIANGLES;
+                triangles_3d_mode(gpu);
+                break;
+        }
         break;
     case CMD_NOOP:
         DEBUG_PRINT("[CMD] NOP\n");
@@ -689,6 +722,9 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->gpu_mode = GPU_MODE_GOP;
     gpu->framebuffer_vram_offset = 0x0000000;
     gpu->depth_write_enable = 1;
+    gpu->primitive_type = GPU_PRIM_TRIANGLES;
+    gpu->point_size = 1.0f;
+    gpu->line_width = 1.0f;
 
     /* Initialize MSI */
     msi_init(pdev, 0, 1, true, false, errp);

@@ -126,6 +126,10 @@ typedef struct GpuState {
     GpuBlendFactor  blend_dst_factor;     
     uint8_t         depth_write_enable; 
 
+    uint32_t        primitive_type; /* GpuPrimitiveType */
+    float           point_size;
+    float           line_width; 
+
     //LEGACY ASM
     Mat4 regs[REG_MAT_SIZE];
     Preg pRegs[REG_P_GEN_SIZE];
