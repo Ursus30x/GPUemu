@@ -343,6 +343,14 @@ EFI_STATUS EFIAPI GpuCmdDraw(
         primType = PRIMITIVE_TYPE_LINES;
     } else if (Topology == Gop3dTopologyPoints) {
         primType = PRIMITIVE_TYPE_POINTS;
+    } else if (Topology == Gop3dTopologyLineStrip) {
+        primType = PRIMITIVE_TYPE_LINE_STRIP;
+    } else if (Topology == Gop3dTopologyTriangleStrip) {
+        primType = PRIMITIVE_TYPE_TRIANGLE_STRIP;
+    } else if (Topology == Gop3dTopologyTriangleFan) {
+        primType = PRIMITIVE_TYPE_TRIANGLE_FAN;
+    } else if (Topology == Gop3dTopologyQuads) {
+        primType = PRIMITIVE_TYPE_QUADS;
     }
     Command cmd;
     cmd.opcode = CMD_DRAW_PRIMITIVE;

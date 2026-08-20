@@ -1,13 +1,16 @@
-
 #include "renderer.h"
+#include "primitive_assembly.h"
+#include "rasterizer_simt.h"
 #include "math3d.h"
-#include "math.h"
+#include <math.h>
 #include "debug_gpu.h"
 #include "qemu/thread.h"
 #include "asm.h"
+
 #define PRINT_V4(v) DEBUG_PRINT("[%f, %f, %f, %f]\n", v.x, v.y, v.z, v.w);
 
 static RendererThreads render;
+QemuMutex jit_mutex;
 
 static inline float get_blend_factor(GpuBlendFactor factor, float src_a, float dst_a, float src_c, float dst_c) 
 {
@@ -25,6 +28,7 @@ static inline float get_blend_factor(GpuBlendFactor factor, float src_a, float d
         default:                                   return 1.0f;
     }
 }
+
 static inline uint8_t color_to_u8(float c)
 {
     if (c <= 0.0f) return 0;
@@ -32,6 +36,7 @@ static inline uint8_t color_to_u8(float c)
     if (scaled >= 255.0f) return 255;
     return (uint8_t)(scaled + 0.5f);
 }
+
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
     if(gpu->use_legacy_asm) 
@@ -128,15 +133,9 @@ void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, u
     }
 }
 
-
 float edge_func(Vec3 a, Vec3 b, Vec3 c)
 {
     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
-}
-static inline float project_depth(Vec4 v)
-{
-    float w = (v.w < 0.1f) ? 0.1f : v.w;
-    return v.z / w;
 }
 
 static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu, int band_min_y, int band_max_y)
@@ -164,7 +163,6 @@ static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *
     int min_x = fmax(0, fmin(s[0].x, fmin(s[1].x, s[2].x)));
     int max_x = fmin(width-1, fmax(s[0].x, fmax(s[1].x, s[2].x)));
     
-    // Intersect the triangle bound's vertical footprint with the thread's assigned scanline band
     int min_y = fmax(band_min_y, fmin(s[0].y, fmin(s[1].y, s[2].y)));
     int max_y = fmin(band_max_y, fmax(s[0].y, fmax(s[1].y, s[2].y)));
 
@@ -199,13 +197,11 @@ static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *
     }
 }
 
-
 void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
 {
     draw_triangle_band(v0, v1, v2, color, gpu, 0, gpu->height - 1);
 }
 
-// pass 1: Parallel Vertex Shader execution across all VBO elements
 static void worker_transform_vertices_impl(RenderThreadArgs *args) {
     GpuState local_gpu = *(args->orig_gpu); 
     GpuState *gpu = &local_gpu;
@@ -232,117 +228,6 @@ static void worker_transform_vertices_impl(RenderThreadArgs *args) {
             (uint8_t)gpu->pRegs[REG_PB].u32);
         out_vertices[i].u = vertices[i].u;
         out_vertices[i].v = vertices[i].v;
-    }
-    
-   
-}
-
-
-
-static void bind_ubo_to_context(GpuState *gpu, ExecutionContext *ectx)
-{
-    if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0)
-    {
-        void *ubo_data = gpu->vram_ptr + gpu->uinform_config.addr;
-        ectx->binding_buffers[0] = ubo_data;
-    }
-}
-
-static void bind_resources_to_context(GpuState *gpu, ExecutionContext *ectx)
-{
-    bind_ubo_to_context(gpu, ectx);
-    for (int slot = 1; slot < MAX_BINDINGS; slot++)
-    {
-        if (gpu->texture_desc_addr[slot] != 0 && gpu->texture_desc_addr[slot] + sizeof(GpuTextureDescriptorVram) <= GPU_VRAM_SIZE)
-        {
-            GpuTextureDescriptorVram *vram_desc = (GpuTextureDescriptorVram *)(gpu->vram_ptr + gpu->texture_desc_addr[slot]);
-            if (vram_desc->data_vram_addr != 0 && vram_desc->data_vram_addr < GPU_VRAM_SIZE)
-            {
-                gpu->textures[slot].data = (void *)(gpu->vram_ptr + vram_desc->data_vram_addr);
-                gpu->textures[slot].width = vram_desc->width;
-                gpu->textures[slot].height = vram_desc->height;
-                gpu->textures[slot].channels = vram_desc->channels;
-                gpu->textures[slot].filter = (FilterMode)vram_desc->filter;
-                gpu->textures[slot].wrap = (WrapMode)vram_desc->wrap;
-                ectx->binding_buffers[slot] = &gpu->textures[slot];
-            }
-            else
-            {
-                ectx->binding_buffers[slot] = NULL;
-            }
-        }
-        else
-        {
-            ectx->binding_buffers[slot] = NULL;
-        }
-    }
-}
-
-void worker_transform_vertices_simt_impl(RenderThreadArgs *args) 
-{
-    GpuState local_gpu = *(args->orig_gpu); 
-    GpuState *gpu = &local_gpu;
-
-    Vec3 *vertices = VERTEX_TABLE(gpu);
-    uint32_t total_vertices = gpu->vbo_config.size;
-
-    for (uint32_t b = args->start_block; b < args->end_block; b++)
-    {
-        uint32_t base_idx = b * SIMT_WIDTH;
-
-        uint16_t exec_mask = 0xFFFF;
-        if (base_idx + SIMT_WIDTH > total_vertices) {
-            uint32_t active_lanes = total_vertices - base_idx;
-            exec_mask = (1 << active_lanes) - 1;
-        }
-
-        SimtVec3 in_vec;
-        SimtVec2 in_uv;
-        for (int lane = 0; lane < SIMT_WIDTH; lane++)
-        {
-            if (exec_mask & (1 << lane))
-            {
-                uint32_t i = base_idx + lane;
-                in_vec.elem[0][lane] = vertices[i].x;
-                in_vec.elem[1][lane] = vertices[i].y;
-                in_vec.elem[2][lane] = vertices[i].z;
-
-                in_uv.elem[0][lane]  = vertices[i].u;
-                in_uv.elem[1][lane]  = vertices[i].v;
-            }
-            else
-            {
-                in_vec.elem[0][lane] = 0.0f;
-                in_vec.elem[1][lane] = 0.0f;
-                in_vec.elem[2][lane] = 0.0f;
-                in_uv.elem[0][lane] = 0.0f;
-                in_uv.elem[1][lane] = 0.0f;
-            }
-        }
-
-        ExecutionContext jit_ctx = {0};
-        BuiltinVertexOutput vs_out = {0};
-        bind_resources_to_context(gpu, &jit_ctx);
-        jit_ctx.location_in_buffers[0] = &in_vec;
-        jit_ctx.location_in_buffers[1] = &in_uv;
-        jit_ctx.location_out_buffers[0] = &args->transformed_uv_simt;
-        gpu->vs_shader_func(&jit_ctx, &vs_out, NULL);
-        args->transformed_simt = vs_out.gl_Position;
-
-        for (uint32_t i = 0; i < SIMT_WIDTH; i++)
-        {
-            uint32_t global_idx = base_idx + i;
-            if (global_idx < total_vertices)
-            {
-                args->transformed_vertices[global_idx].pos.x = args->transformed_simt.elem[0][i];
-                args->transformed_vertices[global_idx].pos.y = args->transformed_simt.elem[1][i];
-                args->transformed_vertices[global_idx].pos.z = args->transformed_simt.elem[2][i];
-                args->transformed_vertices[global_idx].pos.w = args->transformed_simt.elem[3][i];
-                args->transformed_vertices[global_idx].color = vertices[global_idx].rgba;
-                args->transformed_vertices[global_idx].u     = args->transformed_uv_simt.elem[0][i];
-                args->transformed_vertices[global_idx].v     = args->transformed_uv_simt.elem[1][i];
-            }
-        }
     }
 }
 
@@ -374,304 +259,6 @@ static void worker_rasterize_bands_impl(RenderThreadArgs *args)
    }
 }
 
-// =================================================================
-// PHASE 1: Geometry, Viewport, and Bounds
-// =================================================================
-static bool setup_geometry_and_bounds(Vec4 v0, Vec4 v1, Vec4 v2, GpuState *gpu, int band_min_y, int band_max_y, TriangleContext *ctx, float *out_inv_area) 
-{
-    Vec4 v[3] = {v0, v1, v2};
-    uint32_t width = gpu->width;
-    uint32_t height = gpu->height;
-
-    for (int i = 0; i < 3; i++) 
-    {
-        float w = (v[i].w < 0.1f) ? 0.1f : v[i].w;
-        float inv_w = 1.0f / w;
-
-        ctx->s_inv_w[i] = inv_w;
-        
-        ctx->inv_z[i] = v[i].z * inv_w;
-
-        float ndc_x = v[i].x * inv_w;
-        float ndc_y = v[i].y * inv_w;
-
-        ctx->s[i].x = (ndc_x + 1.0f) * 0.5f * width;
-        ctx->s[i].y = (1.0f - (ndc_y + 1.0f) * 0.5f) * height;
-        ctx->s[i].z = inv_w; 
-    }
-
-    float area = edge_func(ctx->s[0], ctx->s[1], ctx->s[2]);
-    if (area == 0.0f) return false; 
-    
-    *out_inv_area = 1.0f / area;
-
-    ctx->min_x = fmax(0, fmin(ctx->s[0].x, fmin(ctx->s[1].x, ctx->s[2].x)));
-    ctx->max_x = fmin(width - 1, fmax(ctx->s[0].x, fmax(ctx->s[1].x, ctx->s[2].x)));
-    
-    ctx->min_y = fmax(band_min_y, fmin(ctx->s[0].y, fmin(ctx->s[1].y, ctx->s[2].y)));
-    ctx->max_y = fmin(band_max_y, fmax(ctx->s[0].y, fmax(ctx->s[1].y, ctx->s[2].y)));
-
-    if (ctx->min_y > ctx->max_y || ctx->min_x > ctx->max_x) return false;
-
-    ctx->stamp_min_x = ctx->min_x & ~3;
-    ctx->stamp_max_x = (ctx->max_x + 4) & ~3;
-    ctx->stamp_min_y = ctx->min_y & ~3;
-    ctx->stamp_max_y = (ctx->max_y + 4) & ~3;
-
-    return true;
-}
-// =================================================================
-// PHASE 2: Pineda Gradients & Color Invariants
-// =================================================================
-static void setup_invariants(Col3 color, float u[3], float v[3], float inv_area, TriangleContext *ctx) 
-{
-    Vec3 p_zero = {0.0f, 0.0f, 0.0f};
-    Vec3 p_dx1  = {1.0f, 0.0f, 0.0f};
-    Vec3 p_dy1  = {0.0f, 1.0f, 0.0f};
-
-    float base0 = edge_func(ctx->s[1], ctx->s[2], p_zero);
-    ctx->d_w0_dx = (edge_func(ctx->s[1], ctx->s[2], p_dx1) - base0) * inv_area;
-    ctx->d_w0_dy = (edge_func(ctx->s[1], ctx->s[2], p_dy1) - base0) * inv_area;
-
-    float base1 = edge_func(ctx->s[2], ctx->s[0], p_zero);
-    ctx->d_w1_dx = (edge_func(ctx->s[2], ctx->s[0], p_dx1) - base1) * inv_area;
-    ctx->d_w1_dy = (edge_func(ctx->s[2], ctx->s[0], p_dy1) - base1) * inv_area;
-
-    float base2 = edge_func(ctx->s[0], ctx->s[1], p_zero);
-    ctx->d_w2_dx = (edge_func(ctx->s[0], ctx->s[1], p_dx1) - base2) * inv_area;
-    ctx->d_w2_dy = (edge_func(ctx->s[0], ctx->s[1], p_dy1) - base2) * inv_area;
-
-    const float inv_255 = 1.0f / 255.0f;
-    ctx->r_inv_w[0] = (GET_R(color.a_col) * inv_255) * ctx->s_inv_w[0];
-    ctx->g_inv_w[0] = (GET_G(color.a_col) * inv_255) * ctx->s_inv_w[0];
-    ctx->b_inv_w[0] = (GET_B(color.a_col) * inv_255) * ctx->s_inv_w[0];
-    ctx->a_inv_w[0] = (GET_A(color.a_col) * inv_255) * ctx->s_inv_w[0];
-
-    ctx->r_inv_w[1] = (GET_R(color.b_col) * inv_255) * ctx->s_inv_w[1];
-    ctx->g_inv_w[1] = (GET_G(color.b_col) * inv_255) * ctx->s_inv_w[1];
-    ctx->b_inv_w[1] = (GET_B(color.b_col) * inv_255) * ctx->s_inv_w[1];
-    ctx->a_inv_w[1] = (GET_A(color.b_col) * inv_255) * ctx->s_inv_w[1];
-
-    ctx->r_inv_w[2] = (GET_R(color.c_col) * inv_255) * ctx->s_inv_w[2];
-    ctx->g_inv_w[2] = (GET_G(color.c_col) * inv_255) * ctx->s_inv_w[2];
-    ctx->b_inv_w[2] = (GET_B(color.c_col) * inv_255) * ctx->s_inv_w[2];
-    ctx->a_inv_w[2] = (GET_A(color.c_col) * inv_255) * ctx->s_inv_w[2];
-
-    ctx->u_inv_w[0] = u[0] * ctx->s_inv_w[0];
-    ctx->u_inv_w[1] = u[1] * ctx->s_inv_w[1];
-    ctx->u_inv_w[2] = u[2] * ctx->s_inv_w[2];
-
-    ctx->v_inv_w[0] = v[0] * ctx->s_inv_w[0];
-    ctx->v_inv_w[1] = v[1] * ctx->s_inv_w[1];
-    ctx->v_inv_w[2] = v[2] * ctx->s_inv_w[2];
-
-    ctx->d_w3_dx = ctx->d_w0_dx * ctx->a_inv_w[0] + ctx->d_w1_dx * ctx->a_inv_w[1] + ctx->d_w2_dx * ctx->a_inv_w[2];
-    ctx->d_w3_dy = ctx->d_w0_dy * ctx->a_inv_w[0] + ctx->d_w1_dy * ctx->a_inv_w[1] + ctx->d_w2_dy * ctx->a_inv_w[2];
-
-    Vec3 start_p = {ctx->stamp_min_x + 0.5f, ctx->stamp_min_y + 0.5f, 0};
-    ctx->start_w0 = edge_func(ctx->s[1], ctx->s[2], start_p) * inv_area;
-    ctx->start_w1 = edge_func(ctx->s[2], ctx->s[0], start_p) * inv_area;
-    ctx->start_w2 = edge_func(ctx->s[0], ctx->s[1], start_p) * inv_area;
-
-
-    ctx->start_w3 = ctx->start_w0 * ctx->a_inv_w[0] + ctx->start_w1 * ctx->a_inv_w[1] + ctx->start_w2 * ctx->a_inv_w[2];
-}
-
-// =================================================================
-// PHASE 3: Stamp Coverage Evaluation (Step A)
-// =================================================================
-static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stamp_w1, float stamp_w2, float stamp_w3, TriangleContext *ctx, float *lane_w0, float *lane_w1, float *lane_w2, float *lane_w3) 
-{
-    uint16_t exec_mask = 0x0000;
-
-    for (int lane = 0; lane < 16; lane++) 
-    {
-        int lx = lane % 4;
-        int ly = lane / 4;
-        int px = x + lx;
-        int py = y + ly;
-
-        float w0 = stamp_w0 + (lx * ctx->d_w0_dx) + (ly * ctx->d_w0_dy);
-        float w1 = stamp_w1 + (lx * ctx->d_w1_dx) + (ly * ctx->d_w1_dy);
-        float w2 = stamp_w2 + (lx * ctx->d_w2_dx) + (ly * ctx->d_w2_dy);
-        float w3 = stamp_w3 + (lx * ctx->d_w3_dx) + (ly * ctx->d_w3_dy);
-        
-        lane_w0[lane] = w0;
-        lane_w1[lane] = w1;
-        lane_w2[lane] = w2;
-        lane_w3[lane] = w3;
-
-        bool in_bounds = (px >= ctx->min_x && px <= ctx->max_x && py >= ctx->min_y && py <= ctx->max_y);
-        
-        bool in_tri = (w0 >= -1e-4f && w1 >= -1e-4f && w2 >= -1e-4f);
-        
-        if (in_bounds && in_tri) 
-        {
-            exec_mask |= (1 << lane);
-        }
-    }
-    return exec_mask;
-}
-// =================================================================
-// PHASE 4: Early-Z and Varying Interpolation 
-// =================================================================
-static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, float *lane_w0, float *lane_w1, float *lane_w2, float *lane_a, TriangleContext *ctx, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv) 
-{
-    uint16_t shade_mask = 0x0000;
-    uint32_t width = gpu->width;
-
-    for (int lane = 0; lane < 16; lane++) 
-    {
-        if (!(exec_mask & (1 << lane))) continue;
-
-        int px = x + (lane % 4);
-        int py = y + (lane / 4);
-        int idx = py * width + px;
-
-        float w0 = lane_w0[lane];
-        float w1 = lane_w1[lane];
-        float w2 = lane_w2[lane];
-
-        float z = w0 * ctx->inv_z[0] + w1 * ctx->inv_z[1] + w2 * ctx->inv_z[2];
-        
-        if (z < Z_BUFFER(gpu)[idx]) 
-        {
-            if(gpu->depth_write_enable == 1)
-            {
-                Z_BUFFER(gpu)[idx] = z;
-            }
-            shade_mask |= (1 << lane);
-
-            float pixel_inv_w = w0 * ctx->s_inv_w[0] + w1 * ctx->s_inv_w[1] + w2 * ctx->s_inv_w[2];
-            float pixel_w = 1.0f / pixel_inv_w;
-
-            fs_in_color->elem[0][lane] = (w0 * ctx->r_inv_w[0] + w1 * ctx->r_inv_w[1] + w2 * ctx->r_inv_w[2]) * pixel_w;
-            fs_in_color->elem[1][lane] = (w0 * ctx->g_inv_w[0] + w1 * ctx->g_inv_w[1] + w2 * ctx->g_inv_w[2]) * pixel_w;
-            fs_in_color->elem[2][lane] = (w0 * ctx->b_inv_w[0] + w1 * ctx->b_inv_w[1] + w2 * ctx->b_inv_w[2]) * pixel_w;
-            fs_in_color->elem[3][lane] = lane_a[lane];
-
-            fs_in_uv->elem[0][lane] = (w0 * ctx->u_inv_w[0] + w1 * ctx->u_inv_w[1] + w2 * ctx->u_inv_w[2]) * pixel_w;
-            fs_in_uv->elem[1][lane] = (w0 * ctx->v_inv_w[0] + w1 * ctx->v_inv_w[1] + w2 * ctx->v_inv_w[2]) * pixel_w;
-        }
-    }
-    return shade_mask;
-}
-
-// =================================================================
-// PHASE 5: Shading and Output (Step C & D)
-// =================================================================
-static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv, BuiltinFragmentInput* fs_input) 
-{
-    SimtVec4 out_color = {0};
-    ExecutionContext jit_ctx = {0};
-    
-    bind_resources_to_context(gpu, &jit_ctx);
-    
-    jit_ctx.location_in_buffers[0] = fs_in_color;  /* layout(location=0) in vec3 color */
-    jit_ctx.location_in_buffers[1] = fs_in_uv;     /* layout(location=1) in vec2 uv    */
-    jit_ctx.location_out_buffers[0] = &out_color;
-    gpu->fs_shader_func(&jit_ctx, NULL, fs_input);
-
-    for (int lane = 0; lane < 16; lane++) 
-    {
-        if (!(shade_mask & (1 << lane))) continue;
-
-        int px = x + (lane % 4);
-        int py = y + (lane / 4);
-
-        uint8_t r = color_to_u8(out_color.elem[0][lane]);
-        uint8_t g = color_to_u8(out_color.elem[1][lane]);
-        uint8_t b = color_to_u8(out_color.elem[2][lane]);
-        uint8_t a = color_to_u8(fs_in_color->elem[3][lane]);
-        put_pixel(gpu, px, py, RGBA_TO_UINT(r, g, b, a));
-    }
-}
-
-
-static void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, float u[3], float v[3], GpuState *gpu, int band_min_y, int band_max_y, RenderThreadArgs *args)
-{
-    TriangleContext ctx = {0};
-    float inv_area;
-
-    if (!setup_geometry_and_bounds(v0, v1, v2, gpu, band_min_y, band_max_y, &ctx, &inv_area)) 
-    {
-        return; 
-    }
-
-    setup_invariants(color, u, v, inv_area, &ctx);
-    BuiltinFragmentInput fs_in = {0};
-
-    for (int sy = ctx.stamp_min_y; sy <= ctx.stamp_max_y; sy += 4) 
-    {
-        // Correctly scale the vertical gradient by the cumulative row offset from stamp_min_y
-        float row_w0 = ctx.start_w0 + ((float)(sy - ctx.stamp_min_y)) * ctx.d_w0_dy;
-        float row_w1 = ctx.start_w1 + ((float)(sy - ctx.stamp_min_y)) * ctx.d_w1_dy;
-        float row_w2 = ctx.start_w2 + ((float)(sy - ctx.stamp_min_y)) * ctx.d_w2_dy;
-        float row_w3 = ctx.start_w3 + ((float)(sy - ctx.stamp_min_y)) * ctx.d_w3_dy;
-
-        for (int sx = ctx.stamp_min_x; sx <= ctx.stamp_max_x; sx += 4) 
-        {
-            float stamp_w0 = row_w0 + ((float)(sx - ctx.stamp_min_x)) * ctx.d_w0_dx;
-            float stamp_w1 = row_w1 + ((float)(sx - ctx.stamp_min_x)) * ctx.d_w1_dx;
-            float stamp_w2 = row_w2 + ((float)(sx - ctx.stamp_min_x)) * ctx.d_w2_dx;
-            float stamp_w3 = row_w3 + ((float)(sx - ctx.stamp_min_x)) * ctx.d_w3_dx;
-
-            float lane_w0[16], lane_w1[16], lane_w2[16], lane_w3[16];
-            
-            uint16_t exec_mask = evaluate_stamp_coverage(sx, sy, stamp_w0, stamp_w1, stamp_w2, stamp_w3, &ctx, lane_w0, lane_w1, lane_w2, lane_w3);
-
-            if (exec_mask == 0x0000) continue;
-
-            args->raster_exec_mask = exec_mask;
-
-            SimtVec4 fs_in_color = {0};
-            SimtVec2 fs_in_uv    = {0};
-            uint16_t shade_mask = process_z_and_interpolate(sx, sy, exec_mask, lane_w0, lane_w1, lane_w2, lane_w3, &ctx, gpu, &fs_in_color, &fs_in_uv);
-            if (shade_mask == 0x0000) continue;
-            
-            for (int lane = 0; lane < 16; lane++)
-            {
-                int dx = lane % 4;
-                int dy = lane / 4;
-
-                // Screen Space X and Y (centered at +0.5f)
-                fs_in.gl_FragCoord.elem[0][lane] = (float)(sx + dx) + 0.5f;
-                fs_in.gl_FragCoord.elem[1][lane] = (float)(sy + dy) + 0.5f;
-            }
-            execute_shader_and_write(sx, sy, shade_mask, gpu, &fs_in_color, &fs_in_uv, &fs_in);
-        }
-    }
-}
-static void worker_rasterize_bands_simt_impl(RenderThreadArgs *args) 
-{
-    GpuState local_gpu = *(args->orig_gpu);
-    GpuState *gpu = &local_gpu;
-
-    TransformedVertex *vertices = args->transformed_vertices;
-    Triangle *indices = TRIANGLES_TABLE(gpu);
-    uint32_t triangle_size = args->triangle_size;
-
-    int band_min_y = args->start_y;
-    int band_max_y = args->end_y - 1;
-
-    for (uint32_t i = 0; i < triangle_size; i++) 
-    {
-        Vec4 v0 = vertices[indices[i].a].pos;
-        Vec4 v1 = vertices[indices[i].b].pos;
-        Vec4 v2 = vertices[indices[i].c].pos;
-
-        Col3 color = {
-            .a_col = vertices[indices[i].a].color,
-            .b_col = vertices[indices[i].b].color,
-            .c_col = vertices[indices[i].c].color,
-        };
-
-        float u[3] = { vertices[indices[i].a].u, vertices[indices[i].b].u, vertices[indices[i].c].u };
-        float v[3] = { vertices[indices[i].a].v, vertices[indices[i].b].v, vertices[indices[i].c].v };
-
-        draw_triangle_simt_band(v0, v1, v2, color, u, v, gpu, band_min_y, band_max_y, args);
-    }
-}
 static void worker_wireframe_vertices_impl(RenderThreadArgs *args) 
 {
     GpuState local_gpu = *(args->orig_gpu);
@@ -726,7 +313,6 @@ static void worker_wireframe_edges_impl(RenderThreadArgs *args)
     }
 }
 
-QemuMutex jit_mutex;
 static void* worker_thread(void* arg) 
 {
     RenderThreadArgs* my_args = (RenderThreadArgs*)arg;
@@ -751,6 +337,8 @@ static void* worker_thread(void* arg)
             case TASK_TRANSFORM_VERTICES_SIMT: worker_transform_vertices_simt_impl(my_args); break;
             case TASK_RASTERIZE_BANDS:         worker_rasterize_bands_impl(my_args); break;
             case TASK_RASTERIZE_BANDS_SIMT:    worker_rasterize_bands_simt_impl(my_args); break;
+            case TASK_RASTERIZE_POINTS_SIMT:   worker_rasterize_points_simt_impl(my_args); break;
+            case TASK_RASTERIZE_LINES_SIMT:    worker_rasterize_lines_simt_impl(my_args); break;
             case TASK_WIREFRAME_VERTICES:      worker_wireframe_vertices_impl(my_args); break;
             case TASK_WIREFRAME_EDGES:         worker_wireframe_edges_impl(my_args); break;
             default: break;
@@ -802,9 +390,8 @@ static void dispatch_task(RenderTaskType task)
     qemu_mutex_unlock(&render.pool_mutex);
 }
 
-void gpu_render_triangles_simt(void *opaque)
+void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float point_size, float line_width)
 {
-    
     GpuState *gpu = opaque;
     if (gpu->gpu_mode == GPU_MODE_IDLE)
     {
@@ -813,10 +400,13 @@ void gpu_render_triangles_simt(void *opaque)
     gpu->gpu_mode = GPU_MODE_IDLE;
     
     uint32_t vertex_size = gpu->vbo_config.size;
-    uint32_t triangle_size = gpu->edge_config.size; 
+    if (vertex_size == 0)
+    {
+        gpu->gpu_mode = GPU_MODE_3D;
+        return;
+    }
 
     TransformedVertex *transformed_vertices = malloc(sizeof(TransformedVertex) * vertex_size);
-    
     if (!transformed_vertices)
     {
         gpu->gpu_mode = GPU_MODE_3D;
@@ -831,42 +421,105 @@ void gpu_render_triangles_simt(void *opaque)
     {
         render.args[i].orig_gpu = gpu;
         render.args[i].transformed_vertices = transformed_vertices;
+        render.args[i].primitive_type = prim_type;
+        render.args[i].point_size = point_size;
+        render.args[i].line_width = line_width;
         
-        // Distribute work by 16-lane blocks rather than single indexes
         render.args[i].start_block = i * chunk_v_blocks;
         render.args[i].end_block = (i == NUM_RENDER_THREADS - 1) ? total_vertex_blocks : (i + 1) * chunk_v_blocks;
     }
     dispatch_task(TASK_TRANSFORM_VERTICES_SIMT);
 
-    //PASS 2: Rasterization (SIMT 4x4 Pixel Stamps / 16 Lanes)
+    // PASS 2: Primitive Assembly & Rasterization Dispatch
     uint32_t height = gpu->height;
     uint32_t chunk_y = height / NUM_RENDER_THREADS;
     chunk_y = (chunk_y + 3) & ~3; 
 
-    for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+    if (prim_type == GPU_PRIM_POINTS)
     {
-        render.args[i].orig_gpu = gpu;
-        render.args[i].transformed_vertices = transformed_vertices;
-        render.args[i].triangle_size = triangle_size;
-        
-        render.args[i].start_y = i * chunk_y;
-        render.args[i].jit_ctx_fs = gpu->jit_ctx_fs;
-        uint32_t end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
-        if (end_y > height) 
+        for (int i = 0; i < NUM_RENDER_THREADS; i++) 
         {
-            end_y = height;
+            render.args[i].orig_gpu = gpu;
+            render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].primitive_type = prim_type;
+            render.args[i].point_size = point_size;
+            render.args[i].line_width = line_width;
+            
+            render.args[i].start_y = i * chunk_y;
+            render.args[i].jit_ctx_fs = gpu->jit_ctx_fs;
+            uint32_t end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
+            if (end_y > height) end_y = height;
+            render.args[i].end_y = end_y;
         }
-        render.args[i].end_y = end_y;
+        dispatch_task(TASK_RASTERIZE_POINTS_SIMT);
     }
-    dispatch_task(TASK_RASTERIZE_BANDS_SIMT);
+    else if (prim_type == GPU_PRIM_LINES || prim_type == GPU_PRIM_LINE_STRIP)
+    {
+        uint32_t line_count = 0;
+        Edge *assembled_lines = assemble_primitive_lines(gpu, prim_type, vertex_size, &line_count);
+
+        for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+        {
+            render.args[i].orig_gpu = gpu;
+            render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].assembled_triangles = (Triangle *)assembled_lines;
+            render.args[i].assembled_triangle_count = line_count;
+            render.args[i].primitive_type = prim_type;
+            render.args[i].point_size = point_size;
+            render.args[i].line_width = line_width;
+            
+            render.args[i].start_y = i * chunk_y;
+            render.args[i].jit_ctx_fs = gpu->jit_ctx_fs;
+            uint32_t end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
+            if (end_y > height) end_y = height;
+            render.args[i].end_y = end_y;
+        }
+        dispatch_task(TASK_RASTERIZE_LINES_SIMT);
+
+        if (assembled_lines) free(assembled_lines);
+    }
+    else /* GPU_PRIM_TRIANGLES, GPU_PRIM_TRIANGLE_STRIP, GPU_PRIM_TRIANGLE_FAN, GPU_PRIM_QUADS */
+    {
+        uint32_t tri_count = 0;
+        Triangle *assembled_triangles = assemble_primitive_triangles(gpu, prim_type, vertex_size, &tri_count);
+
+        for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+        {
+            render.args[i].orig_gpu = gpu;
+            render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].assembled_triangles = assembled_triangles;
+            render.args[i].assembled_triangle_count = tri_count;
+            render.args[i].primitive_type = prim_type;
+            render.args[i].point_size = point_size;
+            render.args[i].line_width = line_width;
+            
+            render.args[i].start_y = i * chunk_y;
+            render.args[i].jit_ctx_fs = gpu->jit_ctx_fs;
+            uint32_t end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
+            if (end_y > height) end_y = height;
+            render.args[i].end_y = end_y;
+        }
+        dispatch_task(TASK_RASTERIZE_BANDS_SIMT);
+
+        if (assembled_triangles) free(assembled_triangles);
+    }
 
     free(transformed_vertices);
     gpu->gpu_mode = GPU_MODE_3D;
 }
 
+void gpu_render_triangles_simt(void *opaque)
+{
+    GpuState *gpu = opaque;
+    float psize = gpu->point_size > 0.0f ? gpu->point_size : 1.0f;
+    float lwidth = gpu->line_width > 0.0f ? gpu->line_width : 1.0f;
+    GpuPrimitiveType prim = (gpu->primitive_type != 0) ? (GpuPrimitiveType)gpu->primitive_type : GPU_PRIM_TRIANGLES;
+    gpu_render_primitives_simt(opaque, prim, psize, lwidth);
+}
+
 void gpu_render_triangles(void *opaque)
 {
-      GpuState *gpu = opaque;
+    GpuState *gpu = opaque;
     if(gpu->gpu_mode == GPU_MODE_IDLE)
     {
         return;
@@ -876,7 +529,6 @@ void gpu_render_triangles(void *opaque)
     uint32_t vertex_size = gpu->vbo_config.size;
     uint32_t triangle_size = gpu->edge_config.size; 
 
-    // Allocate geometry cache for vertex pre-shading pass
     TransformedVertex *transformed_vertices = malloc(sizeof(TransformedVertex) * vertex_size);
     if (!transformed_vertices)
     {
@@ -884,7 +536,6 @@ void gpu_render_triangles(void *opaque)
         return;
     }
 
-    // pass 1: Run vertex transformations in parallel
     uint32_t chunk_v = vertex_size / NUM_RENDER_THREADS;
     for (int i = 0; i < NUM_RENDER_THREADS; i++) 
     {
@@ -895,7 +546,6 @@ void gpu_render_triangles(void *opaque)
     }
     dispatch_task(TASK_TRANSFORM_VERTICES);
 
-    // pass 2: Rasterize horizontal screen scanline bands in parallel
     uint32_t height = gpu->height;
     uint32_t chunk_y = height / NUM_RENDER_THREADS;
     for (int i = 0; i < NUM_RENDER_THREADS; i++) 
@@ -922,7 +572,6 @@ void gpu_render_wireframe(void *opaque)
     }
     gpu->gpu_mode = GPU_MODE_IDLE;
 
-
     debug_dump_edges(opaque);
     debug_dump_vertices(opaque);
     debug_dump_ubo(opaque);
@@ -936,7 +585,6 @@ void gpu_render_wireframe(void *opaque)
     uint32_t *px = malloc(sizeof(uint32_t) * vertex_size);
     uint32_t *py = malloc(sizeof(uint32_t) * vertex_size);
 
-    // pass 1: Run vertex transformations in parallel
     uint32_t chunk_v = vertex_size / NUM_RENDER_THREADS;
     for (int i = 0; i < NUM_RENDER_THREADS; i++) 
     {
@@ -950,7 +598,6 @@ void gpu_render_wireframe(void *opaque)
 
     DEBUG_PRINT("[Render Frame] Drawing lines\n");
 
-    // pass 2: Rasterize edges chunks in parallel
     uint32_t chunk_e = edges_size / NUM_RENDER_THREADS;
     for (int i = 0; i < NUM_RENDER_THREADS; i++)
     {
