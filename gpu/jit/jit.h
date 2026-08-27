@@ -29,10 +29,9 @@
 
 typedef enum {
     FRAGMENT_SHADER,
-    VERTEX_SHADER
+    VERTEX_SHADER,
+    COMPUTE_SHADER
 } shader_t;
-
-
 
 typedef enum {
     JIT_CFG_NONE = 0,
@@ -51,32 +50,23 @@ typedef struct {
     bool executed_true;
     LLVMValueRef cond;
     LLVMValueRef parent_mask;
-
-
 } JitControlConstruct;
-
 
 typedef float SimtFloat __attribute__((vector_size(64)));
 
 typedef struct
 {
-    // [4 x <16 x float>]
     SimtFloat elem[4];
-
 } SimtVec4;
 
 typedef struct
 {
-    // [3 x <16 x float>]
     SimtFloat elem[3];
-
 } SimtVec3;
 
 typedef struct
 {
-    // [4 x <16 x float>]
     SimtFloat elem[4];
-
 } SimtVec2;
 
 typedef struct {
@@ -84,7 +74,7 @@ typedef struct {
 } SimtMat4;
 
 typedef struct {
-    SimtVec3 col[3];  // 3 columns, each 192 bytes = 576 bytes total
+    SimtVec3 col[3];
 } SimtMat3;
 
 typedef struct
@@ -93,22 +83,26 @@ typedef struct
     SimtFloat gl_PointSize;
     SimtFloat gl_ClipDistance;
     SimtFloat gl_CullDistance;
-
 } BuiltinVertexOutput;
+
 typedef struct
 {
-    // vec4 gl_FragCoord
-    // x = pixel x
-    // y = pixel y
-    // z = depth
-    // w = 1/wclip
     SimtVec4 gl_FragCoord;
-
     SimtFloat gl_FrontFacing;
     SimtVec4 gl_PointCoord;
     SimtFloat gl_SampleID;
-
 } BuiltinFragmentInput;
+
+typedef struct
+{
+    SimtVec3 gl_GlobalInvocationID;
+    SimtVec3 gl_LocalInvocationID;
+    SimtFloat gl_LocalInvocationIndex;
+    SimtVec3 gl_WorkGroupID;
+    SimtVec3 gl_NumWorkGroups;
+    SimtVec3 gl_WorkGroupSize;
+} BuiltinComputeInput;
+
 typedef struct {
     void* binding_buffers[MAX_BINDINGS]; 
     void* location_in_buffers[MAX_ATTRIBUTES];
@@ -192,6 +186,9 @@ typedef struct ShaderInfo {
     uint32_t execution_model;
     ShaderInterface interface[MAX_ATTRIBUTES+MAX_BINDINGS];
     uint32_t interface_count;
+    uint32_t local_size_x;
+    uint32_t local_size_y;
+    uint32_t local_size_z;
 } ShaderInfo;
 
 
@@ -221,6 +218,7 @@ struct JitContext{
     LLVMValueRef vs_data;
     LLVMTypeRef  vs_data_type;   
     LLVMTypeRef  fs_data_type;   
+    LLVMTypeRef  cs_data_type;
 
     LLVMExecutionEngineRef engine;
     LLVMBasicBlockRef current_block;
@@ -241,6 +239,7 @@ struct JitContext{
     LLVMValueRef env_arg_param;   /* ExecutionContext* parameter */
     LLVMValueRef vs_data_param;   /* BuiltinVertexOutput* parameter */
     LLVMValueRef fs_data_param; 
+    LLVMValueRef cs_data_param;   /* BuiltinComputeInput* parameter */
 
     LLVMOrcThreadSafeContextRef ts_ctx;
 
@@ -256,7 +255,7 @@ struct JitContext{
 };
 
 /* Jitted function now takes pointers to per-invocation state to be thread-safe */
-typedef void (*jitted_func_t)(ExecutionContext*, BuiltinVertexOutput*, BuiltinFragmentInput*);
+typedef void (*jitted_func_t)(ExecutionContext*, BuiltinVertexOutput*, BuiltinFragmentInput*, BuiltinComputeInput*);
 
 void jit_call_printf(JitContext* ctx, const char* fmt, LLVMValueRef* args, unsigned num_args);
 void jit_call_printf_simt(JitContext* ctx, const char* fmt, LLVMValueRef vec_val);

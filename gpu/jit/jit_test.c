@@ -395,6 +395,35 @@ TEST(cfg_loop_if, "out/cfg_loop_if.spv", VERTEX_SHADER, {
     ASSERT_EQ_VEC4(glPos, expected);
 })
 
+TEST(compute_vec_add, "out/vec_add.spv", COMPUTE_SHADER, {
+    SimtFloat input_a = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f};
+    SimtFloat input_b = {10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f, 70.0f, 80.0f, 90.0f, 100.0f, 110.0f, 120.0f, 130.0f, 140.0f, 150.0f, 160.0f};
+    SimtFloat output_c = {0};
+
+    jit_ctx->binding_buffers[0] = &input_a;
+    jit_ctx->binding_buffers[1] = &input_b;
+    jit_ctx->binding_buffers[2] = &output_c;
+
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+        cs_in.gl_WorkGroupID.elem[0][i] = 0.0f;
+        cs_in.gl_NumWorkGroups.elem[0][i] = 1.0f;
+        cs_in.gl_WorkGroupSize.elem[0][i] = 16.0f;
+    }
+
+    RUN_JIT();
+
+    SimtFloat expected_c = {11.0f, 22.0f, 33.0f, 44.0f, 55.0f, 66.0f, 77.0f, 88.0f, 99.0f, 110.0f, 121.0f, 132.0f, 143.0f, 154.0f, 165.0f, 176.0f};
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        if (output_c[i] != expected_c[i]) {
+            printf("assert failed at lane %d: %f vs expected %f\n", i, output_c[i], expected_c[i]);
+            return 1;
+        }
+    }
+})
+
 int run_compilation_script(void) 
 {
     printf("--- Running compilation script ---\n");

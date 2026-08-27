@@ -34,7 +34,7 @@
 #define CREATE_BINDING(attribute, value) jit_ctx->binding_buffers[attribute] = &value;
 #define SET_GL_FRAGCORD(c) fs_in.gl_FragCoord = c;
 #define GET_GL_POS() SimtVec4 glPos = vs_out.gl_Position;
-#define RUN_JIT() func(jit_ctx, &vs_out, &fs_in);
+#define RUN_JIT() func(jit_ctx, &vs_out, &fs_in, &cs_in);
 
 #define PRINT_VEC3(caption, name)  \
     printf("%s", caption); \
@@ -145,6 +145,7 @@ void register_test(const char* name, TestFunc func)
         ExecutionContext *jit_ctx = &jit_ctx_storage; \
         BuiltinVertexOutput vs_out = {0}; \
         BuiltinFragmentInput fs_in = {0}; \
+        BuiltinComputeInput cs_in = {0}; \
         __VA_ARGS__ ; \
         free_jit(&ctx); \
         printf("Test passed! Output matches expected results.\n"); \

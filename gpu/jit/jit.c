@@ -413,6 +413,16 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpEntryPoint:
             handle_op_entry_point(ctx, operands, operand_count);
             break;
+        case SpvOpExecutionMode:
+            if (operand_count >= 5 && operands[1] == 17 /* SpvExecutionModeLocalSize */) {
+                ctx->shader_info.local_size_x = operands[2];
+                ctx->shader_info.local_size_y = operands[3];
+                ctx->shader_info.local_size_z = operands[4];
+            }
+            break;
+        case SpvOpControlBarrier:
+            fprintf(stderr, "GPU JIT Error: OpControlBarrier is not supported in Phase 1 compute shaders.\n");
+            break;
         case SpvOpTypeImage:
             handle_op_type_image(ctx, res_id, operands);
             break;
@@ -682,6 +692,7 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     ctx->env_arg_param = NULL;
     ctx->vs_data_param = NULL;
     ctx->fs_data_param = NULL;
+    ctx->cs_data_param = NULL;
 
     LLVMTypeRef float_type = LLVMFloatTypeInContext(ctx->context);
     // <16 x float>
@@ -696,6 +707,10 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     // SimtVec4 = [4 x <16 x float>]
     LLVMTypeRef simt_vec4_type =
         LLVMArrayType(simt_float, 4);
+
+    // SimtVec3 = [3 x <16 x float>]
+    LLVMTypeRef simt_vec3_type =
+        LLVMArrayType(simt_float, 3);
 
     // BuiltinVertexOutput
     LLVMTypeRef builtin_fields[] = {
@@ -721,9 +736,6 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     };
 
     ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 4, 0);
-    /* Note: module-level globals for ExecutionContext and vs_data are no longer created.
-       Per-invocation pointers are passed as function parameters (env_arg_param / vs_data_param).
-    */
 
     LLVMTypeRef vs_data_fields[] = {
         simt_vec4_type,// gl_Position (Index 0)
@@ -739,6 +751,16 @@ void init_jit(JitContext* ctx,shader_t shader_type)
         simt_float     // gl_SampleID (Index 3)
     };
     ctx->fs_data_type = LLVMStructTypeInContext(ctx->context, fs_data_fields, 4, 0);
+
+    LLVMTypeRef cs_data_fields[] = {
+        simt_vec3_type, // gl_GlobalInvocationID (Index 0)
+        simt_vec3_type, // gl_LocalInvocationID (Index 1)
+        simt_float,     // gl_LocalInvocationIndex (Index 2)
+        simt_vec3_type, // gl_WorkGroupID (Index 3)
+        simt_vec3_type, // gl_NumWorkGroups (Index 4)
+        simt_vec3_type  // gl_WorkGroupSize (Index 5)
+    };
+    ctx->cs_data_type = LLVMStructTypeInContext(ctx->context, cs_data_fields, 6, 0);
 
     if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 
     {
