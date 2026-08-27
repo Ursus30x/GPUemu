@@ -310,6 +310,36 @@ struct GOP_3D_PROTOCOL {
 
 /* ----------------------------------------------------------------------- */
 
+STATIC
+inline
+VOID
+EFIAPI
+Gop3dCalculateMipMapOffsets(
+  IN OUT GOP_3D_TEXTURE_DESC *Desc
+  )
+{
+  if (Desc == NULL) return;
+
+  UINT32 Width = Desc->Width > 0 ? Desc->Width : 1;
+  UINT32 Height = Desc->Height > 0 ? Desc->Height : 1;
+  UINT32 Depth = Desc->Depth > 0 ? Desc->Depth : 1;
+  UINT32 Channels = Desc->Channels > 0 ? Desc->Channels : 4;
+  UINT32 NumLevels = Desc->NumMipLevels > 0 ? Desc->NumMipLevels : 1;
+
+  Desc->MipData[0] = 0;
+  UINT32 CurrentOffset = Width * Height * Depth * Channels;
+
+  for (UINT32 k = 1; k < NumLevels && k < MAX_MIP_LEVELS; k++)
+  {
+    UINT32 Wk = Width >> k;  if (Wk == 0) Wk = 1;
+    UINT32 Hk = Height >> k; if (Hk == 0) Hk = 1;
+    UINT32 Dk = Depth >> k;  if (Dk == 0) Dk = 1;
+
+    Desc->MipData[k] = CurrentOffset;
+    CurrentOffset += Wk * Hk * Dk * Channels;
+  }
+}
+
 extern EFI_GUID gGop3dProtocolGuid;
 
 #endif

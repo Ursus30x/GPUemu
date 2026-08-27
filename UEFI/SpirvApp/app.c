@@ -492,6 +492,294 @@ VOID Test3DObszar()
     FpsCounterShowStats();
 }
 
+VOID Test3DVolumeSimt()
+{
+    EFI_INPUT_KEY Key;
+    #include "volume3d_vs.h"
+    #include "volume3d_fs.h"
+
+    Vec3 vertices[] = {
+        // --- Front Face (z=+0.7) ---
+        {-0.7f, -0.7f,  0.7f, 0x0D00D0, 0.0f, 0.0f},
+        { 0.7f, -0.7f,  0.7f, 0xFD0000, 1.0f, 0.0f},
+        { 0.7f,  0.7f,  0.7f, 0xFFDF00, 1.0f, 1.0f},
+        {-0.7f,  0.7f,  0.7f, 0x00FF00, 0.0f, 1.0f},
+
+        // --- Back Face (z=-0.7) ---
+        { 0.7f, -0.7f, -0.7f, 0x00D000, 0.0f, 0.0f},
+        {-0.7f, -0.7f, -0.7f, 0xFFD000, 1.0f, 0.0f},
+        {-0.7f,  0.7f, -0.7f, 0xDFFF00, 1.0f, 1.0f},
+        { 0.7f,  0.7f, -0.7f, 0xD0FF00, 0.0f, 1.0f},
+
+        // --- Left Face (x=-0.7) ---
+        {-0.7f, -0.7f, -0.7f, 0x000000, 0.0f, 0.0f},
+        {-0.7f, -0.7f,  0.7f, 0xFD0000, 1.0f, 0.0f},
+        {-0.7f,  0.7f,  0.7f, 0xFFFD00, 1.0f, 1.0f},
+        {-0.7f,  0.7f, -0.7f, 0x00FF00, 0.0f, 1.0f},
+
+        // --- Right Face (x=+0.7) ---
+        { 0.7f, -0.7f,  0.7f, 0x000000, 0.0f, 0.0f},
+        { 0.7f, -0.7f, -0.7f, 0xFF0D00, 1.0f, 0.0f},
+        { 0.7f,  0.7f, -0.7f, 0xFFFF00, 1.0f, 1.0f},
+        { 0.7f,  0.7f,  0.7f, 0x00FF00, 0.0f, 1.0f},
+
+        // --- Top Face (y=+0.7) ---
+        {-0.7f,  0.7f,  0.7f, 0x000000, 0.0f, 0.0f},
+        { 0.7f,  0.7f,  0.7f, 0xFF0000, 1.0f, 0.0f},
+        { 0.7f,  0.7f, -0.7f, 0xFFFF00, 1.0f, 1.0f},
+        {-0.7f,  0.7f, -0.7f, 0x00FF00, 0.0f, 1.0f},
+
+        // --- Bottom Face (y=-0.7) ---
+        {-0.7f, -0.7f, -0.7f, 0x000000, 0.0f, 0.0f},
+        { 0.7f, -0.7f, -0.7f, 0xFF0000, 1.0f, 0.0f},
+        { 0.7f, -0.7f,  0.7f, 0xFFFF00, 1.0f, 1.0f},
+        {-0.7f, -0.7f,  0.7f, 0x00FF00, 0.0f, 1.0f}
+    };
+
+    Triangle indices[] = {
+        {0, 1, 2}, {0, 2, 3},
+        {4, 5, 6}, {4, 6, 7},
+        {8, 9, 10}, {8, 10, 11},
+        {12, 13, 14}, {12, 14, 15},
+        {16, 17, 18}, {16, 18, 19},
+        {20, 21, 22}, {20, 22, 23}
+    };
+    UINT32 IndexCount = (sizeof(indices) / sizeof(Triangle)) * 2;
+
+    // Build procedural 4x4x4 3D Volume texture
+    UINT8 vol3d[4 * 4 * 4 * 4];
+    for (UINT32 z = 0; z < 4; z++) {
+        for (UINT32 y = 0; y < 4; y++) {
+            for (UINT32 x = 0; x < 4; x++) {
+                UINT32 idx = ((z * 4 + y) * 4 + x) * 4;
+                vol3d[idx + 0] = (UINT8)(x * 85);
+                vol3d[idx + 1] = (UINT8)(y * 85);
+                vol3d[idx + 2] = (UINT8)(z * 85);
+                vol3d[idx + 3] = 255;
+            }
+        }
+    }
+
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
+    VRAMADDR hVBO, hIBO, hVS, hFS, hTexData, hTexDesc;
+    VRAMADDR hMVP1 = 0;
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_volume_vs, sizeof(bin_volume_vs), &hVS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_volume_3d_fs, sizeof(bin_volume_3d_fs), &hFS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTexture, vol3d, sizeof(vol3d), &hTexData);
+
+    GOP_3D_TEXTURE_DESC tex_desc;
+    SetMem(&tex_desc, sizeof(tex_desc), 0);
+    tex_desc.DataAddr = hTexData;
+    tex_desc.Width = 4;
+    tex_desc.Height = 4;
+    tex_desc.Depth = 4;
+    tex_desc.Channels = 4;
+    tex_desc.Dimention = Gop3dTexture3D;
+    tex_desc.Filter = Gop3dFilterLinear;
+    tex_desc.Wrap = Gop3dWrapRepeat;
+    tex_desc.WrapU = Gop3dWrapRepeat;
+    tex_desc.WrapV = Gop3dWrapRepeat;
+    tex_desc.WrapW = Gop3dWrapRepeat;
+    tex_desc.NumMipLevels = 1;
+    tex_desc.MaxAnisotropy = 1.0f;
+    tex_desc.MinLod = 0.0f;
+    tex_desc.MaxLod = 0.0f;
+
+    Gop3dCalculateMipMapOffsets(&tex_desc);
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTextureDesc, &tex_desc, sizeof(tex_desc), &hTexDesc);
+    float angle = 0.0f;
+    Print(L"Animating 3D Volume Texture Demo... Press Key to Exit.\n");
+
+    FpsCounterStart();
+    mTimerInit = FALSE;
+
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        float time;
+        GetTimeSeconds(&time);
+
+        float rotation_period = 2.0f;
+        angle = (2.0f * PI * time) / rotation_period;
+
+        Mat4 ry, rx, trans, proj;
+        Mat4 model1, mvp1;
+
+        Mat4_RotateY(angle, &ry);
+        Mat4_RotateX(0.3f, &rx);
+        Mat4_Translate(0.0f, 0.0f, 4.5f, &trans);
+        Mat4_Perspective(PI/3.0f, 640.0f/480.0f, 1.0f, 10.0f, &proj);
+
+        Mat4_Mul(&ry, &rx, &model1);
+        Mat4_Mul(&trans, &model1, &model1);
+        Mat4_Mul(&proj, &model1, &mvp1);
+
+        SimtMat4UBO simt_mvp1;
+        Mat4_ToSimtUBO(&mvp1, &simt_mvp1);
+
+        if (hMVP1 == 0) {
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        } else {
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        }
+
+        mGOP3D->GpuCmdBegin(mGOP3D);
+        mGOP3D->GpuClearFrame(mGOP3D, 0xFF050515);
+        
+        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_volume_vs));
+        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_volume_3d_fs));
+        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 24);
+        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 12);
+        mGOP3D->GpuBindTexture(mGOP3D, 1, hTexDesc);
+
+        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);
+
+        FpsCounterTick();
+    }
+
+    FpsCounterStop();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTexData);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTexDesc);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);
+
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+
+    FpsCounterShowStats();
+}
+
+VOID TestSmokeVolume3D(VOID)
+{
+    EFI_INPUT_KEY Key;
+
+    // Shader header files compiled from GLSL/SPIR-V
+    #include "smoke_vs.h"
+    #include "smoke_fs.h"
+
+    // Full-screen quad geometry
+    Vec3 vertices[] = {
+        {-1.0f, -1.0f, 0.0f, 0xFFFFFFFF, 0.0f, 0.0f},
+        { 1.0f, -1.0f, 0.0f, 0xFFFFFFFF, 1.0f, 0.0f},
+        {-1.0f,  1.0f, 0.0f, 0xFFFFFFFF, 0.0f, 1.0f},
+        { 1.0f,  1.0f, 0.0f, 0xFFFFFFFF, 1.0f, 1.0f}
+    };
+
+    Triangle indices[] = {
+        {0, 1, 2},
+        {1, 3, 2}
+    };
+    UINT32 IndexCount = 6;
+
+    // --- Procedural 3D Volume Texture Generation (32x32x32 RGBA8) ---
+
+    #include "smoke_volume.h"
+    // --- GPU Mode Initialization & Asset Allocations ---
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
+    VRAMADDR hVBO = 0, hIBO = 0, hVS = 0, hFS = 0, hTexData = 0, hTexDesc = 0, hUBO = 0;
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex, indices, sizeof(indices), &hIBO);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTexture, vol3d, sizeof(vol3d), &hTexData);
+
+    // --- 3D Texture Descriptor Setup ---
+    GOP_3D_TEXTURE_DESC tex_desc;
+    SetMem(&tex_desc, sizeof(tex_desc), 0);
+    tex_desc.DataAddr     = hTexData;
+    tex_desc.Width        = VOL_SIZE;
+    tex_desc.Height       = VOL_SIZE;
+    tex_desc.Depth        = VOL_SIZE;
+    tex_desc.Channels     = 4;
+    tex_desc.Dimention    = Gop3dTexture3D;
+    tex_desc.Filter       = Gop3dFilterLinear;
+    tex_desc.Wrap         = Gop3dWrapRepeat;
+    tex_desc.WrapU        = Gop3dWrapRepeat;
+    tex_desc.WrapV        = Gop3dWrapRepeat;
+    tex_desc.WrapW        = Gop3dWrapRepeat;
+    tex_desc.NumMipLevels = 1;
+    tex_desc.MaxAnisotropy= 1.0f;
+
+    Gop3dCalculateMipMapOffsets(&tex_desc);
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTextureDesc, &tex_desc, sizeof(tex_desc), &hTexDesc);
+
+    // Uniform buffer struct carrying vectorized SIMT lanes for u_Time
+    struct UniformBuffer {
+        float u_Time[16];
+    } uniform;
+
+    Print(L"Rendering OpenGL 3D Texture Volume Demo... Press any key to exit.\n");
+
+    FpsCounterStart();
+    mTimerInit = FALSE;
+
+    // --- Render Loop ---
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        float time = 0.0f;
+        GetTimeSeconds(&time);
+
+        // Populate time uniform across SIMT execution lanes
+        for (UINT32 i = 0; i < 16; i++) {
+            uniform.u_Time[i] = time;
+        }
+
+        if (hUBO == 0) {
+            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
+        } else {
+            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
+        }
+
+        mGOP3D->GpuCmdBegin(mGOP3D);
+        mGOP3D->GpuClearFrame(mGOP3D, 0xFF1E1E1F); // Dark clear color matching OpenGL demo background[cite: 2]
+
+        // Enable Alpha Blending (SrcAlpha, OneMinusSrcAlpha)[cite: 2]
+        mGOP3D->GpuSetBlendState(mGOP3D, TRUE, Gop3dBlendFactorSrcAlpha, Gop3dBlendFactorOneMinusSrcAlpha);
+        mGOP3D->GpuSetDepthWrite(mGOP3D, FALSE);
+
+        // Bind Pipeline States
+        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 4);
+        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 2);
+        mGOP3D->GpuBindTexture(mGOP3D, 1, hTexDesc);
+        mGOP3D->GpuBindUBO(mGOP3D, hUBO, sizeof(struct UniformBuffer));
+
+        // Draw quad
+        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);
+
+        FpsCounterTick();
+    }
+
+    // --- Cleanup ---
+    FpsCounterStop();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTexData);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTexDesc);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hUBO);
+
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+
+    FpsCounterShowStats();
+}
 VOID TestBlendingSimt() {
     EFI_INPUT_KEY Key;
 
@@ -804,7 +1092,7 @@ EFI_STATUS EFIAPI Test() {
 
     WAIT_FOR_KEYPRESS()
 
-    TestPrimitivesSimt();
+    TestSmokeVolume3D();
 
     Print(L"Press key for SPIR-V 3D SIMT Triangles Demo...\n");
 
@@ -824,6 +1112,16 @@ EFI_STATUS EFIAPI Test() {
 
     TestBlendingSimt();
     
+    WAIT_FOR_KEYPRESS()
+
+    Print(L"Press key for SPIR-V 3D Volume Texture & Anisotropic Demo...\n");
+
+    Test3DVolumeSimt();
+
+    WAIT_FOR_KEYPRESS()
+
+    TestSmokeVolume3D();
+
     WAIT_FOR_KEYPRESS()
 
     DEBUG((EFI_D_INFO, "Test end\n"));

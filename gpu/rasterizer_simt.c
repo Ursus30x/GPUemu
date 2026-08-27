@@ -32,9 +32,32 @@ static void bind_resources_to_context(GpuState *gpu, ExecutionContext *ectx)
                 gpu->textures[slot].data = (void *)(gpu->vram_ptr + vram_desc->data_vram_addr);
                 gpu->textures[slot].width = vram_desc->width;
                 gpu->textures[slot].height = vram_desc->height;
+                gpu->textures[slot].depth = vram_desc->depth;
                 gpu->textures[slot].channels = vram_desc->channels;
+                gpu->textures[slot].dimension = (GpuTextureDimension)vram_desc->dimension;
                 gpu->textures[slot].filter = (FilterMode)vram_desc->filter;
                 gpu->textures[slot].wrap = (WrapMode)vram_desc->wrap;
+                gpu->textures[slot].wrap_u = (WrapMode)vram_desc->wrap_u;
+                gpu->textures[slot].wrap_v = (WrapMode)vram_desc->wrap_v;
+                gpu->textures[slot].wrap_w = (WrapMode)vram_desc->wrap_w;
+                gpu->textures[slot].num_mip_levels = vram_desc->num_mip_levels;
+                gpu->textures[slot].max_anisotropy = vram_desc->max_anisotropy;
+                gpu->textures[slot].min_lod = vram_desc->min_lod;
+                gpu->textures[slot].max_lod = vram_desc->max_lod;
+                gpu->textures[slot].lod_bias = vram_desc->lod_bias;
+
+                for (int lvl = 0; lvl < vram_desc->num_mip_levels && lvl < MAX_MIP_LEVELS; lvl++)
+                {
+                    uint32_t mip_vram = vram_desc->data_vram_addr + vram_desc->mip_vram_addr[lvl];
+                    if (mip_vram < GPU_VRAM_SIZE)
+                    {
+                        gpu->textures[slot].mip_addr[lvl] = (void *)(gpu->vram_ptr + mip_vram);
+                    }
+                    else
+                    {
+                        gpu->textures[slot].mip_addr[lvl] = gpu->textures[slot].data;
+                    }
+                }
                 ectx->binding_buffers[slot] = &gpu->textures[slot];
             }
             else
@@ -292,35 +315,7 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
     SimtVec4 out_color = {0};
     ExecutionContext jit_ctx = {0};
     
-    if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0)
-    {
-        jit_ctx.binding_buffers[0] = gpu->vram_ptr + gpu->uinform_config.addr;
-    }
-    for (int slot = 1; slot < MAX_BINDINGS; slot++)
-    {
-        if (gpu->texture_desc_addr[slot] != 0 && gpu->texture_desc_addr[slot] + sizeof(GpuTextureDescriptorVram) <= GPU_VRAM_SIZE)
-        {
-            GpuTextureDescriptorVram *vram_desc = (GpuTextureDescriptorVram *)(gpu->vram_ptr + gpu->texture_desc_addr[slot]);
-            if (vram_desc->data_vram_addr != 0 && vram_desc->data_vram_addr < GPU_VRAM_SIZE)
-            {
-                gpu->textures[slot].data = (void *)(gpu->vram_ptr + vram_desc->data_vram_addr);
-                gpu->textures[slot].width = vram_desc->width;
-                gpu->textures[slot].height = vram_desc->height;
-                gpu->textures[slot].channels = vram_desc->channels;
-                gpu->textures[slot].filter = (FilterMode)vram_desc->filter;
-                gpu->textures[slot].wrap = (WrapMode)vram_desc->wrap;
-                jit_ctx.binding_buffers[slot] = &gpu->textures[slot];
-            }
-            else
-            {
-                jit_ctx.binding_buffers[slot] = NULL;
-            }
-        }
-        else
-        {
-            jit_ctx.binding_buffers[slot] = NULL;
-        }
-    }
+    bind_resources_to_context(gpu, &jit_ctx);
     
     jit_ctx.location_in_buffers[0] = fs_in_color;
     jit_ctx.location_in_buffers[1] = fs_in_uv;

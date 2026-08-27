@@ -417,6 +417,86 @@ int run_compilation_script(void)
 }
 
 
+void test_3d_volume_and_anisotropic(void)
+{
+    printf("--- Running 3D Volume, LOD Mipmapping & Anisotropic Tests ---\n");
+
+    // 1. Test 3D Volume Texture Sampling (2x2x2)
+    uint8_t tex_3d[2 * 2 * 2 * 4];
+    for (int z = 0; z < 2; z++) {
+        for (int y = 0; y < 2; y++) {
+            for (int x = 0; x < 2; x++) {
+                int idx = ((z * 2 + y) * 2 + x) * 4;
+                tex_3d[idx + 0] = (uint8_t)(x * 255);
+                tex_3d[idx + 1] = (uint8_t)(y * 255);
+                tex_3d[idx + 2] = (uint8_t)(z * 255);
+                tex_3d[idx + 3] = 255;
+            }
+        }
+    }
+
+    TextureSamplerDescriptor desc_3d = {
+        .data = tex_3d,
+        .width = 2,
+        .height = 2,
+        .depth = 2,
+        .channels = 4,
+        .dimension = TEXTURE_DIM_3D,
+        .filter = FILTER_LINEAR,
+        .wrap_u = WRAP_CLAMP,
+        .wrap_v = WRAP_CLAMP,
+        .wrap_w = WRAP_CLAMP,
+        .num_mip_levels = 1,
+        .max_anisotropy = 1.0f
+    };
+
+    float u[SIMT_WIDTH] = {0.5f}, v[SIMT_WIDTH] = {0.5f}, w[SIMT_WIDTH] = {0.5f};
+    float out_r[SIMT_WIDTH], out_g[SIMT_WIDTH], out_b[SIMT_WIDTH], out_a[SIMT_WIDTH];
+
+    sample_texture_generic_simt(&desc_3d, u, v, w, NULL, NULL, NULL, NULL, NULL, NULL, NULL, out_r, out_g, out_b, out_a);
+
+    printf("[3D Volume Test] Center (0.5, 0.5, 0.5) -> R: %.3f, G: %.3f, B: %.3f (Expected ~0.500)\n", out_r[0], out_g[0], out_b[0]);
+
+    // 2. Test Mipmap LOD selection (Level 0: 4x4 red, Level 1: 2x2 green, Level 2: 1x1 blue)
+    uint8_t mip0[4 * 4 * 4], mip1[2 * 2 * 4], mip2[1 * 1 * 4];
+    memset(mip0, 0, sizeof(mip0)); for (int i = 0; i < 4*4; i++) { mip0[i*4] = 255; mip0[i*4+3] = 255; }
+    memset(mip1, 0, sizeof(mip1)); for (int i = 0; i < 2*2; i++) { mip1[i*4+1] = 255; mip1[i*4+3] = 255; }
+    memset(mip2, 0, sizeof(mip2)); for (int i = 0; i < 1*1; i++) { mip2[i*4+2] = 255; mip2[i*4+3] = 255; }
+
+    TextureSamplerDescriptor desc_lod = {
+        .data = mip0,
+        .width = 4,
+        .height = 4,
+        .depth = 1,
+        .channels = 4,
+        .dimension = TEXTURE_DIM_2D,
+        .filter = FILTER_LINEAR_MIPMAP_NEAREST,
+        .wrap_u = WRAP_REPEAT,
+        .wrap_v = WRAP_REPEAT,
+        .num_mip_levels = 3,
+        .max_anisotropy = 1.0f,
+        .min_lod = 0.0f,
+        .max_lod = 2.0f
+    };
+    desc_lod.mip_addr[0] = mip0;
+    desc_lod.mip_addr[1] = mip1;
+    desc_lod.mip_addr[2] = mip2;
+
+    float exp_lod[SIMT_WIDTH] = {1.0f}; // Explicit LOD 1 => Green
+    sample_texture_generic_simt(&desc_lod, u, v, w, NULL, NULL, NULL, NULL, NULL, NULL, exp_lod, out_r, out_g, out_b, out_a);
+
+    printf("[LOD Mipmap Test] Explicit LOD 1.0 -> R: %.3f, G: %.3f, B: %.3f (Expected Green G=1.0)\n", out_r[0], out_g[0], out_b[0]);
+
+    // 3. Test Anisotropic Filtering
+    TextureSamplerDescriptor desc_aniso = desc_lod;
+    desc_aniso.max_anisotropy = 16.0f;
+    desc_aniso.filter = FILTER_LINEAR_MIPMAP_LINEAR;
+
+    float du_dx[SIMT_WIDTH] = {0.25f}; // Oblique stretch
+    sample_texture_generic_simt(&desc_aniso, u, v, w, du_dx, NULL, NULL, NULL, NULL, NULL, NULL, out_r, out_g, out_b, out_a);
+    printf("[Anisotropic Test] MaxAniso 16.0 -> Sample executed successfully R: %.3f, G: %.3f, B: %.3f\n", out_r[0], out_g[0], out_b[0]);
+}
+
 void run_test_suite(void) 
 {
     printf("--- Starting Test Runner ---\n");
@@ -440,7 +520,7 @@ void run_test_suite(void)
     printf("---- %d tests passed out of %d ----\n", passed, test_count);
     printf("-----------------------------------\n");
 
-    
+    test_3d_volume_and_anisotropic();
 }
 
 int main(void)

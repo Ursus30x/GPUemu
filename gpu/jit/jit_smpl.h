@@ -60,10 +60,36 @@ void handle_op_image_fetch(JitContext *ctx, uint32_t res_id, uint32_t *operands)
 void handle_op_image_query_size_lod(JitContext *ctx, uint32_t res_id, uint32_t *operands);
 void handle_op_image_query_size(JitContext *ctx, uint32_t res_id, uint32_t *operands);
 
+void sample_texture_generic_simt(
+    const TextureSamplerDescriptor *desc,
+    const float *u_coords,
+    const float *v_coords,
+    const float *w_coords,
+    const float *du_dx, const float *dv_dx, const float *dw_dx,
+    const float *du_dy, const float *dv_dy, const float *dw_dy,
+    const float *explicit_lod,
+    float *out_r,
+    float *out_g,
+    float *out_b,
+    float *out_a
+);
+
 void sample_texture_2d_simt(
     const TextureSamplerDescriptor *desc,
     const float *u_coords,
     const float *v_coords,
+    float *out_r,
+    float *out_g,
+    float *out_b,
+    float *out_a
+);
+
+void fetch_texture_generic_simt(
+    const TextureSamplerDescriptor *desc,
+    const int32_t *x_coords,
+    const int32_t *y_coords,
+    const int32_t *z_coords,
+    const int32_t *lod_coords,
     float *out_r,
     float *out_g,
     float *out_b,
