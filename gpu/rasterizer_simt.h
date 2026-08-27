@@ -9,5 +9,6 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args);
 void worker_rasterize_bands_simt_impl(RenderThreadArgs *args);
 void worker_rasterize_points_simt_impl(RenderThreadArgs *args);
 void worker_rasterize_lines_simt_impl(RenderThreadArgs *args);
+void worker_compute_simt_impl(RenderThreadArgs *args);
 
 #endif

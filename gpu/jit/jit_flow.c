@@ -317,6 +317,33 @@ void resolve_pending_globals(JitContext* ctx)
                 );
                 set_val(ctx, g->res_id, fs_in_addr);
             }
+            else if(ctx->shader_type == COMPUTE_SHADER)
+            {
+                SpvDecoInfo* d = &ctx->decorations[g->res_id];
+                int32_t builtin = d->builtin;
+                uint32_t cs_field_idx = 0;
+                if (builtin == SpvBuiltInGlobalInvocationId) cs_field_idx = 0;
+                else if (builtin == SpvBuiltInLocalInvocationId) cs_field_idx = 1;
+                else if (builtin == SpvBuiltInLocalInvocationIndex) cs_field_idx = 2;
+                else if (builtin == SpvBuiltInWorkgroupId) cs_field_idx = 3;
+                else if (builtin == SpvBuiltInNumWorkgroups) cs_field_idx = 4;
+                else if (builtin == SpvBuiltInWorkgroupSize) cs_field_idx = 5;
+
+                LLVMValueRef cs_indices[] = {
+                    LLVMConstInt(ctx->int_type, 0, 0),
+                    LLVMConstInt(ctx->int_type, cs_field_idx, 0)
+                };
+                LLVMValueRef cs_data = ctx->cs_data_param;
+                LLVMValueRef cs_in_addr = LLVMBuildInBoundsGEP2(
+                    ctx->builder,
+                    ctx->cs_data_type,
+                    cs_data,
+                    cs_indices,
+                    2,
+                    "cs_in_ptr"
+                );
+                set_val(ctx, g->res_id, cs_in_addr);
+            }
         }
         else 
         {
@@ -350,21 +377,24 @@ void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
 
     if (ctx->func == NULL)
     {
-        LLVMTypeRef param_types[3];
+        LLVMTypeRef param_types[4];
         LLVMTypeRef ectx_ptr_type = LLVMPointerType(ctx->exec_ctx_type, 0);
         LLVMTypeRef vs_data_ptr_type = LLVMPointerType(ctx->vs_data_type, 0);
         LLVMTypeRef fs_data_ptr_type = LLVMPointerType(ctx->fs_data_type, 0);
+        LLVMTypeRef cs_data_ptr_type = LLVMPointerType(ctx->cs_data_type, 0);
 
         param_types[0] = ectx_ptr_type;
         param_types[1] = vs_data_ptr_type;
         param_types[2] = fs_data_ptr_type;
+        param_types[3] = cs_data_ptr_type;
 
-        LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), param_types, 3, 0);
+        LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), param_types, 4, 0);
         ctx->func = LLVMAddFunction(ctx->module, "main_simt", func_type);
 
         ctx->env_arg_param = LLVMGetParam(ctx->func, 0);
         ctx->vs_data_param = LLVMGetParam(ctx->func, 1);
         ctx->fs_data_param = LLVMGetParam(ctx->func, 2);
+        ctx->cs_data_param = LLVMGetParam(ctx->func, 3);
 
         LLVMAddTargetDependentFunctionAttr(ctx->func, "no-trapping-math", "true");
         LLVMAddTargetDependentFunctionAttr(ctx->func, "stack-protector-buffer-size", "8");

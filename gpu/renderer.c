@@ -341,6 +341,7 @@ static void* worker_thread(void* arg)
             case TASK_RASTERIZE_LINES_SIMT:    worker_rasterize_lines_simt_impl(my_args); break;
             case TASK_WIREFRAME_VERTICES:      worker_wireframe_vertices_impl(my_args); break;
             case TASK_WIREFRAME_EDGES:         worker_wireframe_edges_impl(my_args); break;
+            case TASK_COMPUTE_SIMT:            worker_compute_simt_impl(my_args); break;
             default: break;
         }
 
@@ -375,7 +376,7 @@ void init_thread_pool(void)
     render.threads_initialized = 1;
 }
 
-static void dispatch_task(RenderTaskType task) 
+void dispatch_task(RenderTaskType task) 
 {
     qemu_mutex_lock(&render.pool_mutex);
     render.current_task = task;

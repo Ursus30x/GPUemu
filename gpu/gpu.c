@@ -312,10 +312,74 @@ static void execute_command(GpuState *gpu, Command *cmd)
             gpu->depth_write_enable = depth_config.depth_write_enable;
             break;
         }
+        case STATE_ID_COMPUTE_SHADER_PTR:
+        {
+            DEBUG_PRINT("[CMD] Compute shader config\n");
+            gpu->cs_code_addr = cmd->payload.state.value.shader_ptrs.cs_addr;
+            if (gpu->cs_code_addr + sizeof(uint32_t) <= GPU_VRAM_SIZE)
+            {
+                void* shader = gpu->vram_ptr + gpu->cs_code_addr;
+                uint32_t size = *((uint32_t *)shader);
+                if (size > 0 && gpu->cs_code_addr + sizeof(uint32_t) + size <= GPU_VRAM_SIZE)
+                {
+                    uint32_t* shader_code = ((uint32_t *)(shader + sizeof(uint32_t)));
+                    uint32_t hash = compute_shader_hash(shader_code, size / 4);
+                    if (gpu->cs_shader_func == NULL || gpu->cs_hash != hash)
+                    {
+                        free_jit(&gpu->jit_ctx_cs); 
+                        init_jit(&gpu->jit_ctx_cs, COMPUTE_SHADER); 
+                        gpu->cs_shader_func = jit_compile_spirv(&gpu->jit_ctx_cs, shader_code, size / 4);
+                        gpu->cs_hash = hash;
+                        gpu->cs_local_size_x = gpu->jit_ctx_cs.shader_info.local_size_x;
+                        gpu->cs_local_size_y = gpu->jit_ctx_cs.shader_info.local_size_y;
+                        gpu->cs_local_size_z = gpu->jit_ctx_cs.shader_info.local_size_z;
+                    }
+                }
+            }
+            break;
+        }
+        case STATE_ID_SSBO_CONFIG:
+        {
+            SsboConfigPayload ssbo = cmd->payload.state.value.ssbo_config;
+            DEBUG_PRINT("[CMD] SSBO config: binding %u, addr 0x%x, size %u\n", ssbo.binding, ssbo.addr, ssbo.size);
+            if (ssbo.binding < MAX_BINDINGS)
+            {
+                gpu->ssbo_config[ssbo.binding].addr = ssbo.addr;
+                gpu->ssbo_config[ssbo.binding].size = ssbo.size;
+                gpu->ssbo_config[ssbo.binding].element_type = D_TYPE_UINT32;
+            }
+            break;
+        }
         default:
             break;
         }
         break;
+
+    case CMD_DISPATCH:
+    {
+        uint32_t gx = cmd->payload.dispatch.group_count_x;
+        uint32_t gy = cmd->payload.dispatch.group_count_y;
+        uint32_t gz = cmd->payload.dispatch.group_count_z;
+        DEBUG_PRINT("[CMD] Dispatch Compute: groups (%u, %u, %u)\n", gx, gy, gz);
+
+        gpu->dispatch_group_count_x = gx > 0 ? gx : 1;
+        gpu->dispatch_group_count_y = gy > 0 ? gy : 1;
+        gpu->dispatch_group_count_z = gz > 0 ? gz : 1;
+        gpu->dispatch_total_workgroups = gpu->dispatch_group_count_x * gpu->dispatch_group_count_y * gpu->dispatch_group_count_z;
+
+        uint32_t total_wg = gpu->dispatch_total_workgroups;
+        uint32_t chunk_wg = (total_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
+
+        for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+            render.args[i].orig_gpu = gpu;
+            render.args[i].start_block = i * chunk_wg;
+            render.args[i].end_block = (i == NUM_RENDER_THREADS - 1) ? total_wg : (i + 1) * chunk_wg;
+            if (render.args[i].start_block > total_wg) render.args[i].start_block = total_wg;
+            if (render.args[i].end_block > total_wg) render.args[i].end_block = total_wg;
+        }
+        dispatch_task(TASK_COMPUTE_SIMT);
+        break;
+    }
 
     case CMD_DMA_TRANSFER:
         DEBUG_PRINT("[CMD] Queued DMA Transfer\n");
@@ -467,6 +531,9 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case REG_FRAGMENT_SHADER_ADDR:
         target_reg = &s->fs_code_addr;
         break;
+    case REG_COMPUTE_SHADER_ADDR:
+        target_reg = &s->cs_code_addr;
+        break;
     case REG_FB_WIDTH_ADDR:
         target_reg = &s->width;
         break;
@@ -567,6 +634,9 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case REG_FRAGMENT_SHADER_ADDR:
         reg_val = s->fs_code_addr;
+        break;
+    case REG_COMPUTE_SHADER_ADDR:
+        reg_val = s->cs_code_addr;
         break;
     case REG_FB_WIDTH_ADDR:
         reg_val = s->width;
@@ -714,8 +784,10 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->con = graphic_console_init(DEVICE(pdev), 0, &ghwops, gpu);
     gpu->vs_shader_func = NULL;
     gpu->fs_shader_func = NULL;
+    gpu->cs_shader_func = NULL;
     gpu->vs_hash = 0;
     gpu->fs_hash = 0;
+    gpu->cs_hash = 0;
     // init state
     gpu->height = 480;
     gpu->width = 640;
@@ -730,6 +802,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     msi_init(pdev, 0, 1, true, false, errp);
     init_jit(&gpu->jit_ctx_fs, FRAGMENT_SHADER);
     init_jit(&gpu->jit_ctx_vs, VERTEX_SHADER);
+    init_jit(&gpu->jit_ctx_cs, COMPUTE_SHADER);
 
     qemu_mutex_init(&gpu->cmd_mutex);
     qemu_cond_init(&gpu->cmd_cond);
