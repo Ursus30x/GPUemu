@@ -659,58 +659,75 @@ void worker_compute_simt_impl(RenderThreadArgs *args)
         uint32_t Wy = (wg_linear / Gx) % Gy;
         uint32_t Wz = wg_linear / (Gx * Gy);
 
-        for (uint32_t w = 0; w < warps_per_wg; w++)
+        uint8_t shared_mem[MAX_SHARED_MEM_SIZE];
+        memset(shared_mem, 0, sizeof(shared_mem));
+
+        uint32_t num_warps = warps_per_wg > 0 ? warps_per_wg : 1;
+        uint8_t *warp_spill = (uint8_t *)calloc(num_warps, 2048);
+
+        uint32_t num_phases = gpu->cs_barrier_count + 1;
+
+        for (uint32_t phase = 0; phase < num_phases; phase++)
         {
-            uint32_t base_lane = w * SIMT_WIDTH;
-            BuiltinComputeInput cs_in = {0};
-
-            for (int i = 0; i < SIMT_WIDTH; i++)
+            for (uint32_t w = 0; w < warps_per_wg; w++)
             {
-                uint32_t linear = base_lane + i;
-                uint32_t lx = linear % Sx;
-                uint32_t ly = (linear / Sx) % Sy;
-                uint32_t lz = linear / (Sx * Sy);
+                uint32_t base_lane = w * SIMT_WIDTH;
+                BuiltinComputeInput cs_in = {0};
 
-                cs_in.gl_LocalInvocationID.elem[0][i] = (float)lx;
-                cs_in.gl_LocalInvocationID.elem[1][i] = (float)ly;
-                cs_in.gl_LocalInvocationID.elem[2][i] = (float)lz;
+                for (int i = 0; i < SIMT_WIDTH; i++)
+                {
+                    uint32_t linear = base_lane + i;
+                    uint32_t lx = linear % Sx;
+                    uint32_t ly = (linear / Sx) % Sy;
+                    uint32_t lz = linear / (Sx * Sy);
 
-                cs_in.gl_GlobalInvocationID.elem[0][i] = (float)(Wx * Sx + lx);
-                cs_in.gl_GlobalInvocationID.elem[1][i] = (float)(Wy * Sy + ly);
-                cs_in.gl_GlobalInvocationID.elem[2][i] = (float)(Wz * Sz + lz);
+                    cs_in.gl_LocalInvocationID.elem[0][i] = (float)lx;
+                    cs_in.gl_LocalInvocationID.elem[1][i] = (float)ly;
+                    cs_in.gl_LocalInvocationID.elem[2][i] = (float)lz;
 
-                cs_in.gl_LocalInvocationIndex[i] = (float)linear;
+                    cs_in.gl_GlobalInvocationID.elem[0][i] = (float)(Wx * Sx + lx);
+                    cs_in.gl_GlobalInvocationID.elem[1][i] = (float)(Wy * Sy + ly);
+                    cs_in.gl_GlobalInvocationID.elem[2][i] = (float)(Wz * Sz + lz);
 
-                cs_in.gl_WorkGroupID.elem[0][i] = (float)Wx;
-                cs_in.gl_WorkGroupID.elem[1][i] = (float)Wy;
-                cs_in.gl_WorkGroupID.elem[2][i] = (float)Wz;
+                    cs_in.gl_LocalInvocationIndex[i] = (float)linear;
 
-                cs_in.gl_NumWorkGroups.elem[0][i] = (float)Gx;
-                cs_in.gl_NumWorkGroups.elem[1][i] = (float)Gy;
-                cs_in.gl_NumWorkGroups.elem[2][i] = (float)Gz;
+                    cs_in.gl_WorkGroupID.elem[0][i] = (float)Wx;
+                    cs_in.gl_WorkGroupID.elem[1][i] = (float)Wy;
+                    cs_in.gl_WorkGroupID.elem[2][i] = (float)Wz;
 
-                cs_in.gl_WorkGroupSize.elem[0][i] = (float)Sx;
-                cs_in.gl_WorkGroupSize.elem[1][i] = (float)Sy;
-                cs_in.gl_WorkGroupSize.elem[2][i] = (float)Sz;
-            }
+                    cs_in.gl_NumWorkGroups.elem[0][i] = (float)Gx;
+                    cs_in.gl_NumWorkGroups.elem[1][i] = (float)Gy;
+                    cs_in.gl_NumWorkGroups.elem[2][i] = (float)Gz;
 
-            ExecutionContext ectx = {0};
+                    cs_in.gl_WorkGroupSize.elem[0][i] = (float)Sx;
+                    cs_in.gl_WorkGroupSize.elem[1][i] = (float)Sy;
+                    cs_in.gl_WorkGroupSize.elem[2][i] = (float)Sz;
+                }
 
-            // Bind UBO
-            if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0) {
-                ectx.binding_buffers[0] = gpu->vram_ptr + gpu->uinform_config.addr;
-            }
+                ExecutionContext ectx = {0};
+                ectx.shared_memory = shared_mem;
+                ectx.spill_buffer = warp_spill ? (warp_spill + w * 2048) : NULL;
+                ectx.current_phase = phase;
 
-            // Bind SSBOs / Resources
-            for (int slot = 0; slot < MAX_BINDINGS; slot++) {
-                if (gpu->ssbo_config[slot].addr != 0 && gpu->ssbo_config[slot].size > 0) {
-                    ectx.binding_buffers[slot] = gpu->vram_ptr + gpu->ssbo_config[slot].addr;
+                // Bind UBO
+                if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0) {
+                    ectx.binding_buffers[0] = gpu->vram_ptr + gpu->uinform_config.addr;
+                }
+
+                // Bind SSBOs / Resources
+                for (int slot = 0; slot < MAX_BINDINGS; slot++) {
+                    if (gpu->ssbo_config[slot].addr != 0 && gpu->ssbo_config[slot].size > 0) {
+                        ectx.binding_buffers[slot] = gpu->vram_ptr + gpu->ssbo_config[slot].addr;
+                    }
+                }
+
+                if (gpu->cs_shader_func) {
+                    gpu->cs_shader_func(&ectx, NULL, NULL, &cs_in);
                 }
             }
-
-            if (gpu->cs_shader_func) {
-                gpu->cs_shader_func(&ectx, NULL, NULL, &cs_in);
-            }
+        }
+        if (warp_spill) {
+            free(warp_spill);
         }
     }
 }

@@ -424,6 +424,45 @@ TEST(compute_vec_add, "out/vec_add.spv", COMPUTE_SHADER, {
     }
 })
 
+TEST(compute_barrier_reduction, "out/barrier_reduction.spv", COMPUTE_SHADER, {
+    SimtFloat input_data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f};
+    SimtFloat output_data = {0};
+    uint8_t shared_mem[MAX_SHARED_MEM_SIZE] = {0};
+    uint8_t spill_buffer[2048] = {0};
+
+    jit_ctx->binding_buffers[0] = &input_data;
+    jit_ctx->binding_buffers[1] = &output_data;
+    jit_ctx->shared_memory = shared_mem;
+    jit_ctx->spill_buffer = spill_buffer;
+
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+        cs_in.gl_WorkGroupID.elem[0][i] = 0.0f;
+        cs_in.gl_NumWorkGroups.elem[0][i] = 1.0f;
+        cs_in.gl_WorkGroupSize.elem[0][i] = 16.0f;
+    }
+
+    uint32_t num_phases = ctx.shader_info.barrier_count + 1;
+    printf("Shader has %u barriers -> %u phases\n", ctx.shader_info.barrier_count, num_phases);
+    fflush(stdout);
+
+    for (uint32_t phase = 0; phase < num_phases; phase++) {
+        printf("Executing phase %u...\n", phase);
+        fflush(stdout);
+        jit_ctx->current_phase = phase;
+        RUN_JIT();
+    }
+
+    float expected_sum = 136.0f;
+    printf("[Barrier Reduction Test] Output Sum = %.1f (Expected %.1f)... ", output_data[0], expected_sum);
+    if (output_data[0] != expected_sum) {
+        printf("assert failed: output_data[0] = %f vs expected %f\n", output_data[0], expected_sum);
+        return 1;
+    }
+})
+
 int run_compilation_script(void) 
 {
     printf("--- Running compilation script ---\n");
@@ -456,7 +495,15 @@ void run_test_suite(void)
     
     while (current != NULL) 
     {
-        passed += (current->func() == 0);
+        printf("[%d] Running %s... ", test_count + 1, current->name);
+        fflush(stdout);
+        int res = current->func();
+        if (res == 0) {
+            printf("PASSED\n");
+            passed++;
+        } else {
+            printf("FAILED\n");
+        }
         
         TestNode* temp = current;
         current = current->next;

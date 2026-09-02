@@ -201,6 +201,27 @@ void handle_op_branch(JitContext* ctx, uint32_t* operands)
     }
 }
 
+static LLVMValueRef jit_to_simt_mask(JitContext* ctx, LLVMValueRef cond)
+{
+    if (!cond) return jit_get_emask(ctx);
+    LLVMTypeRef type = LLVMTypeOf(cond);
+    if (LLVMGetTypeKind(type) == LLVMVectorTypeKind)
+        return cond;
+    if (LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) != 1) {
+        cond = LLVMBuildICmp(ctx->builder, LLVMIntNE, cond, LLVMConstInt(type, 0, 0), "cond_i1");
+    }
+    if (LLVMIsConstant(cond)) {
+        LLVMValueRef vals[SIMT_WIDTH];
+        for (int i = 0; i < SIMT_WIDTH; i++) vals[i] = cond;
+        return LLVMConstVector(vals, SIMT_WIDTH);
+    }
+    LLVMValueRef vec = LLVMGetUndef(ctx->vec_i1_type);
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        vec = LLVMBuildInsertElement(ctx->builder, vec, cond, LLVMConstInt(ctx->int_type, i, 0), "mask_splat");
+    }
+    return vec;
+}
+
 void handle_op_branch_conditional(JitContext* ctx, uint32_t* operands)
 {
     if (!ctx->func)
@@ -219,13 +240,14 @@ void handle_op_branch_conditional(JitContext* ctx, uint32_t* operands)
             ctx->control_stack[ctx->control_stack_depth - 1].kind == JIT_CFG_SELECTION)
         {
             JitControlConstruct* construct = &ctx->control_stack[ctx->control_stack_depth - 1];
+            LLVMValueRef cond_mask = jit_to_simt_mask(ctx, cond);
             construct->true_id = true_id;
             construct->false_id = false_id;
-            construct->cond = cond;
+            construct->cond = cond_mask;
             construct->parent_mask = jit_get_emask(ctx);
 
             // Calculate active mask for 'then' branch: parent_mask & cond
-            LLVMValueRef true_mask = LLVMBuildAnd(ctx->builder, construct->parent_mask, cond, "simt_mask_then");
+            LLVMValueRef true_mask = LLVMBuildAnd(ctx->builder, construct->parent_mask, cond_mask, "simt_mask_then");
             ctx->emask = true_mask;
 
             // Enter 'then' block unconditionally to process active lanes
@@ -276,7 +298,20 @@ void resolve_pending_globals(JitContext* ctx)
         GlobalResolution* g = &ctx->globals[i];
         
         uint32_t field_idx = 0;
-        if (g->storage_class == SpvStorageClassUniform || g->storage_class == SpvStorageClassStorageBuffer ||  g->storage_class ==  SpvStorageClassUniformConstant)
+        if (g->storage_class == SpvStorageClassWorkgroup)
+        {
+            LLVMValueRef indices[] = {
+                LLVMConstInt(ctx->int_type, 0, 0),
+                LLVMConstInt(ctx->int_type, 3, 0)
+            };
+            LLVMValueRef shmem_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ectx_ptr, indices, 2, "shmem_slot");
+            LLVMValueRef shmem_base = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, shmem_slot, "shmem_base");
+            LLVMValueRef offset_val = LLVMConstInt(LLVMInt64TypeInContext(ctx->context), g->binding_or_loc, 0);
+            LLVMValueRef var_ptr = LLVMBuildGEP2(ctx->builder, LLVMInt8TypeInContext(ctx->context), shmem_base, &offset_val, 1, "workgroup_var_ptr");
+            set_val(ctx, g->res_id, var_ptr);
+            continue;
+        }
+        else if (g->storage_class == SpvStorageClassUniform || g->storage_class == SpvStorageClassStorageBuffer ||  g->storage_class ==  SpvStorageClassUniformConstant)
             field_idx = 0;
         else if (g->storage_class == SpvStorageClassInput)
             field_idx = 1;

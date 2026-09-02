@@ -324,6 +324,64 @@ VOID TestComputeShader() {
 
     Print(L"GOP3D: Compute Shader Dispatch Complete.\n");
 }
+
+VOID TestBarrierComputeShader(VOID) {
+    #include "barrier_reduction.h"
+    VRAMADDR hCS = 0;
+    VRAMADDR hSSBO_In = 0;
+    VRAMADDR hSSBO_Out = 0;
+
+    float input_data[16];
+    float output_data[1];
+
+    Print(L"\n=== GOP3D Compute Shader Test (Barrier Parallel Reduction) ===\n");
+
+    for (UINT32 i = 0; i < 16; i++) {
+        input_data[i] = (float)(i + 1);
+    }
+    output_data[0] = 0.0f;
+
+    Print(L"[INPUT DATA] 16 elements: 1..16 (Expected Sum = 136)\n");
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, (VOID*)bin_barrier_reduction_shader, sizeof(bin_barrier_reduction_shader), &hCS);
+    Print(L"[VRAM] Barrier Shader uploaded. Handle: 0x%LX (Size: %u bytes)\n", (UINT64)hCS, (UINT32)sizeof(bin_barrier_reduction_shader));
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_data, sizeof(input_data), &hSSBO_In);
+    Print(L"[VRAM] SSBO In Handle: 0x%LX\n", (UINT64)hSSBO_In);
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, output_data, sizeof(output_data), &hSSBO_Out);
+    Print(L"[VRAM] SSBO Out Handle: 0x%LX\n", (UINT64)hSSBO_Out);
+
+    Print(L"[CMD] Recording Barrier Compute Command Batch (1, 1, 1)...\n");
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuBindCompShader(mGOP3D, hCS, sizeof(bin_barrier_reduction_shader));
+    mGOP3D->GpuBindSSBO(mGOP3D, 0, hSSBO_In, sizeof(input_data));
+    mGOP3D->GpuBindSSBO(mGOP3D, 1, hSSBO_Out, sizeof(output_data));
+    mGOP3D->GpuDispatchCompute(mGOP3D, 1, 1, 1);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+
+    Print(L"[CMD] Submitting GPU commands (GpuPresent)...\n");
+    mGOP3D->GpuPresent(mGOP3D);
+
+    Print(L"[VRAM] Reading back reduction result from SSBO Out...\n");
+    mGOP3D->GpuReadBuffer(mGOP3D, hSSBO_Out, output_data, sizeof(output_data));
+
+    Print(L"[OUTPUT DATA] Reduced Sum = %d\n", (INT32)output_data[0]);
+
+    if ((INT32)output_data[0] == 136) {
+        Print(L"==> Barrier Parallel Reduction Test PASSED (Sum = 136) <==\n");
+    } else {
+        Print(L"==> Barrier Parallel Reduction Test FAILED (Sum = %d, Expected 136) <==\n", (INT32)output_data[0]);
+    }
+
+    Print(L"[VRAM] Freeing allocated GPU buffers...\n");
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hCS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_In);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_Out);
+
+    Print(L"GOP3D: Barrier Compute Shader Test Complete.\n");
+}
+
 VOID TestShaderArt() {
     EFI_INPUT_KEY Key;
 
@@ -881,6 +939,9 @@ EFI_STATUS EFIAPI Test() {
 
     Print(L"Press key for SPIR-V Compute Shader Test (Vector Add)...\n");
     TestComputeShader();
+    Print(L"Press key for SPIR-V Barrier Compute Shader Test (Parallel Reduction)...\n");
+    WAIT_FOR_KEYPRESS()
+    TestBarrierComputeShader();
     Print(L"Press key for SPIR-V Primitives Demo (Points, Lines, LineStrip, TriStrip, TriFan, Quads)...\n");
 
     WAIT_FOR_KEYPRESS()

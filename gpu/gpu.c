@@ -333,6 +333,7 @@ static void execute_command(GpuState *gpu, Command *cmd)
                         gpu->cs_local_size_x = gpu->jit_ctx_cs.shader_info.local_size_x;
                         gpu->cs_local_size_y = gpu->jit_ctx_cs.shader_info.local_size_y;
                         gpu->cs_local_size_z = gpu->jit_ctx_cs.shader_info.local_size_z;
+                        gpu->cs_barrier_count = gpu->jit_ctx_cs.shader_info.barrier_count;
                     }
                 }
             }
