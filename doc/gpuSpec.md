@@ -873,6 +873,35 @@ mGOP3D->GpuFreeBuffer(mGOP3D, &shader_addr);
 
 ---
 
+#### **GpuReadBuffer**
+
+```c
+EFI_STATUS GpuReadBuffer(
+    IN  GOP_3D_PROTOCOL *This,
+    IN  VRAMADDR        GpuAddress,
+    OUT VOID            *HostData,
+    IN  UINT32          Size
+);
+```
+
+**Purpose:** Read data back from GPU VRAM to system memory (host RAM). Waits for pending GPU execution before copying.
+
+**Parameters:**
+- `This` — Pointer to the GOP_3D_PROTOCOL instance
+- `GpuAddress` — Source VRAM address offset
+- `HostData` — Pointer to target buffer in host memory
+- `Size` — Number of bytes to read
+
+**Returns:** `EFI_SUCCESS` on success
+
+**Example:**
+```c
+float output_data[16];
+mGOP3D->GpuReadBuffer(mGOP3D, hSSBO_C, output_data, sizeof(output_data));
+```
+
+---
+
 #### **GpuBindVertShader** / **GpuBindFragShader**
 
 ```c

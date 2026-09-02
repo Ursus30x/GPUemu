@@ -367,17 +367,9 @@ static void execute_command(GpuState *gpu, Command *cmd)
         gpu->dispatch_group_count_z = gz > 0 ? gz : 1;
         gpu->dispatch_total_workgroups = gpu->dispatch_group_count_x * gpu->dispatch_group_count_y * gpu->dispatch_group_count_z;
 
-        uint32_t total_wg = gpu->dispatch_total_workgroups;
-        uint32_t chunk_wg = (total_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
-
-        for (int i = 0; i < NUM_RENDER_THREADS; i++) {
-            render.args[i].orig_gpu = gpu;
-            render.args[i].start_block = i * chunk_wg;
-            render.args[i].end_block = (i == NUM_RENDER_THREADS - 1) ? total_wg : (i + 1) * chunk_wg;
-            if (render.args[i].start_block > total_wg) render.args[i].start_block = total_wg;
-            if (render.args[i].end_block > total_wg) render.args[i].end_block = total_wg;
-        }
-        dispatch_task(TASK_COMPUTE_SIMT);
+        
+        compute_mode(gpu);
+        
         break;
     }
 

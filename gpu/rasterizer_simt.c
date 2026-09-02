@@ -98,7 +98,7 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
         jit_ctx.location_in_buffers[0] = &in_vec;
         jit_ctx.location_in_buffers[1] = &in_uv;
         jit_ctx.location_out_buffers[0] = &args->transformed_uv_simt;
-        gpu->vs_shader_func(&jit_ctx, &vs_out, NULL);
+        gpu->vs_shader_func(&jit_ctx, &vs_out, NULL, NULL);
         args->transformed_simt = vs_out.gl_Position;
 
         for (uint32_t i = 0; i < SIMT_WIDTH; i++)
@@ -325,7 +325,7 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
     jit_ctx.location_in_buffers[0] = fs_in_color;
     jit_ctx.location_in_buffers[1] = fs_in_uv;
     jit_ctx.location_out_buffers[0] = &out_color;
-    gpu->fs_shader_func(&jit_ctx, NULL, fs_input);
+    gpu->fs_shader_func(&jit_ctx, NULL, fs_input, NULL);
 
     for (int lane = 0; lane < 16; lane++) 
     {
@@ -627,12 +627,12 @@ void worker_compute_simt_impl(RenderThreadArgs *args)
     if (total_wg == 0) return;
 
     // Find worker ID by matching args pointer
-    int worker_id = 0;
-    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
-        if (args == &args->orig_gpu->refresh_thread) {} // dummy comparison
-    }
+    //int worker_id = 0;
+    // for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+    //     if (args == &args->orig_gpu->refresh_thread) {} // dummy comparison
+    // }
     // Calculate chunk for this thread
-    uint32_t chunk = (total_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
+    //uint32_t chunk = (total_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
     
     // Determine worker_id based on address offset from pool
     // Note: RenderThreadArgs array element index:

@@ -518,6 +518,25 @@ void gpu_render_triangles_simt(void *opaque)
     gpu_render_primitives_simt(opaque, prim, psize, lwidth);
 }
 
+void compute_mode(GpuState *gpu)
+{
+    if(gpu->gpu_mode == GPU_MODE_IDLE)
+    {
+        return;
+    }
+    gpu->gpu_mode = GPU_MODE_IDLE;
+    uint32_t total_wg = gpu->dispatch_total_workgroups;
+    uint32_t chunk_wg = (total_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
+
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        render.args[i].orig_gpu = gpu;
+        render.args[i].start_block = i * chunk_wg;
+        render.args[i].end_block = (i == NUM_RENDER_THREADS - 1) ? total_wg : (i + 1) * chunk_wg;
+        if (render.args[i].start_block > total_wg) render.args[i].start_block = total_wg;
+        if (render.args[i].end_block > total_wg) render.args[i].end_block = total_wg;
+    }
+    dispatch_task(TASK_COMPUTE_SIMT);
+}
 void gpu_render_triangles(void *opaque)
 {
     GpuState *gpu = opaque;
