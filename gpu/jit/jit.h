@@ -107,8 +107,12 @@ typedef struct {
     void* binding_buffers[MAX_BINDINGS]; 
     void* location_in_buffers[MAX_ATTRIBUTES];
     void* location_out_buffers[MAX_ATTRIBUTES];
+    void* shared_memory;
+    void* spill_buffer;
+    uint32_t current_phase;
 } ExecutionContext;
 
+#define MAX_SHARED_MEM_SIZE (16 * 1024)
 
 typedef struct {
     int32_t descriptor_set;
@@ -189,6 +193,7 @@ typedef struct ShaderInfo {
     uint32_t local_size_x;
     uint32_t local_size_y;
     uint32_t local_size_z;
+    uint32_t barrier_count;
 } ShaderInfo;
 
 
@@ -251,6 +256,12 @@ struct JitContext{
 
     JitControlConstruct control_stack[MAX_CONTROL_STACK];
     uint32_t control_stack_depth;
+
+    uint32_t shared_mem_offset;
+    uint32_t spill_mem_offset;
+    uint32_t barrier_count;
+    LLVMValueRef switch_inst;
+    LLVMBasicBlockRef phase_bbs[16];
     
 };
 

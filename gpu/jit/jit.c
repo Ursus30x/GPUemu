@@ -328,6 +328,12 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpSLessThan:
             handle_op_slessthan(ctx, res_id, operands);
             break;
+        case SpvOpULessThan:
+            handle_op_ulessthan(ctx, res_id, operands);
+            break;
+        case SpvOpIEqual:
+            handle_op_iequal(ctx, res_id, operands);
+            break;
         case SpvOpFOrdLessThan:
             handle_op_fordlessthan(ctx, res_id, operands);
             break;
@@ -421,8 +427,35 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             }
             break;
         case SpvOpControlBarrier:
-            fprintf(stderr, "GPU JIT Error: OpControlBarrier is not supported in Phase 1 compute shaders.\n");
+        case SpvOpMemoryBarrier:
+        {
+            LLVMBuildFence(ctx->builder, LLVMAtomicOrderingSequentiallyConsistent, 0, "");
+            if (opcode == SpvOpControlBarrier) {
+                uint32_t barrier_idx = ctx->barrier_count++;
+                ctx->shader_info.barrier_count = ctx->barrier_count;
+
+                LLVMValueRef indices[] = {
+                    LLVMConstInt(ctx->int_type, 0, 0),
+                    LLVMConstInt(ctx->int_type, 5, 0)
+                };
+                LLVMValueRef phase_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 2, "phase_slot");
+                LLVMValueRef phase_val = LLVMBuildLoad2(ctx->builder, ctx->int_type, phase_slot, "phase_val");
+
+                LLVMValueRef is_current = LLVMBuildICmp(ctx->builder, LLVMIntEQ, phase_val, LLVMConstInt(ctx->int_type, barrier_idx, 0), "is_phase_match");
+
+                LLVMBasicBlockRef next_phase_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "next_phase_bb");
+                LLVMBasicBlockRef exit_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "phase_exit_bb");
+
+                LLVMBuildCondBr(ctx->builder, is_current, exit_bb, next_phase_bb);
+
+                LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
+                LLVMBuildRetVoid(ctx->builder);
+
+                LLVMPositionBuilderAtEnd(ctx->builder, next_phase_bb);
+                ctx->current_block = next_phase_bb;
+            }
             break;
+        }
         case SpvOpTypeImage:
             handle_op_type_image(ctx, res_id, operands);
             break;
@@ -493,16 +526,11 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
     switch (info->opcode)
     {
         case SpvOpTypeFloat:
+        case SpvOpTypeInt:
             return ctx->vec_float_type;
 
-        case SpvOpTypeInt:
-        {
-            uint32_t width = info->base_type_id ? info->base_type_id : 32;
-            return LLVMIntTypeInContext(ctx->context, width);
-        }
-
         case SpvOpTypeBool:
-            return LLVMInt1TypeInContext(ctx->context);
+            return ctx->vec_i1_type;
 
         case SpvOpTypeVector: 
         {
@@ -560,18 +588,16 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         ctx->decorations[i].array_stride = -1;
     }
  
-    ctx->float_type = LLVMFloatTypeInContext(ctx->context);
-    ctx->int_type = LLVMInt32TypeInContext(ctx->context);
-    ctx->vec_float_type = LLVMVectorType(LLVMFloatTypeInContext(ctx->context), SIMT_WIDTH);
-    ctx->vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx->context), SIMT_WIDTH);
-    ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
-    ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
 
 
     ctx->func = NULL;
     ctx->current_block = NULL;
     ctx->control_stack_depth = 0;
     memset(ctx->control_stack, 0, sizeof(ctx->control_stack));
+    ctx->shared_mem_offset = 0;
+    ctx->spill_mem_offset = 0;
+    ctx->barrier_count = 0;
+    ctx->shader_info.barrier_count = 0;
 
     DEBUG_PRINT("--- Starting JIT Compilation (LLVM ORC Backend) ---\n");
     LLVMValueRef values[SIMT_WIDTH];
@@ -694,6 +720,13 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     ctx->fs_data_param = NULL;
     ctx->cs_data_param = NULL;
 
+    ctx->float_type = LLVMFloatTypeInContext(ctx->context);
+    ctx->int_type = LLVMInt32TypeInContext(ctx->context);
+    ctx->vec_float_type = LLVMVectorType(LLVMFloatTypeInContext(ctx->context), SIMT_WIDTH);
+    ctx->vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx->context), SIMT_WIDTH);
+    ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
+    ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
+
     LLVMTypeRef float_type = LLVMFloatTypeInContext(ctx->context);
     // <16 x float>
     LLVMTypeRef simt_float =
@@ -729,13 +762,16 @@ void init_jit(JitContext* ctx,shader_t shader_type)
 
     // ExecutionContext
     LLVMTypeRef exec_ctx_fields[] = {
-        LLVMArrayType(ptr_type, MAX_BINDINGS),     // binding_buffers
-        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_in_buffers
-        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_out_buffers
-        builtin_vertex_output_type                 // vertexOut
+        LLVMArrayType(ptr_type, MAX_BINDINGS),     // binding_buffers (0)
+        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_in_buffers (1)
+        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_out_buffers (2)
+        ptr_type,                                  // shared_memory (3)
+        ptr_type,                                  // spill_buffer (4)
+        ctx->int_type,                             // current_phase (5)
+        builtin_vertex_output_type                 // vertexOut (6)
     };
 
-    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 4, 0);
+    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 7, 0);
 
     LLVMTypeRef vs_data_fields[] = {
         simt_vec4_type,// gl_Position (Index 0)

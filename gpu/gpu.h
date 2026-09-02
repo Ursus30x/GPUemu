@@ -139,6 +139,7 @@ typedef struct GpuState {
     uint32_t cs_local_size_x;
     uint32_t cs_local_size_y;
     uint32_t cs_local_size_z;
+    uint32_t cs_barrier_count;
     uint32_t dispatch_total_workgroups;
 
     //LEGACY ASM

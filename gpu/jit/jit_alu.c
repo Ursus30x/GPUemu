@@ -11,6 +11,19 @@
     for(int i = 0; i < size; i++) scalars[i] = LLVMConstReal(f32_type, val); \
     LLVMValueRef name = LLVMConstVector(scalars, size);
     
+static bool is_float_type(LLVMTypeRef type) {
+    if (!type) return false;
+    LLVMTypeKind kind = LLVMGetTypeKind(type);
+    if (kind == LLVMFloatTypeKind || kind == LLVMDoubleTypeKind)
+        return true;
+    if (kind == LLVMVectorTypeKind) {
+        LLVMTypeRef elem = LLVMGetElementType(type);
+        LLVMTypeKind elem_kind = LLVMGetTypeKind(elem);
+        return (elem_kind == LLVMFloatTypeKind || elem_kind == LLVMDoubleTypeKind);
+    }
+    return false;
+}
+
 void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands) 
 {
     uint8_t kind = ctx->type_kind_map[type_id];
@@ -35,9 +48,18 @@ void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
 
     if (kind == SpvOpTypeInt)
     {
-        int32_t val = *(int32_t*)&operands[0];
-        const_val = LLVMConstInt(ctx->int_type, (unsigned long long)val, 1);
-        set_val(ctx, res_id, const_val);
+        float val = (float)(*(int32_t*)&operands[0]);
+        const_val = LLVMConstReal(ctx->float_type, val);
+
+        LLVMValueRef* vals = malloc(sizeof(LLVMValueRef) * SIMT_WIDTH);
+        for (int i = 0; i < SIMT_WIDTH; i++) 
+        {
+            vals[i] = const_val;
+        }
+
+        LLVMValueRef vec_val = LLVMConstVector(vals, SIMT_WIDTH);
+        free(vals);
+        set_val(ctx, res_id, vec_val);
         return;
     }
 
@@ -45,7 +67,16 @@ void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     {
         uint32_t val = operands[0] != 0;
         const_val = LLVMConstInt(LLVMInt1TypeInContext(ctx->context), val, 0);
-        set_val(ctx, res_id, const_val);
+
+        LLVMValueRef* vals = malloc(sizeof(LLVMValueRef) * SIMT_WIDTH);
+        for (int i = 0; i < SIMT_WIDTH; i++) 
+        {
+            vals[i] = const_val;
+        }
+
+        LLVMValueRef vec_val = LLVMConstVector(vals, SIMT_WIDTH);
+        free(vals);
+        set_val(ctx, res_id, vec_val);
         return;
     }
 
@@ -136,42 +167,56 @@ void handle_op_isub(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
-    LLVMValueRef res = LLVMBuildSub(ctx->builder, lhs, rhs, "v_isub");
+    LLVMValueRef res = is_float_type(LLVMTypeOf(lhs)) ?
+        LLVMBuildFSub(ctx->builder, lhs, rhs, "v_isub") :
+        LLVMBuildSub(ctx->builder, lhs, rhs, "v_isub");
     set_val(ctx, res_id, res);
 }
 void handle_op_imul(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
-    LLVMValueRef res = LLVMBuildMul(ctx->builder, lhs, rhs, "v_imul");
+    LLVMValueRef res = is_float_type(LLVMTypeOf(lhs)) ?
+        LLVMBuildFMul(ctx->builder, lhs, rhs, "v_imul") :
+        LLVMBuildMul(ctx->builder, lhs, rhs, "v_imul");
     set_val(ctx, res_id, res);
 }
 void handle_op_sdiv(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
-    LLVMValueRef res = LLVMBuildSDiv(ctx->builder, lhs, rhs, "v_sdiv");
+    LLVMValueRef res = is_float_type(LLVMTypeOf(lhs)) ?
+        LLVMBuildFDiv(ctx->builder, lhs, rhs, "v_sdiv") :
+        LLVMBuildSDiv(ctx->builder, lhs, rhs, "v_sdiv");
     set_val(ctx, res_id, res);
 }
 void handle_op_udiv(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
-    LLVMValueRef res = LLVMBuildUDiv(ctx->builder, lhs, rhs, "v_udiv");
+    LLVMValueRef res = is_float_type(LLVMTypeOf(lhs)) ?
+        LLVMBuildFDiv(ctx->builder, lhs, rhs, "v_udiv") :
+        LLVMBuildUDiv(ctx->builder, lhs, rhs, "v_udiv");
     set_val(ctx, res_id, res);
 }
 void handle_op_iadd(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
-    LLVMValueRef res = LLVMBuildAdd(ctx->builder, lhs, rhs, "v_iadd");
+    LLVMValueRef res = is_float_type(LLVMTypeOf(lhs)) ?
+        LLVMBuildFAdd(ctx->builder, lhs, rhs, "v_iadd") :
+        LLVMBuildAdd(ctx->builder, lhs, rhs, "v_iadd");
     set_val(ctx, res_id, res);
 }
 
 void handle_op_sitof(JitContext* ctx, uint32_t res_id, uint32_t* operands) 
 {
     LLVMValueRef op = get_val(ctx, operands[0]); 
-    LLVMValueRef res = LLVMBuildSIToFP(ctx->builder,op, ctx->vec_float_type, "v_sitof");
+    if (is_float_type(LLVMTypeOf(op))) {
+        set_val(ctx, res_id, op);
+        return;
+    }
+    LLVMValueRef res = LLVMBuildSIToFP(ctx->builder, op, ctx->vec_float_type, "v_sitof");
     set_val(ctx, res_id, res);
 }
 void handle_op_select(JitContext* ctx, uint32_t res_id, uint32_t* operands) 
@@ -188,7 +233,33 @@ void handle_op_slessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
 
-    LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntSLT, lhs, rhs, "v_slt");
+    LLVMValueRef cmp = is_float_type(LLVMTypeOf(lhs)) ?
+        LLVMBuildFCmp(ctx->builder, LLVMRealOLT, lhs, rhs, "v_slt") :
+        LLVMBuildICmp(ctx->builder, LLVMIntSLT, lhs, rhs, "v_slt");
+
+    set_val(ctx, res_id, cmp);
+}
+
+void handle_op_ulessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMValueRef lhs = get_val(ctx, operands[0]);
+    LLVMValueRef rhs = get_val(ctx, operands[1]);
+
+    LLVMValueRef cmp = is_float_type(LLVMTypeOf(lhs)) ?
+        LLVMBuildFCmp(ctx->builder, LLVMRealOLT, lhs, rhs, "v_ult") :
+        LLVMBuildICmp(ctx->builder, LLVMIntULT, lhs, rhs, "v_ult");
+
+    set_val(ctx, res_id, cmp);
+}
+
+void handle_op_iequal(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    LLVMValueRef lhs = get_val(ctx, operands[0]);
+    LLVMValueRef rhs = get_val(ctx, operands[1]);
+
+    LLVMValueRef cmp = is_float_type(LLVMTypeOf(lhs)) ?
+        LLVMBuildFCmp(ctx->builder, LLVMRealOEQ, lhs, rhs, "v_ieq") :
+        LLVMBuildICmp(ctx->builder, LLVMIntEQ, lhs, rhs, "v_ieq");
 
     set_val(ctx, res_id, cmp);
 }
