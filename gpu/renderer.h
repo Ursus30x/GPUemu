@@ -130,4 +130,7 @@ float edge_func(Vec3 a, Vec3 b, Vec3 c);
 void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu);
 void gpu_render_triangles_simt(void *opaque);
 void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float point_size, float line_width);
+
+
+void compute_mode(GpuState *gpu);
 #endif
