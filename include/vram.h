@@ -79,7 +79,6 @@ typedef enum {
 } StateID;
 #define MAX_MIP_LEVELS 14
 typedef struct __attribute__((packed)) {
-<<<<<<< HEAD
     uint32_t data_vram_addr;          // VRAM offset of Mip level 0 pixel data
     uint32_t mip_vram_addr[MAX_MIP_LEVELS]; // VRAM relative offsets for Mip levels 0..13
     uint32_t width;                   // Base width (Level 0)
@@ -97,7 +96,6 @@ typedef struct __attribute__((packed)) {
     float    min_lod;                 // Minimum clamp for LOD (e.g. 0.0f)
     float    max_lod;                 // Maximum clamp for LOD (e.g. 13.0f)
     float    lod_bias;                // User LOD bias (added to computed LOD)
-=======
     uint32_t group_count_x;
     uint32_t group_count_y;
     uint32_t group_count_z;
@@ -120,7 +118,6 @@ typedef struct __attribute__((packed)) {
     uint32_t channels;       // 1, 2, 3, 4
     uint32_t filter;         // 0: FILTER_NEAREST, 1: FILTER_LINEAR
     uint32_t wrap;           // 0: WRAP_REPEAT,    1: WRAP_CLAMP
->>>>>>> 9d511e8 ([QEMU] compute shader dispatch, SSBO bindings, and JIT built-ins)
 } GpuTextureDescriptorVram;
 typedef struct __attribute__((packed)) {
     uint32_t binding_slot;   // 1..MAX_BINDINGS-1
