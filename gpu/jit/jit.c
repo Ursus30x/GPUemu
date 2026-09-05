@@ -486,6 +486,168 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpImageQuerySize:
             handle_op_image_query_size(ctx, res_id, operands);
             break;
+        case SpvOpImageRead:
+            handle_op_image_read(ctx, res_id, type_id, operands);
+            break;
+        case SpvOpImageWrite:
+            handle_op_image_write(ctx, operands);
+            break;
+        case SpvOpBitwiseAnd:
+            handle_op_bitwise_and(ctx, res_id, operands);
+            break;
+        case SpvOpBitwiseOr:
+            handle_op_bitwise_or(ctx, res_id, operands);
+            break;
+        case SpvOpBitwiseXor:
+            handle_op_bitwise_xor(ctx, res_id, operands);
+            break;
+        case SpvOpNot:
+            handle_op_not(ctx, res_id, operands);
+            break;
+        case SpvOpShiftLeftLogical:
+            handle_op_shift_left_logical(ctx, res_id, operands);
+            break;
+        case SpvOpShiftRightLogical:
+            handle_op_shift_right_logical(ctx, res_id, operands);
+            break;
+        case SpvOpShiftRightArithmetic:
+            handle_op_shift_right_arithmetic(ctx, res_id, operands);
+            break;
+        case SpvOpBitcast:
+            handle_op_bitcast(ctx, res_id, type_id, operands);
+            break;
+        case SpvOpConvertFToS:
+            handle_op_convert_f_to_s(ctx, res_id, operands);
+            break;
+        case SpvOpConvertFToU:
+            handle_op_convert_f_to_u(ctx, res_id, operands);
+            break;
+        case SpvOpConvertUToF:
+            handle_op_convert_u_to_f(ctx, res_id, operands);
+            break;
+        case SpvOpINotEqual:
+            handle_op_inot_equal(ctx, res_id, operands);
+            break;
+        case SpvOpSGreaterThan:
+            handle_op_sgreater_than(ctx, res_id, operands);
+            break;
+        case SpvOpUGreaterThan:
+            handle_op_ugreater_than(ctx, res_id, operands);
+            break;
+        case SpvOpSGreaterThanEqual:
+            handle_op_sgreater_than_equal(ctx, res_id, operands);
+            break;
+        case SpvOpUGreaterThanEqual:
+            handle_op_ugreater_than_equal(ctx, res_id, operands);
+            break;
+        case SpvOpSLessThanEqual:
+            handle_op_sless_than_equal(ctx, res_id, operands);
+            break;
+        case SpvOpULessThanEqual:
+            handle_op_uless_than_equal(ctx, res_id, operands);
+            break;
+        case SpvOpSNegate:
+            handle_op_snegate(ctx, res_id, operands);
+            break;
+        case SpvOpUMod:
+            handle_op_umod(ctx, res_id, operands);
+            break;
+        case SpvOpSRem:
+            handle_op_srem(ctx, res_id, operands);
+            break;
+        case SpvOpSMod:
+            handle_op_smod(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalAnd:
+            handle_op_logical_and(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalOr:
+            handle_op_logical_or(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalNot:
+            handle_op_logical_not(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalEqual:
+            handle_op_logical_equal(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalNotEqual:
+            handle_op_logical_not_equal(ctx, res_id, operands);
+            break;
+        case SpvOpSelect:
+            handle_op_select(ctx, res_id, operands);
+            break;
+        case SpvOpAny:
+            handle_op_any(ctx, res_id, operands);
+            break;
+        case SpvOpAll:
+            handle_op_all(ctx, res_id, operands);
+            break;
+        case SpvOpIsNan:
+            handle_op_is_nan(ctx, res_id, operands);
+            break;
+        case SpvOpIsInf:
+            handle_op_is_inf(ctx, res_id, operands);
+            break;
+        case SpvOpAtomicLoad:
+        case SpvOpAtomicStore:
+        case SpvOpAtomicExchange:
+        case SpvOpAtomicCompareExchange:
+        case SpvOpAtomicCompareExchangeWeak:
+        case SpvOpAtomicIIncrement:
+        case SpvOpAtomicIDecrement:
+        case SpvOpAtomicIAdd:
+        case SpvOpAtomicISub:
+        case SpvOpAtomicSMin:
+        case SpvOpAtomicUMin:
+        case SpvOpAtomicSMax:
+        case SpvOpAtomicUMax:
+        case SpvOpAtomicAnd:
+        case SpvOpAtomicOr:
+        case SpvOpAtomicXor:
+            handle_op_atomic(ctx, opcode, res_id, type_id, operands, operand_count);
+            break;
+        case SpvOpGroupNonUniformElect:
+        case SpvOpGroupNonUniformAll:
+        case SpvOpGroupNonUniformAny:
+        case SpvOpGroupNonUniformAllEqual:
+        case SpvOpGroupNonUniformBroadcast:
+        case SpvOpGroupNonUniformBroadcastFirst:
+        case SpvOpGroupNonUniformBallot:
+        case SpvOpGroupNonUniformInverseBallot:
+        case SpvOpGroupNonUniformBallotBitExtract:
+        case SpvOpGroupNonUniformBallotBitCount:
+        case SpvOpGroupNonUniformBallotFindLSB:
+        case SpvOpGroupNonUniformBallotFindMSB:
+        case SpvOpGroupNonUniformShuffle:
+        case SpvOpGroupNonUniformShuffleXor:
+        case SpvOpGroupNonUniformShuffleUp:
+        case SpvOpGroupNonUniformShuffleDown:
+        case SpvOpGroupNonUniformIAdd:
+        case SpvOpGroupNonUniformFAdd:
+        case SpvOpGroupNonUniformIMul:
+        case SpvOpGroupNonUniformFMul:
+        case SpvOpGroupNonUniformSMin:
+        case SpvOpGroupNonUniformUMin:
+        case SpvOpGroupNonUniformFMin:
+        case SpvOpGroupNonUniformSMax:
+        case SpvOpGroupNonUniformUMax:
+        case SpvOpGroupNonUniformFMax:
+        case SpvOpGroupNonUniformBitwiseAnd:
+        case SpvOpGroupNonUniformBitwiseOr:
+        case SpvOpGroupNonUniformBitwiseXor:
+        case SpvOpGroupNonUniformLogicalAnd:
+        case SpvOpGroupNonUniformLogicalOr:
+        case SpvOpGroupNonUniformLogicalXor:
+        case SpvOpGroupNonUniformQuadBroadcast:
+        case SpvOpGroupNonUniformQuadSwap:
+        case SpvOpSubgroupBallotKHR:
+        case SpvOpSubgroupFirstInvocationKHR:
+        case SpvOpSubgroupAllKHR:
+        case SpvOpSubgroupAnyKHR:
+        case SpvOpSubgroupAllEqualKHR:
+        case SpvOpSubgroupReadInvocationKHR:
+            handle_op_group_non_uniform(ctx, opcode, res_id, type_id, operands, operand_count);
+            break;
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
             break;
@@ -723,6 +885,7 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     ctx->float_type = LLVMFloatTypeInContext(ctx->context);
     ctx->int_type = LLVMInt32TypeInContext(ctx->context);
     ctx->vec_float_type = LLVMVectorType(LLVMFloatTypeInContext(ctx->context), SIMT_WIDTH);
+    ctx->vec_int_type = LLVMVectorType(ctx->int_type, SIMT_WIDTH);
     ctx->vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx->context), SIMT_WIDTH);
     ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
     ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
@@ -794,9 +957,18 @@ void init_jit(JitContext* ctx,shader_t shader_type)
         simt_float,     // gl_LocalInvocationIndex (Index 2)
         simt_vec3_type, // gl_WorkGroupID (Index 3)
         simt_vec3_type, // gl_NumWorkGroups (Index 4)
-        simt_vec3_type  // gl_WorkGroupSize (Index 5)
+        simt_vec3_type, // gl_WorkGroupSize (Index 5)
+        simt_float,     // gl_SubgroupSize (Index 6)
+        simt_float,     // gl_SubgroupInvocationID (Index 7)
+        simt_float,     // gl_NumSubgroups (Index 8)
+        simt_float,     // gl_SubgroupID (Index 9)
+        simt_vec4_type, // gl_SubgroupEqMask (Index 10)
+        simt_vec4_type, // gl_SubgroupGeMask (Index 11)
+        simt_vec4_type, // gl_SubgroupGtMask (Index 12)
+        simt_vec4_type, // gl_SubgroupLeMask (Index 13)
+        simt_vec4_type  // gl_SubgroupLtMask (Index 14)
     };
-    ctx->cs_data_type = LLVMStructTypeInContext(ctx->context, cs_data_fields, 6, 0);
+    ctx->cs_data_type = LLVMStructTypeInContext(ctx->context, cs_data_fields, 15, 0);
 
     if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 
     {

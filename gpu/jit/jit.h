@@ -53,6 +53,8 @@ typedef struct {
 } JitControlConstruct;
 
 typedef float SimtFloat __attribute__((vector_size(64)));
+typedef int32_t SimtInt __attribute__((vector_size(64)));
+typedef uint32_t SimtUint __attribute__((vector_size(64)));
 
 typedef struct
 {
@@ -101,6 +103,15 @@ typedef struct
     SimtVec3 gl_WorkGroupID;
     SimtVec3 gl_NumWorkGroups;
     SimtVec3 gl_WorkGroupSize;
+    SimtFloat gl_SubgroupSize;
+    SimtFloat gl_SubgroupInvocationID;
+    SimtFloat gl_NumSubgroups;
+    SimtFloat gl_SubgroupID;
+    SimtVec4 gl_SubgroupEqMask;
+    SimtVec4 gl_SubgroupGeMask;
+    SimtVec4 gl_SubgroupGtMask;
+    SimtVec4 gl_SubgroupLeMask;
+    SimtVec4 gl_SubgroupLtMask;
 } BuiltinComputeInput;
 
 typedef struct {
@@ -235,6 +246,7 @@ struct JitContext{
     LLVMTypeRef int_type;
     LLVMTypeRef i1_type;
     LLVMTypeRef vec_float_type;
+    LLVMTypeRef vec_int_type;
     LLVMTypeRef vec_i1_type;
     LLVMTypeRef int8_type;
     LLVMTypeRef ptr_type;
