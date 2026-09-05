@@ -74,9 +74,10 @@ NumWorkGroups        = (Gx, Gy, Gz)
 WorkGroupSize        = (Sx, Sy, Sz)
 ```
 
-The current runtime schedules complete 16-lane warps. Local sizes should be
-multiples of 16; execution-mask handling for a partially filled tail warp is
-remaining work.
+The runtime schedules 16-lane warps and passes an active-lane bitmask through
+`ExecutionContext.active_mask`. A final partial warp is therefore safe for
+masked stores, atomics, image writes, and subgroup operations. Local sizes that
+are multiples of 16 remain the best-tested configuration.
 
 ### Workgroup lifecycle
 
@@ -467,8 +468,9 @@ workers do not mutate shared renderer state while reading dispatch parameters.
 The actual VRAM backing pointers remain shared, which is required for SSBO
 writes and atomics.
 
-The dispatch path normalizes zero group counts to one and currently uses 32-bit
-products for total workgroup counts. Overflow validation is remaining work.
+The dispatch path normalizes zero group counts to one and rejects group-count
+products that exceed the 32-bit `dispatch_total_workgroups` field. It also
+rejects local-size products that overflow the worker's 32-bit invocation count.
 
 ## 8. UEFI API
 
@@ -494,7 +496,7 @@ QEMU.
 
 ## 9. Validation and remaining work
 
-The current JIT suite passes 20/20 tests, including:
+The current JIT suite passes 24/24 tests, including:
 
 | Test | Coverage |
 | --- | --- |
@@ -504,14 +506,7 @@ The current JIT suite passes 20/20 tests, including:
 | `compute_subgroups` | Reduction, elect, ballot, and shuffle |
 | `compute_image_store` | 2D image writes and RGBA conversion |
 | `compute_bitwise` | Integer bitwise operators and shifts |
-
-Remaining work:
-
-- Apply an execution mask to tail warps when local invocation count is not a
-  multiple of 16.
-- Add stress tests for multiple workgroups, multiple warps, divergent barriers,
-  and larger shared-memory layouts.
-- Add indirect-dispatch validation and overflow checks.
-- Broaden image formats, dimensions, access qualifiers, and memory-ordering
-  guarantees.
-- Consider native `SimtInt` built-ins to reduce float-backed integer conversions.
+| `compute_multi_warp` | 32-invocation workgroups and repeated warp execution |
+| `compute_memory_barrier` | Shared-memory barrier-phase execution |
+| `image_write_formats` | 1-, 2-, 3-, and 4-channel host image writes |
+| `malformed_spirv` | Invalid SPIR-V rejection before parsing |

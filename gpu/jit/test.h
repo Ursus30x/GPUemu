@@ -143,6 +143,7 @@ void register_test(const char* name, TestFunc func)
         free(spirv_code); \
         ExecutionContext jit_ctx_storage = {0}; \
         ExecutionContext *jit_ctx = &jit_ctx_storage; \
+        jit_ctx->active_mask = 0xFFFFu; \
         BuiltinVertexOutput vs_out = {0}; \
         BuiltinFragmentInput fs_in = {0}; \
         BuiltinComputeInput cs_in = {0}; \

@@ -93,6 +93,7 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
         }
 
         ExecutionContext jit_ctx = {0};
+        jit_ctx.active_mask = 0xFFFFu;
         BuiltinVertexOutput vs_out = {0};
         bind_resources_to_context(gpu, &jit_ctx);
         jit_ctx.location_in_buffers[0] = &in_vec;
@@ -291,6 +292,7 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
 {
     SimtVec4 out_color = {0};
     ExecutionContext jit_ctx = {0};
+    jit_ctx.active_mask = 0xFFFFu;
     
     if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0)
     {
@@ -646,7 +648,12 @@ void worker_compute_simt_impl(RenderThreadArgs *args)
     uint32_t Sx = gpu->cs_local_size_x > 0 ? gpu->cs_local_size_x : 1;
     uint32_t Sy = gpu->cs_local_size_y > 0 ? gpu->cs_local_size_y : 1;
     uint32_t Sz = gpu->cs_local_size_z > 0 ? gpu->cs_local_size_z : 1;
-    uint32_t local_count = Sx * Sy * Sz;
+    uint64_t local_count_wide = (uint64_t)Sx * Sy * Sz;
+    if (local_count_wide > UINT32_MAX) {
+        DEBUG_PRINT("[COMPUTE] Local size is too large: (%u, %u, %u)\n", Sx, Sy, Sz);
+        return;
+    }
+    uint32_t local_count = (uint32_t)local_count_wide;
     uint32_t warps_per_wg = (local_count + SIMT_WIDTH - 1) / SIMT_WIDTH;
 
     uint32_t Gx = gpu->dispatch_group_count_x > 0 ? gpu->dispatch_group_count_x : 1;
@@ -672,6 +679,8 @@ void worker_compute_simt_impl(RenderThreadArgs *args)
             for (uint32_t w = 0; w < warps_per_wg; w++)
             {
                 uint32_t base_lane = w * SIMT_WIDTH;
+                uint32_t active_lanes = local_count > base_lane ? local_count - base_lane : 0;
+                if (active_lanes > SIMT_WIDTH) active_lanes = SIMT_WIDTH;
                 BuiltinComputeInput cs_in = {0};
 
                 for (int i = 0; i < SIMT_WIDTH; i++)
@@ -718,6 +727,7 @@ void worker_compute_simt_impl(RenderThreadArgs *args)
                 ectx.shared_memory = shared_mem;
                 ectx.spill_buffer = warp_spill ? (warp_spill + w * 2048) : NULL;
                 ectx.current_phase = phase;
+                ectx.active_mask = active_lanes == SIMT_WIDTH ? 0xFFFFu : ((1u << active_lanes) - 1u);
 
                 // Bind UBO
                 if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0) {

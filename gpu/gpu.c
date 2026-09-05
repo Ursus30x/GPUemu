@@ -16,6 +16,25 @@ static void vga_update_display(void *opaque);
 static void handle_dma(GpuState *s);
 static void process_ring_buffer(GpuState *s);
 
+static int configure_compute_dispatch(GpuState *gpu, uint32_t gx, uint32_t gy, uint32_t gz)
+{
+    gx = gx > 0 ? gx : 1;
+    gy = gy > 0 ? gy : 1;
+    gz = gz > 0 ? gz : 1;
+
+    uint64_t total = (uint64_t)gx * gy * gz;
+    if (total > UINT32_MAX) {
+        DEBUG_PRINT("[CMD] Compute dispatch too large: groups (%u, %u, %u)\n", gx, gy, gz);
+        return 0;
+    }
+
+    gpu->dispatch_group_count_x = gx;
+    gpu->dispatch_group_count_y = gy;
+    gpu->dispatch_group_count_z = gz;
+    gpu->dispatch_total_workgroups = (uint32_t)total;
+    return 1;
+}
+
 /* Thread Worker Functions */
 static void *gpu_refresh_thread_worker(void *opaque)
 {
@@ -320,7 +339,8 @@ static void execute_command(GpuState *gpu, Command *cmd)
             {
                 void* shader = gpu->vram_ptr + gpu->cs_code_addr;
                 uint32_t size = *((uint32_t *)shader);
-                if (size > 0 && gpu->cs_code_addr + sizeof(uint32_t) + size <= GPU_VRAM_SIZE)
+                if (size > 0 && (size % sizeof(uint32_t)) == 0 &&
+                    size <= GPU_VRAM_SIZE - gpu->cs_code_addr - sizeof(uint32_t))
                 {
                     uint32_t* shader_code = ((uint32_t *)(shader + sizeof(uint32_t)));
                     uint32_t hash = compute_shader_hash(shader_code, size / 4);
@@ -363,12 +383,9 @@ static void execute_command(GpuState *gpu, Command *cmd)
         uint32_t gz = cmd->payload.dispatch.group_count_z;
         DEBUG_PRINT("[CMD] Dispatch Compute: groups (%u, %u, %u)\n", gx, gy, gz);
 
-        gpu->dispatch_group_count_x = gx > 0 ? gx : 1;
-        gpu->dispatch_group_count_y = gy > 0 ? gy : 1;
-        gpu->dispatch_group_count_z = gz > 0 ? gz : 1;
-        gpu->dispatch_total_workgroups = gpu->dispatch_group_count_x * gpu->dispatch_group_count_y * gpu->dispatch_group_count_z;
-
-        compute_mode(gpu);
+        if (configure_compute_dispatch(gpu, gx, gy, gz)) {
+            compute_mode(gpu);
+        }
         break;
     }
 
@@ -376,7 +393,7 @@ static void execute_command(GpuState *gpu, Command *cmd)
     {
         uint32_t offset = cmd->payload.dispatch_indirect.indirect_offset;
         uint32_t gx = 1, gy = 1, gz = 1;
-        if (offset + sizeof(DispatchPayload) <= GPU_VRAM_SIZE)
+        if (offset <= GPU_VRAM_SIZE - sizeof(DispatchPayload))
         {
             DispatchPayload *indirect_params = (DispatchPayload *)(gpu->vram_ptr + offset);
             gx = indirect_params->group_count_x;
@@ -385,12 +402,9 @@ static void execute_command(GpuState *gpu, Command *cmd)
         }
         DEBUG_PRINT("[CMD] Dispatch Indirect Compute: offset 0x%x, groups (%u, %u, %u)\n", offset, gx, gy, gz);
 
-        gpu->dispatch_group_count_x = gx > 0 ? gx : 1;
-        gpu->dispatch_group_count_y = gy > 0 ? gy : 1;
-        gpu->dispatch_group_count_z = gz > 0 ? gz : 1;
-        gpu->dispatch_total_workgroups = gpu->dispatch_group_count_x * gpu->dispatch_group_count_y * gpu->dispatch_group_count_z;
-
-        compute_mode(gpu);
+        if (configure_compute_dispatch(gpu, gx, gy, gz)) {
+            compute_mode(gpu);
+        }
         break;
     }
 
