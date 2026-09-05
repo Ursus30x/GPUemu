@@ -1,5 +1,6 @@
 #include "rasterizer_simt.h"
 #include "math3d.h"
+#include "debug_gpu.h"
 #include <math.h>
 
 static inline uint8_t color_to_u8(float c)

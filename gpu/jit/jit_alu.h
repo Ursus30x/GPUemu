@@ -54,9 +54,6 @@ void handle_op_all(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_is_nan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_is_inf(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 
-void handle_op_atomic(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count);
-void handle_op_group_non_uniform(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count);
-
 
 void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t type_id,  uint32_t* operands);
 void handle_op_composite_extract(JitContext* ctx, uint32_t res_id, uint32_t* operands, uint32_t num_indices);
