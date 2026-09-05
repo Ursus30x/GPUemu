@@ -4,6 +4,7 @@
 #include "jit_flow.h"
 #include "jit_mem.h"
 #include "jit_smpl.h"
+#include "jit_atomic.h"
 #include <llvm-c/Transforms/PassBuilder.h>
 #include "debug_gpu.h"
 
@@ -328,6 +329,12 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpSLessThan:
             handle_op_slessthan(ctx, res_id, operands);
             break;
+        case SpvOpULessThan:
+            handle_op_ulessthan(ctx, res_id, operands);
+            break;
+        case SpvOpIEqual:
+            handle_op_iequal(ctx, res_id, operands);
+            break;
         case SpvOpFOrdLessThan:
             handle_op_fordlessthan(ctx, res_id, operands);
             break;
@@ -413,6 +420,43 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpEntryPoint:
             handle_op_entry_point(ctx, operands, operand_count);
             break;
+        case SpvOpExecutionMode:
+            if (operand_count >= 5 && operands[1] == 17 /* SpvExecutionModeLocalSize */) {
+                ctx->shader_info.local_size_x = operands[2];
+                ctx->shader_info.local_size_y = operands[3];
+                ctx->shader_info.local_size_z = operands[4];
+            }
+            break;
+        case SpvOpControlBarrier:
+        case SpvOpMemoryBarrier:
+        {
+            LLVMBuildFence(ctx->builder, LLVMAtomicOrderingSequentiallyConsistent, 0, "");
+            if (opcode == SpvOpControlBarrier) {
+                uint32_t barrier_idx = ctx->barrier_count++;
+                ctx->shader_info.barrier_count = ctx->barrier_count;
+
+                LLVMValueRef indices[] = {
+                    LLVMConstInt(ctx->int_type, 0, 0),
+                    LLVMConstInt(ctx->int_type, 5, 0)
+                };
+                LLVMValueRef phase_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 2, "phase_slot");
+                LLVMValueRef phase_val = LLVMBuildLoad2(ctx->builder, ctx->int_type, phase_slot, "phase_val");
+
+                LLVMValueRef is_current = LLVMBuildICmp(ctx->builder, LLVMIntEQ, phase_val, LLVMConstInt(ctx->int_type, barrier_idx, 0), "is_phase_match");
+
+                LLVMBasicBlockRef next_phase_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "next_phase_bb");
+                LLVMBasicBlockRef exit_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "phase_exit_bb");
+
+                LLVMBuildCondBr(ctx->builder, is_current, exit_bb, next_phase_bb);
+
+                LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
+                LLVMBuildRetVoid(ctx->builder);
+
+                LLVMPositionBuilderAtEnd(ctx->builder, next_phase_bb);
+                ctx->current_block = next_phase_bb;
+            }
+            break;
+        }
         case SpvOpTypeImage:
             handle_op_type_image(ctx, res_id, operands);
             break;
@@ -442,6 +486,168 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             break;
         case SpvOpImageQuerySize:
             handle_op_image_query_size(ctx, res_id, operands);
+            break;
+        case SpvOpImageRead:
+            handle_op_image_read(ctx, res_id, type_id, operands);
+            break;
+        case SpvOpImageWrite:
+            handle_op_image_write(ctx, operands);
+            break;
+        case SpvOpBitwiseAnd:
+            handle_op_bitwise_and(ctx, res_id, operands);
+            break;
+        case SpvOpBitwiseOr:
+            handle_op_bitwise_or(ctx, res_id, operands);
+            break;
+        case SpvOpBitwiseXor:
+            handle_op_bitwise_xor(ctx, res_id, operands);
+            break;
+        case SpvOpNot:
+            handle_op_not(ctx, res_id, operands);
+            break;
+        case SpvOpShiftLeftLogical:
+            handle_op_shift_left_logical(ctx, res_id, operands);
+            break;
+        case SpvOpShiftRightLogical:
+            handle_op_shift_right_logical(ctx, res_id, operands);
+            break;
+        case SpvOpShiftRightArithmetic:
+            handle_op_shift_right_arithmetic(ctx, res_id, operands);
+            break;
+        case SpvOpBitcast:
+            handle_op_bitcast(ctx, res_id, type_id, operands);
+            break;
+        case SpvOpConvertFToS:
+            handle_op_convert_f_to_s(ctx, res_id, operands);
+            break;
+        case SpvOpConvertFToU:
+            handle_op_convert_f_to_u(ctx, res_id, operands);
+            break;
+        case SpvOpConvertUToF:
+            handle_op_convert_u_to_f(ctx, res_id, operands);
+            break;
+        case SpvOpINotEqual:
+            handle_op_inot_equal(ctx, res_id, operands);
+            break;
+        case SpvOpSGreaterThan:
+            handle_op_sgreater_than(ctx, res_id, operands);
+            break;
+        case SpvOpUGreaterThan:
+            handle_op_ugreater_than(ctx, res_id, operands);
+            break;
+        case SpvOpSGreaterThanEqual:
+            handle_op_sgreater_than_equal(ctx, res_id, operands);
+            break;
+        case SpvOpUGreaterThanEqual:
+            handle_op_ugreater_than_equal(ctx, res_id, operands);
+            break;
+        case SpvOpSLessThanEqual:
+            handle_op_sless_than_equal(ctx, res_id, operands);
+            break;
+        case SpvOpULessThanEqual:
+            handle_op_uless_than_equal(ctx, res_id, operands);
+            break;
+        case SpvOpSNegate:
+            handle_op_snegate(ctx, res_id, operands);
+            break;
+        case SpvOpUMod:
+            handle_op_umod(ctx, res_id, operands);
+            break;
+        case SpvOpSRem:
+            handle_op_srem(ctx, res_id, operands);
+            break;
+        case SpvOpSMod:
+            handle_op_smod(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalAnd:
+            handle_op_logical_and(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalOr:
+            handle_op_logical_or(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalNot:
+            handle_op_logical_not(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalEqual:
+            handle_op_logical_equal(ctx, res_id, operands);
+            break;
+        case SpvOpLogicalNotEqual:
+            handle_op_logical_not_equal(ctx, res_id, operands);
+            break;
+        case SpvOpSelect:
+            handle_op_select(ctx, res_id, operands);
+            break;
+        case SpvOpAny:
+            handle_op_any(ctx, res_id, operands);
+            break;
+        case SpvOpAll:
+            handle_op_all(ctx, res_id, operands);
+            break;
+        case SpvOpIsNan:
+            handle_op_is_nan(ctx, res_id, operands);
+            break;
+        case SpvOpIsInf:
+            handle_op_is_inf(ctx, res_id, operands);
+            break;
+        case SpvOpAtomicLoad:
+        case SpvOpAtomicStore:
+        case SpvOpAtomicExchange:
+        case SpvOpAtomicCompareExchange:
+        case SpvOpAtomicCompareExchangeWeak:
+        case SpvOpAtomicIIncrement:
+        case SpvOpAtomicIDecrement:
+        case SpvOpAtomicIAdd:
+        case SpvOpAtomicISub:
+        case SpvOpAtomicSMin:
+        case SpvOpAtomicUMin:
+        case SpvOpAtomicSMax:
+        case SpvOpAtomicUMax:
+        case SpvOpAtomicAnd:
+        case SpvOpAtomicOr:
+        case SpvOpAtomicXor:
+            handle_op_atomic(ctx, opcode, res_id, type_id, operands, operand_count);
+            break;
+        case SpvOpGroupNonUniformElect:
+        case SpvOpGroupNonUniformAll:
+        case SpvOpGroupNonUniformAny:
+        case SpvOpGroupNonUniformAllEqual:
+        case SpvOpGroupNonUniformBroadcast:
+        case SpvOpGroupNonUniformBroadcastFirst:
+        case SpvOpGroupNonUniformBallot:
+        case SpvOpGroupNonUniformInverseBallot:
+        case SpvOpGroupNonUniformBallotBitExtract:
+        case SpvOpGroupNonUniformBallotBitCount:
+        case SpvOpGroupNonUniformBallotFindLSB:
+        case SpvOpGroupNonUniformBallotFindMSB:
+        case SpvOpGroupNonUniformShuffle:
+        case SpvOpGroupNonUniformShuffleXor:
+        case SpvOpGroupNonUniformShuffleUp:
+        case SpvOpGroupNonUniformShuffleDown:
+        case SpvOpGroupNonUniformIAdd:
+        case SpvOpGroupNonUniformFAdd:
+        case SpvOpGroupNonUniformIMul:
+        case SpvOpGroupNonUniformFMul:
+        case SpvOpGroupNonUniformSMin:
+        case SpvOpGroupNonUniformUMin:
+        case SpvOpGroupNonUniformFMin:
+        case SpvOpGroupNonUniformSMax:
+        case SpvOpGroupNonUniformUMax:
+        case SpvOpGroupNonUniformFMax:
+        case SpvOpGroupNonUniformBitwiseAnd:
+        case SpvOpGroupNonUniformBitwiseOr:
+        case SpvOpGroupNonUniformBitwiseXor:
+        case SpvOpGroupNonUniformLogicalAnd:
+        case SpvOpGroupNonUniformLogicalOr:
+        case SpvOpGroupNonUniformLogicalXor:
+        case SpvOpGroupNonUniformQuadBroadcast:
+        case SpvOpGroupNonUniformQuadSwap:
+        case SpvOpSubgroupBallotKHR:
+        case SpvOpSubgroupFirstInvocationKHR:
+        case SpvOpSubgroupAllKHR:
+        case SpvOpSubgroupAnyKHR:
+        case SpvOpSubgroupAllEqualKHR:
+        case SpvOpSubgroupReadInvocationKHR:
+            handle_op_group_non_uniform(ctx, opcode, res_id, type_id, operands, operand_count);
             break;
         default:
             DEBUG_PRINT("Unhandled opcode %d in JIT emitter\n", opcode);
@@ -483,16 +689,11 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
     switch (info->opcode)
     {
         case SpvOpTypeFloat:
+        case SpvOpTypeInt:
             return ctx->vec_float_type;
 
-        case SpvOpTypeInt:
-        {
-            uint32_t width = info->base_type_id ? info->base_type_id : 32;
-            return LLVMIntTypeInContext(ctx->context, width);
-        }
-
         case SpvOpTypeBool:
-            return LLVMInt1TypeInContext(ctx->context);
+            return ctx->vec_i1_type;
 
         case SpvOpTypeVector: 
         {
@@ -528,6 +729,11 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
 
 jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_count) 
 {   
+    if (!ctx || !binary || word_count < 5 || binary[0] != 0x07230203u || binary[3] == 0) {
+        DEBUG_PRINT("Invalid SPIR-V module\n");
+        return NULL;
+    }
+
     uint32_t* p = binary + 5;
     uint32_t* end = binary + word_count;
         
@@ -550,18 +756,16 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         ctx->decorations[i].array_stride = -1;
     }
  
-    ctx->float_type = LLVMFloatTypeInContext(ctx->context);
-    ctx->int_type = LLVMInt32TypeInContext(ctx->context);
-    ctx->vec_float_type = LLVMVectorType(LLVMFloatTypeInContext(ctx->context), SIMT_WIDTH);
-    ctx->vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx->context), SIMT_WIDTH);
-    ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
-    ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
 
 
     ctx->func = NULL;
     ctx->current_block = NULL;
     ctx->control_stack_depth = 0;
     memset(ctx->control_stack, 0, sizeof(ctx->control_stack));
+    ctx->shared_mem_offset = 0;
+    ctx->spill_mem_offset = 0;
+    ctx->barrier_count = 0;
+    ctx->shader_info.barrier_count = 0;
 
     DEBUG_PRINT("--- Starting JIT Compilation (LLVM ORC Backend) ---\n");
     LLVMValueRef values[SIMT_WIDTH];
@@ -682,6 +886,15 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     ctx->env_arg_param = NULL;
     ctx->vs_data_param = NULL;
     ctx->fs_data_param = NULL;
+    ctx->cs_data_param = NULL;
+
+    ctx->float_type = LLVMFloatTypeInContext(ctx->context);
+    ctx->int_type = LLVMInt32TypeInContext(ctx->context);
+    ctx->vec_float_type = LLVMVectorType(LLVMFloatTypeInContext(ctx->context), SIMT_WIDTH);
+    ctx->vec_int_type = LLVMVectorType(ctx->int_type, SIMT_WIDTH);
+    ctx->vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx->context), SIMT_WIDTH);
+    ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
+    ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
 
     LLVMTypeRef float_type = LLVMFloatTypeInContext(ctx->context);
     // <16 x float>
@@ -696,6 +909,10 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     // SimtVec4 = [4 x <16 x float>]
     LLVMTypeRef simt_vec4_type =
         LLVMArrayType(simt_float, 4);
+
+    // SimtVec3 = [3 x <16 x float>]
+    LLVMTypeRef simt_vec3_type =
+        LLVMArrayType(simt_float, 3);
 
     // BuiltinVertexOutput
     LLVMTypeRef builtin_fields[] = {
@@ -714,16 +931,17 @@ void init_jit(JitContext* ctx,shader_t shader_type)
 
     // ExecutionContext
     LLVMTypeRef exec_ctx_fields[] = {
-        LLVMArrayType(ptr_type, MAX_BINDINGS),     // binding_buffers
-        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_in_buffers
-        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_out_buffers
-        builtin_vertex_output_type                 // vertexOut
+        LLVMArrayType(ptr_type, MAX_BINDINGS),     // binding_buffers (0)
+        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_in_buffers (1)
+        LLVMArrayType(ptr_type, MAX_ATTRIBUTES),   // location_out_buffers (2)
+        ptr_type,                                  // shared_memory (3)
+        ptr_type,                                  // spill_buffer (4)
+        ctx->int_type,                             // current_phase (5)
+        ctx->int_type,                             // active_mask (6)
+        builtin_vertex_output_type                 // vertexOut (7)
     };
 
-    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 4, 0);
-    /* Note: module-level globals for ExecutionContext and vs_data are no longer created.
-       Per-invocation pointers are passed as function parameters (env_arg_param / vs_data_param).
-    */
+    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 8, 0);
 
     LLVMTypeRef vs_data_fields[] = {
         simt_vec4_type,// gl_Position (Index 0)
@@ -739,6 +957,25 @@ void init_jit(JitContext* ctx,shader_t shader_type)
         simt_float     // gl_SampleID (Index 3)
     };
     ctx->fs_data_type = LLVMStructTypeInContext(ctx->context, fs_data_fields, 4, 0);
+
+    LLVMTypeRef cs_data_fields[] = {
+        simt_vec3_type, // gl_GlobalInvocationID (Index 0)
+        simt_vec3_type, // gl_LocalInvocationID (Index 1)
+        simt_float,     // gl_LocalInvocationIndex (Index 2)
+        simt_vec3_type, // gl_WorkGroupID (Index 3)
+        simt_vec3_type, // gl_NumWorkGroups (Index 4)
+        simt_vec3_type, // gl_WorkGroupSize (Index 5)
+        simt_float,     // gl_SubgroupSize (Index 6)
+        simt_float,     // gl_SubgroupInvocationID (Index 7)
+        simt_float,     // gl_NumSubgroups (Index 8)
+        simt_float,     // gl_SubgroupID (Index 9)
+        simt_vec4_type, // gl_SubgroupEqMask (Index 10)
+        simt_vec4_type, // gl_SubgroupGeMask (Index 11)
+        simt_vec4_type, // gl_SubgroupGtMask (Index 12)
+        simt_vec4_type, // gl_SubgroupLeMask (Index 13)
+        simt_vec4_type  // gl_SubgroupLtMask (Index 14)
+    };
+    ctx->cs_data_type = LLVMStructTypeInContext(ctx->context, cs_data_fields, 15, 0);
 
     if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 
     {

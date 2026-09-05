@@ -33,7 +33,8 @@ typedef enum {
   Gop3dBufferTypeUniform,
   Gop3dBufferTypeShaderCode,
   Gop3dBufferTypeTexture,
-  Gop3dBufferTypeTextureDesc
+  Gop3dBufferTypeTextureDesc,
+  Gop3dBufferTypeSSBO
 } GOP_3D_BUFFER_TYPE;
 
 typedef enum {
@@ -194,6 +195,21 @@ EFI_STATUS
   );
 
 /**
+ * Reads data from GPU VRAM to Host Memory.
+ * @param GpuAddress  VRAM offset to read from.
+ * @param HostData    Pointer to destination buffer in System Memory.
+ * @param Size        Size in bytes to copy.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_READ_BUFFER)(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  VRAMADDR            GpuAddress,
+  OUT VOID                *HostData,
+  IN  UINT32              Size
+  );
+
+/**
  * Issues a draw call.
  * @param Topology    Primitive type (Points, Lines, Triangles).
  * @param VertexCount Number of vertices (or indices if IBO is bound) to draw.
@@ -252,6 +268,31 @@ EFI_STATUS
   IN BOOLEAN              EnableDepthWrite
 );
 
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_BIND_SSBO)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               BindingSlot,
+  IN VRAMADDR             GpuAddress,
+  IN UINT32               Size
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_DISPATCH)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               GroupCountX,
+  IN UINT32               GroupCountY,
+  IN UINT32               GroupCountZ
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_DISPATCH_INDIRECT)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  );
+
 /* -------------------------- Protocol structure -------------------------- */
 
 struct GOP_3D_PROTOCOL {
@@ -268,6 +309,8 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_BIND_RESOURCE      GpuBindIBO;
   GOP_3D_BIND_RESOURCE      GpuBindFragShader;
   GOP_3D_BIND_RESOURCE      GpuBindVertShader;
+  GOP_3D_BIND_RESOURCE      GpuBindCompShader;
+  GOP_3D_BIND_SSBO          GpuBindSSBO;
   
   GOP_3D_BIND_TEXTURE       GpuBindTexture;
   GOP_3D_SET_BLEND_STATE    GpuSetBlendState;
@@ -276,8 +319,11 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer;
   GOP_3D_UPDATE_BUFFER      GpuUpdateBuffer;
   GOP_3D_FREE_BUFFER        GpuFreeBuffer;
+  GOP_3D_READ_BUFFER        GpuReadBuffer;
 
   GOP_3D_DRAW               GpuDraw;
+  GOP_3D_DISPATCH           GpuDispatchCompute;
+  GOP_3D_DISPATCH_INDIRECT  GpuDispatchComputeIndirect;
   GOP_3D_CLEAR_FRAME        GpuClearFrame;
 
   GOP_3D_SUBMIT_CMD         GpuSubmitCmd;

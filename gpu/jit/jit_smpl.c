@@ -544,3 +544,173 @@ void handle_op_image_query_size_lod(JitContext *ctx, uint32_t res_id, uint32_t *
 {
     handle_op_image_query_size(ctx, res_id, operands);
 }
+
+static inline uint8_t color_to_u8(float c)
+{
+    if (c <= 0.0f) return 0;
+    float scaled = c * 255.0f;
+    if (scaled >= 255.0f) return 255;
+    return (uint8_t)(scaled + 0.5f);
+}
+
+void image_write_2d_simt(
+    const TextureSamplerDescriptor *desc,
+    const int32_t *x_coords,
+    const int32_t *y_coords,
+    const float *in_r,
+    const float *in_g,
+    const float *in_b,
+    const float *in_a,
+    const int32_t *mask
+)
+{
+    if (!desc || !desc->data || desc->width == 0 || desc->height == 0)
+        return;
+
+    uint32_t channels = desc->channels ? desc->channels : 4;
+    uint8_t *pixels = (uint8_t *)desc->data;
+
+    for (int lane = 0; lane < SIMT_WIDTH; lane++)
+    {
+        if (!mask[lane])
+            continue;
+
+        int x = x_coords[lane];
+        int y = y_coords[lane];
+
+        if (x < 0 || x >= (int)desc->width || y < 0 || y >= (int)desc->height)
+            continue;
+
+        uint32_t idx = ((uint32_t)y * desc->width + (uint32_t)x) * channels;
+
+        switch (channels)
+        {
+            case 1:
+                pixels[idx] = color_to_u8(in_r[lane]);
+                break;
+            case 2:
+                pixels[idx + 0] = color_to_u8(in_r[lane]);
+                pixels[idx + 1] = color_to_u8(in_g[lane]);
+                break;
+            case 3:
+                pixels[idx + 0] = color_to_u8(in_r[lane]);
+                pixels[idx + 1] = color_to_u8(in_g[lane]);
+                pixels[idx + 2] = color_to_u8(in_b[lane]);
+                break;
+            case 4:
+            default:
+                pixels[idx + 0] = color_to_u8(in_r[lane]);
+                pixels[idx + 1] = color_to_u8(in_g[lane]);
+                pixels[idx + 2] = color_to_u8(in_b[lane]);
+                pixels[idx + 3] = color_to_u8(in_a[lane]);
+                break;
+        }
+    }
+}
+
+void handle_op_image_read(JitContext *ctx, uint32_t res_id, uint32_t type_id, uint32_t *operands)
+{
+    (void)type_id;
+    handle_op_image_fetch(ctx, res_id, operands);
+}
+
+void handle_op_image_write(JitContext *ctx, uint32_t *operands)
+{
+    uint32_t image_id = operands[0];
+    uint32_t coords_id = operands[1];
+    uint32_t texel_id = operands[2];
+
+    LLVMValueRef image_val = get_val(ctx, image_id);
+    if (!image_val)
+    {
+        image_val = LLVMConstNull(ctx->ptr_type);
+    }
+
+    LLVMValueRef coords_val = get_val(ctx, coords_id);
+    LLVMValueRef texel_val = get_val(ctx, texel_id);
+
+    LLVMValueRef x_coords = LLVMBuildExtractValue(ctx->builder, coords_val, 0, "write_x");
+    LLVMValueRef y_coords = LLVMBuildExtractValue(ctx->builder, coords_val, 1, "write_y");
+
+    LLVMTypeRef x_type = LLVMTypeOf(x_coords);
+    if (LLVMGetTypeKind(x_type) == LLVMVectorTypeKind &&
+        (LLVMGetTypeKind(LLVMGetElementType(x_type)) == LLVMFloatTypeKind ||
+         LLVMGetTypeKind(LLVMGetElementType(x_type)) == LLVMDoubleTypeKind))
+    {
+        x_coords = LLVMBuildFPToSI(ctx->builder, x_coords, LLVMVectorType(ctx->int_type, SIMT_WIDTH), "x_f2i");
+        y_coords = LLVMBuildFPToSI(ctx->builder, y_coords, LLVMVectorType(ctx->int_type, SIMT_WIDTH), "y_f2i");
+    }
+
+    LLVMValueRef in_r = NULL, in_g = NULL, in_b = NULL, in_a = NULL;
+    LLVMTypeRef texel_type = LLVMTypeOf(texel_val);
+    if (LLVMGetTypeKind(texel_type) == LLVMArrayTypeKind)
+    {
+        uint32_t num_comps = LLVMGetArrayLength(texel_type);
+        in_r = LLVMBuildExtractValue(ctx->builder, texel_val, 0, "in_r");
+        in_g = num_comps > 1 ? LLVMBuildExtractValue(ctx->builder, texel_val, 1, "in_g") : in_r;
+        in_b = num_comps > 2 ? LLVMBuildExtractValue(ctx->builder, texel_val, 2, "in_b") : in_r;
+        in_a = num_comps > 3 ? LLVMBuildExtractValue(ctx->builder, texel_val, 3, "in_a") : in_r;
+    }
+    else
+    {
+        in_r = in_g = in_b = in_a = texel_val;
+    }
+
+    LLVMTypeRef ptr_type = ctx->ptr_type;
+    LLVMTypeRef vec_float_type = ctx->vec_float_type;
+    LLVMTypeRef vec_int_type = LLVMVectorType(ctx->int_type, SIMT_WIDTH);
+
+    LLVMValueRef x_alloca = LLVMBuildAlloca(ctx->builder, vec_int_type, "wx_alloca");
+    LLVMValueRef y_alloca = LLVMBuildAlloca(ctx->builder, vec_int_type, "wy_alloca");
+    LLVMValueRef r_alloca = LLVMBuildAlloca(ctx->builder, vec_float_type, "wr_alloca");
+    LLVMValueRef g_alloca = LLVMBuildAlloca(ctx->builder, vec_float_type, "wg_alloca");
+    LLVMValueRef b_alloca = LLVMBuildAlloca(ctx->builder, vec_float_type, "wb_alloca");
+    LLVMValueRef a_alloca = LLVMBuildAlloca(ctx->builder, vec_float_type, "wa_alloca");
+    LLVMValueRef mask_alloca = LLVMBuildAlloca(ctx->builder, vec_int_type, "mask_alloca");
+
+    LLVMSetAlignment(x_alloca, 64);
+    LLVMSetAlignment(y_alloca, 64);
+    LLVMSetAlignment(r_alloca, 64);
+    LLVMSetAlignment(g_alloca, 64);
+    LLVMSetAlignment(b_alloca, 64);
+    LLVMSetAlignment(a_alloca, 64);
+    LLVMSetAlignment(mask_alloca, 64);
+
+    LLVMBuildStore(ctx->builder, x_coords, x_alloca);
+    LLVMBuildStore(ctx->builder, y_coords, y_alloca);
+    LLVMBuildStore(ctx->builder, in_r, r_alloca);
+    LLVMBuildStore(ctx->builder, in_g, g_alloca);
+    LLVMBuildStore(ctx->builder, in_b, b_alloca);
+    LLVMBuildStore(ctx->builder, in_a, a_alloca);
+
+    LLVMValueRef mask_i32 = LLVMBuildZExt(ctx->builder, ctx->emask, vec_int_type, "mask_i32");
+    LLVMBuildStore(ctx->builder, mask_i32, mask_alloca);
+
+    LLVMValueRef write_func = LLVMGetNamedFunction(ctx->module, "image_write_2d_simt");
+    LLVMTypeRef param_types[8] = {
+        ptr_type, ptr_type, ptr_type, ptr_type, ptr_type, ptr_type, ptr_type, ptr_type
+    };
+    LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), param_types, 8, 0);
+
+    if (!write_func)
+    {
+        write_func = LLVMAddFunction(ctx->module, "image_write_2d_simt", func_type);
+        if (ctx->engine)
+        {
+            LLVMAddGlobalMapping(ctx->engine, write_func, (void*)&image_write_2d_simt);
+        }
+    }
+
+    LLVMValueRef args[8] = {
+        image_val,
+        x_alloca,
+        y_alloca,
+        r_alloca,
+        g_alloca,
+        b_alloca,
+        a_alloca,
+        mask_alloca
+    };
+
+    LLVMBuildCall2(ctx->builder, func_type, write_func, args, 8, "");
+}

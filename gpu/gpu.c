@@ -16,6 +16,25 @@ static void vga_update_display(void *opaque);
 static void handle_dma(GpuState *s);
 static void process_ring_buffer(GpuState *s);
 
+static int configure_compute_dispatch(GpuState *gpu, uint32_t gx, uint32_t gy, uint32_t gz)
+{
+    gx = gx > 0 ? gx : 1;
+    gy = gy > 0 ? gy : 1;
+    gz = gz > 0 ? gz : 1;
+
+    uint64_t total = (uint64_t)gx * gy * gz;
+    if (total > UINT32_MAX) {
+        DEBUG_PRINT("[CMD] Compute dispatch too large: groups (%u, %u, %u)\n", gx, gy, gz);
+        return 0;
+    }
+
+    gpu->dispatch_group_count_x = gx;
+    gpu->dispatch_group_count_y = gy;
+    gpu->dispatch_group_count_z = gz;
+    gpu->dispatch_total_workgroups = (uint32_t)total;
+    return 1;
+}
+
 /* Thread Worker Functions */
 static void *gpu_refresh_thread_worker(void *opaque)
 {
@@ -312,10 +331,82 @@ static void execute_command(GpuState *gpu, Command *cmd)
             gpu->depth_write_enable = depth_config.depth_write_enable;
             break;
         }
+        case STATE_ID_COMPUTE_SHADER_PTR:
+        {
+            DEBUG_PRINT("[CMD] Compute shader config\n");
+            gpu->cs_code_addr = cmd->payload.state.value.shader_ptrs.cs_addr;
+            if (gpu->cs_code_addr + sizeof(uint32_t) <= GPU_VRAM_SIZE)
+            {
+                void* shader = gpu->vram_ptr + gpu->cs_code_addr;
+                uint32_t size = *((uint32_t *)shader);
+                if (size > 0 && (size % sizeof(uint32_t)) == 0 &&
+                    size <= GPU_VRAM_SIZE - gpu->cs_code_addr - sizeof(uint32_t))
+                {
+                    uint32_t* shader_code = ((uint32_t *)(shader + sizeof(uint32_t)));
+                    uint32_t hash = compute_shader_hash(shader_code, size / 4);
+                    if (gpu->cs_shader_func == NULL || gpu->cs_hash != hash)
+                    {
+                        free_jit(&gpu->jit_ctx_cs); 
+                        init_jit(&gpu->jit_ctx_cs, COMPUTE_SHADER); 
+                        gpu->cs_shader_func = jit_compile_spirv(&gpu->jit_ctx_cs, shader_code, size / 4);
+                        gpu->cs_hash = hash;
+                        gpu->cs_local_size_x = gpu->jit_ctx_cs.shader_info.local_size_x;
+                        gpu->cs_local_size_y = gpu->jit_ctx_cs.shader_info.local_size_y;
+                        gpu->cs_local_size_z = gpu->jit_ctx_cs.shader_info.local_size_z;
+                        gpu->cs_barrier_count = gpu->jit_ctx_cs.shader_info.barrier_count;
+                    }
+                }
+            }
+            break;
+        }
+        case STATE_ID_SSBO_CONFIG:
+        {
+            SsboConfigPayload ssbo = cmd->payload.state.value.ssbo_config;
+            DEBUG_PRINT("[CMD] SSBO config: binding %u, addr 0x%x, size %u\n", ssbo.binding, ssbo.addr, ssbo.size);
+            if (ssbo.binding < MAX_BINDINGS)
+            {
+                gpu->ssbo_config[ssbo.binding].addr = ssbo.addr;
+                gpu->ssbo_config[ssbo.binding].size = ssbo.size;
+                gpu->ssbo_config[ssbo.binding].element_type = D_TYPE_UINT32;
+            }
+            break;
+        }
         default:
             break;
         }
         break;
+
+    case CMD_DISPATCH:
+    {
+        uint32_t gx = cmd->payload.dispatch.group_count_x;
+        uint32_t gy = cmd->payload.dispatch.group_count_y;
+        uint32_t gz = cmd->payload.dispatch.group_count_z;
+        DEBUG_PRINT("[CMD] Dispatch Compute: groups (%u, %u, %u)\n", gx, gy, gz);
+
+        if (configure_compute_dispatch(gpu, gx, gy, gz)) {
+            compute_mode(gpu);
+        }
+        break;
+    }
+
+    case CMD_DISPATCH_INDIRECT:
+    {
+        uint32_t offset = cmd->payload.dispatch_indirect.indirect_offset;
+        uint32_t gx = 1, gy = 1, gz = 1;
+        if (offset <= GPU_VRAM_SIZE - sizeof(DispatchPayload))
+        {
+            DispatchPayload *indirect_params = (DispatchPayload *)(gpu->vram_ptr + offset);
+            gx = indirect_params->group_count_x;
+            gy = indirect_params->group_count_y;
+            gz = indirect_params->group_count_z;
+        }
+        DEBUG_PRINT("[CMD] Dispatch Indirect Compute: offset 0x%x, groups (%u, %u, %u)\n", offset, gx, gy, gz);
+
+        if (configure_compute_dispatch(gpu, gx, gy, gz)) {
+            compute_mode(gpu);
+        }
+        break;
+    }
 
     case CMD_DMA_TRANSFER:
         DEBUG_PRINT("[CMD] Queued DMA Transfer\n");
@@ -467,6 +558,9 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case REG_FRAGMENT_SHADER_ADDR:
         target_reg = &s->fs_code_addr;
         break;
+    case REG_COMPUTE_SHADER_ADDR:
+        target_reg = &s->cs_code_addr;
+        break;
     case REG_FB_WIDTH_ADDR:
         target_reg = &s->width;
         break;
@@ -567,6 +661,9 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case REG_FRAGMENT_SHADER_ADDR:
         reg_val = s->fs_code_addr;
+        break;
+    case REG_COMPUTE_SHADER_ADDR:
+        reg_val = s->cs_code_addr;
         break;
     case REG_FB_WIDTH_ADDR:
         reg_val = s->width;
@@ -714,8 +811,10 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->con = graphic_console_init(DEVICE(pdev), 0, &ghwops, gpu);
     gpu->vs_shader_func = NULL;
     gpu->fs_shader_func = NULL;
+    gpu->cs_shader_func = NULL;
     gpu->vs_hash = 0;
     gpu->fs_hash = 0;
+    gpu->cs_hash = 0;
     // init state
     gpu->height = 480;
     gpu->width = 640;
@@ -730,6 +829,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     msi_init(pdev, 0, 1, true, false, errp);
     init_jit(&gpu->jit_ctx_fs, FRAGMENT_SHADER);
     init_jit(&gpu->jit_ctx_vs, VERTEX_SHADER);
+    init_jit(&gpu->jit_ctx_cs, COMPUTE_SHADER);
 
     qemu_mutex_init(&gpu->cmd_mutex);
     qemu_cond_init(&gpu->cmd_cond);

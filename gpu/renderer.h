@@ -74,6 +74,7 @@ typedef struct {
 
     JitContext jit_ctx_vs; 
     JitContext jit_ctx_fs; 
+    JitContext jit_ctx_cs;
 } RenderThreadArgs;
 
 typedef enum {
@@ -86,6 +87,7 @@ typedef enum {
     TASK_RASTERIZE_LINES_SIMT,
     TASK_WIREFRAME_VERTICES,
     TASK_WIREFRAME_EDGES,
+    TASK_COMPUTE_SIMT,
     TASK_EXIT
 } RenderTaskType;
 
@@ -118,6 +120,7 @@ typedef struct {
 
 
 void init_thread_pool(void);
+void dispatch_task(RenderTaskType task);
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color);
 void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, uint32_t color2);
 
@@ -127,4 +130,7 @@ float edge_func(Vec3 a, Vec3 b, Vec3 c);
 void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu);
 void gpu_render_triangles_simt(void *opaque);
 void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float point_size, float line_width);
+
+
+void compute_mode(GpuState *gpu);
 #endif

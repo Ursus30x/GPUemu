@@ -1,5 +1,6 @@
 #include "rasterizer_simt.h"
 #include "math3d.h"
+#include "debug_gpu.h"
 #include <math.h>
 
 static inline uint8_t color_to_u8(float c)
@@ -93,12 +94,13 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
         }
 
         ExecutionContext jit_ctx = {0};
+        jit_ctx.active_mask = 0xFFFFu;
         BuiltinVertexOutput vs_out = {0};
         bind_resources_to_context(gpu, &jit_ctx);
         jit_ctx.location_in_buffers[0] = &in_vec;
         jit_ctx.location_in_buffers[1] = &in_uv;
         jit_ctx.location_out_buffers[0] = &args->transformed_uv_simt;
-        gpu->vs_shader_func(&jit_ctx, &vs_out, NULL);
+        gpu->vs_shader_func(&jit_ctx, &vs_out, NULL, NULL);
         args->transformed_simt = vs_out.gl_Position;
 
         for (uint32_t i = 0; i < SIMT_WIDTH; i++)
@@ -291,6 +293,7 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
 {
     SimtVec4 out_color = {0};
     ExecutionContext jit_ctx = {0};
+    jit_ctx.active_mask = 0xFFFFu;
     
     if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0)
     {
@@ -325,7 +328,7 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
     jit_ctx.location_in_buffers[0] = fs_in_color;
     jit_ctx.location_in_buffers[1] = fs_in_uv;
     jit_ctx.location_out_buffers[0] = &out_color;
-    gpu->fs_shader_func(&jit_ctx, NULL, fs_input);
+    gpu->fs_shader_func(&jit_ctx, NULL, fs_input, NULL);
 
     for (int lane = 0; lane < 16; lane++) 
     {
@@ -615,5 +618,137 @@ void worker_rasterize_lines_simt_impl(RenderThreadArgs *args)
         float u2[3] = { q[0].u, q[2].u, q[3].u };
         float v2[3] = { q[0].v, q[2].v, q[3].v };
         draw_triangle_simt_band(q[0].pos, q[2].pos, q[3].pos, c2, u2, v2, gpu, band_min_y, band_max_y, args);
+    }
+}
+
+void worker_compute_simt_impl(RenderThreadArgs *args)
+{
+    GpuState local_gpu = *(args->orig_gpu);
+    GpuState *gpu = &local_gpu;
+
+    uint32_t total_wg = gpu->dispatch_total_workgroups;
+    if (total_wg == 0) return;
+
+    // Find worker ID by matching args pointer
+    //int worker_id = 0;
+    // for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+    //     if (args == &args->orig_gpu->refresh_thread) {} // dummy comparison
+    // }
+    // Calculate chunk for this thread
+    //uint32_t chunk = (total_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
+    
+    // Determine worker_id based on address offset from pool
+    // Note: RenderThreadArgs array element index:
+    uint32_t wg_start = 0;
+    uint32_t wg_end = 0;
+    // Each thread gets assigned a range of workgroups
+    // To be thread-agnostic, args contains start_block and end_block set by dispatch
+    wg_start = args->start_block;
+    wg_end = args->end_block;
+
+    uint32_t Sx = gpu->cs_local_size_x > 0 ? gpu->cs_local_size_x : 1;
+    uint32_t Sy = gpu->cs_local_size_y > 0 ? gpu->cs_local_size_y : 1;
+    uint32_t Sz = gpu->cs_local_size_z > 0 ? gpu->cs_local_size_z : 1;
+    uint64_t local_count_wide = (uint64_t)Sx * Sy * Sz;
+    if (local_count_wide > UINT32_MAX) {
+        DEBUG_PRINT("[COMPUTE] Local size is too large: (%u, %u, %u)\n", Sx, Sy, Sz);
+        return;
+    }
+    uint32_t local_count = (uint32_t)local_count_wide;
+    uint32_t warps_per_wg = (local_count + SIMT_WIDTH - 1) / SIMT_WIDTH;
+
+    uint32_t Gx = gpu->dispatch_group_count_x > 0 ? gpu->dispatch_group_count_x : 1;
+    uint32_t Gy = gpu->dispatch_group_count_y > 0 ? gpu->dispatch_group_count_y : 1;
+    uint32_t Gz = gpu->dispatch_group_count_z > 0 ? gpu->dispatch_group_count_z : 1;
+
+    for (uint32_t wg_linear = wg_start; wg_linear < wg_end; wg_linear++)
+    {
+        uint32_t Wx = wg_linear % Gx;
+        uint32_t Wy = (wg_linear / Gx) % Gy;
+        uint32_t Wz = wg_linear / (Gx * Gy);
+
+        uint8_t shared_mem[MAX_SHARED_MEM_SIZE];
+        memset(shared_mem, 0, sizeof(shared_mem));
+
+        uint32_t num_warps = warps_per_wg > 0 ? warps_per_wg : 1;
+        uint8_t *warp_spill = (uint8_t *)calloc(num_warps, 2048);
+
+        uint32_t num_phases = gpu->cs_barrier_count + 1;
+
+        for (uint32_t phase = 0; phase < num_phases; phase++)
+        {
+            for (uint32_t w = 0; w < warps_per_wg; w++)
+            {
+                uint32_t base_lane = w * SIMT_WIDTH;
+                uint32_t active_lanes = local_count > base_lane ? local_count - base_lane : 0;
+                if (active_lanes > SIMT_WIDTH) active_lanes = SIMT_WIDTH;
+                BuiltinComputeInput cs_in = {0};
+
+                for (int i = 0; i < SIMT_WIDTH; i++)
+                {
+                    uint32_t linear = base_lane + i;
+                    uint32_t lx = linear % Sx;
+                    uint32_t ly = (linear / Sx) % Sy;
+                    uint32_t lz = linear / (Sx * Sy);
+
+                    cs_in.gl_LocalInvocationID.elem[0][i] = (float)lx;
+                    cs_in.gl_LocalInvocationID.elem[1][i] = (float)ly;
+                    cs_in.gl_LocalInvocationID.elem[2][i] = (float)lz;
+
+                    cs_in.gl_GlobalInvocationID.elem[0][i] = (float)(Wx * Sx + lx);
+                    cs_in.gl_GlobalInvocationID.elem[1][i] = (float)(Wy * Sy + ly);
+                    cs_in.gl_GlobalInvocationID.elem[2][i] = (float)(Wz * Sz + lz);
+
+                    cs_in.gl_LocalInvocationIndex[i] = (float)linear;
+
+                    cs_in.gl_WorkGroupID.elem[0][i] = (float)Wx;
+                    cs_in.gl_WorkGroupID.elem[1][i] = (float)Wy;
+                    cs_in.gl_WorkGroupID.elem[2][i] = (float)Wz;
+
+                    cs_in.gl_NumWorkGroups.elem[0][i] = (float)Gx;
+                    cs_in.gl_NumWorkGroups.elem[1][i] = (float)Gy;
+                    cs_in.gl_NumWorkGroups.elem[2][i] = (float)Gz;
+
+                    cs_in.gl_WorkGroupSize.elem[0][i] = (float)Sx;
+                    cs_in.gl_WorkGroupSize.elem[1][i] = (float)Sy;
+                    cs_in.gl_WorkGroupSize.elem[2][i] = (float)Sz;
+
+                    cs_in.gl_SubgroupSize[i] = (float)SIMT_WIDTH;
+                    cs_in.gl_SubgroupInvocationID[i] = (float)i;
+                    cs_in.gl_NumSubgroups[i] = (float)warps_per_wg;
+                    cs_in.gl_SubgroupID[i] = (float)w;
+                    cs_in.gl_SubgroupEqMask.elem[0][i] = (float)(1u << i);
+                    cs_in.gl_SubgroupGeMask.elem[0][i] = (float)((0xFFFFu << i) & 0xFFFFu);
+                    cs_in.gl_SubgroupGtMask.elem[0][i] = (float)((0xFFFFu << (i + 1)) & 0xFFFFu);
+                    cs_in.gl_SubgroupLeMask.elem[0][i] = (float)((1u << (i + 1)) - 1u);
+                    cs_in.gl_SubgroupLtMask.elem[0][i] = (float)((1u << i) - 1u);
+                }
+
+                ExecutionContext ectx = {0};
+                ectx.shared_memory = shared_mem;
+                ectx.spill_buffer = warp_spill ? (warp_spill + w * 2048) : NULL;
+                ectx.current_phase = phase;
+                ectx.active_mask = active_lanes == SIMT_WIDTH ? 0xFFFFu : ((1u << active_lanes) - 1u);
+
+                // Bind UBO
+                if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0) {
+                    ectx.binding_buffers[0] = gpu->vram_ptr + gpu->uinform_config.addr;
+                }
+
+                // Bind SSBOs / Resources
+                for (int slot = 0; slot < MAX_BINDINGS; slot++) {
+                    if (gpu->ssbo_config[slot].addr != 0 && gpu->ssbo_config[slot].size > 0) {
+                        ectx.binding_buffers[slot] = gpu->vram_ptr + gpu->ssbo_config[slot].addr;
+                    }
+                }
+
+                if (gpu->cs_shader_func) {
+                    gpu->cs_shader_func(&ectx, NULL, NULL, &cs_in);
+                }
+            }
+        }
+        if (warp_spill) {
+            free(warp_spill);
+        }
     }
 }

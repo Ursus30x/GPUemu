@@ -341,6 +341,7 @@ static void* worker_thread(void* arg)
             case TASK_RASTERIZE_LINES_SIMT:    worker_rasterize_lines_simt_impl(my_args); break;
             case TASK_WIREFRAME_VERTICES:      worker_wireframe_vertices_impl(my_args); break;
             case TASK_WIREFRAME_EDGES:         worker_wireframe_edges_impl(my_args); break;
+            case TASK_COMPUTE_SIMT:            worker_compute_simt_impl(my_args); break;
             default: break;
         }
 
@@ -375,7 +376,7 @@ void init_thread_pool(void)
     render.threads_initialized = 1;
 }
 
-static void dispatch_task(RenderTaskType task) 
+void dispatch_task(RenderTaskType task) 
 {
     qemu_mutex_lock(&render.pool_mutex);
     render.current_task = task;
@@ -517,6 +518,25 @@ void gpu_render_triangles_simt(void *opaque)
     gpu_render_primitives_simt(opaque, prim, psize, lwidth);
 }
 
+void compute_mode(GpuState *gpu)
+{
+    if(gpu->gpu_mode == GPU_MODE_IDLE)
+    {
+        return;
+    }
+    gpu->gpu_mode = GPU_MODE_IDLE;
+    uint32_t total_wg = gpu->dispatch_total_workgroups;
+    uint32_t chunk_wg = (total_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
+
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        render.args[i].orig_gpu = gpu;
+        render.args[i].start_block = i * chunk_wg;
+        render.args[i].end_block = (i == NUM_RENDER_THREADS - 1) ? total_wg : (i + 1) * chunk_wg;
+        if (render.args[i].start_block > total_wg) render.args[i].start_block = total_wg;
+        if (render.args[i].end_block > total_wg) render.args[i].end_block = total_wg;
+    }
+    dispatch_task(TASK_COMPUTE_SIMT);
+}
 void gpu_render_triangles(void *opaque)
 {
     GpuState *gpu = opaque;

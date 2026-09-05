@@ -1,0 +1,17 @@
+#version 450
+
+layout(local_size_x = 16) in;
+
+layout(binding = 0) buffer OutputData {
+    float values[];
+};
+
+shared float scratch[16];
+
+void main() {
+    uint lane = gl_LocalInvocationIndex;
+    scratch[lane] = float(lane + 1u);
+    memoryBarrierShared();
+    barrier();
+    values[0] = scratch[0];
+}

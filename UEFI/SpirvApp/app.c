@@ -247,6 +247,141 @@ VOID Test3DTrianglesSimt(){
 
     FpsCounterShowStats();
 }
+
+VOID TestComputeShader() {
+
+    #include "vec_add.h"
+    VRAMADDR hCS = 0;
+    VRAMADDR hSSBO_A = 0;
+    VRAMADDR hSSBO_B = 0;
+    VRAMADDR hSSBO_C = 0;
+
+    float input_a[16];
+    float input_b[16];
+    float output_c[16];
+
+    Print(L"=== GOP3D Compute Shader Test (Vector Add) ===\n");
+
+    for (UINT32 i = 0; i < 16; i++) {
+        input_a[i] = (float)(i + 1);
+        input_b[i] = (float)((i + 1) * 10);
+        output_c[i] = 0.0f;
+    }
+
+    // Print Inputs
+    Print(L"[INPUT DATA]\n");
+    for (UINT32 i = 0; i < 16; i++) {
+        Print(L"  [%02d] A = %d, B = %d  ", i, (INT32)input_a[i], (INT32)input_b[i]);
+    }
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, (VOID*)bin_compute_shader, sizeof(bin_compute_shader), &hCS);
+    Print(L"\n[VRAM] Shader uploaded. Handle: 0x%LX (Size: %u bytes)\n", (UINT64)hCS, (UINT32)sizeof(bin_compute_shader));
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_a, sizeof(input_a), &hSSBO_A);
+    Print(L"[VRAM] SSBO A Handle: 0x%LX\n", (UINT64)hSSBO_A);
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_b, sizeof(input_b), &hSSBO_B);
+    Print(L"[VRAM] SSBO B Handle: 0x%LX\n", (UINT64)hSSBO_B);
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, output_c, sizeof(output_c), &hSSBO_C);
+    Print(L"[VRAM] SSBO C Handle: 0x%LX\n", (UINT64)hSSBO_C);
+
+    Print(L"[CMD] Recording Compute Command Batch (1, 1, 1)...\n");
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuBindCompShader(mGOP3D, hCS, sizeof(bin_compute_shader));
+    mGOP3D->GpuBindSSBO(mGOP3D, 0, hSSBO_A, sizeof(input_a));
+    mGOP3D->GpuBindSSBO(mGOP3D, 1, hSSBO_B, sizeof(input_b));
+    mGOP3D->GpuBindSSBO(mGOP3D, 2, hSSBO_C, sizeof(output_c));
+    mGOP3D->GpuDispatchCompute(mGOP3D, 1, 1, 1);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+
+    Print(L"[CMD] Submitting GPU commands (GpuPresent)...\n");
+    mGOP3D->GpuPresent(mGOP3D);
+
+    Print(L"[VRAM] Reading back compute shader results from SSBO C...\n");
+    mGOP3D->GpuReadBuffer(mGOP3D, hSSBO_C, output_c, sizeof(output_c));
+
+    Print(L"[OUTPUT DATA]\n");
+    UINT32 pass_count = 0;
+    for (UINT32 i = 0; i < 16; i++) {
+        Print(L"  [%02d] C = %d  ", i, (INT32)output_c[i]);
+        if ((INT32)output_c[i] == (INT32)(input_a[i] + input_b[i])) {
+            pass_count++;
+        }
+    }
+    Print(L"\n");
+    if (pass_count == 16) {
+        Print(L"==> Compute Shader Test PASSED (%u/16 matches) <==\n", pass_count);
+    } else {
+        Print(L"==> Compute Shader Test FAILED (%u/16 matches) <==\n", pass_count);
+    }
+
+    Print(L"[VRAM] Freeing allocated GPU buffers...\n");
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hCS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_A);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_B);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_C);
+
+    Print(L"GOP3D: Compute Shader Dispatch Complete.\n");
+}
+
+VOID TestBarrierComputeShader(VOID) {
+    #include "barrier_reduction.h"
+    VRAMADDR hCS = 0;
+    VRAMADDR hSSBO_In = 0;
+    VRAMADDR hSSBO_Out = 0;
+
+    float input_data[16];
+    float output_data[1];
+
+    Print(L"\n=== GOP3D Compute Shader Test (Barrier Parallel Reduction) ===\n");
+
+    for (UINT32 i = 0; i < 16; i++) {
+        input_data[i] = (float)(i + 1);
+    }
+    output_data[0] = 0.0f;
+
+    Print(L"[INPUT DATA] 16 elements: 1..16 (Expected Sum = 136)\n");
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, (VOID*)bin_barrier_reduction_shader, sizeof(bin_barrier_reduction_shader), &hCS);
+    Print(L"[VRAM] Barrier Shader uploaded. Handle: 0x%LX (Size: %u bytes)\n", (UINT64)hCS, (UINT32)sizeof(bin_barrier_reduction_shader));
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_data, sizeof(input_data), &hSSBO_In);
+    Print(L"[VRAM] SSBO In Handle: 0x%LX\n", (UINT64)hSSBO_In);
+
+    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, output_data, sizeof(output_data), &hSSBO_Out);
+    Print(L"[VRAM] SSBO Out Handle: 0x%LX\n", (UINT64)hSSBO_Out);
+
+    Print(L"[CMD] Recording Barrier Compute Command Batch (1, 1, 1)...\n");
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuBindCompShader(mGOP3D, hCS, sizeof(bin_barrier_reduction_shader));
+    mGOP3D->GpuBindSSBO(mGOP3D, 0, hSSBO_In, sizeof(input_data));
+    mGOP3D->GpuBindSSBO(mGOP3D, 1, hSSBO_Out, sizeof(output_data));
+    mGOP3D->GpuDispatchCompute(mGOP3D, 1, 1, 1);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+
+    Print(L"[CMD] Submitting GPU commands (GpuPresent)...\n");
+    mGOP3D->GpuPresent(mGOP3D);
+
+    Print(L"[VRAM] Reading back reduction result from SSBO Out...\n");
+    mGOP3D->GpuReadBuffer(mGOP3D, hSSBO_Out, output_data, sizeof(output_data));
+
+    Print(L"[OUTPUT DATA] Reduced Sum = %d\n", (INT32)output_data[0]);
+
+    if ((INT32)output_data[0] == 136) {
+        Print(L"==> Barrier Parallel Reduction Test PASSED (Sum = 136) <==\n");
+    } else {
+        Print(L"==> Barrier Parallel Reduction Test FAILED (Sum = %d, Expected 136) <==\n", (INT32)output_data[0]);
+    }
+
+    Print(L"[VRAM] Freeing allocated GPU buffers...\n");
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hCS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_In);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_Out);
+
+    Print(L"GOP3D: Barrier Compute Shader Test Complete.\n");
+}
+
 VOID TestShaderArt() {
     EFI_INPUT_KEY Key;
 
@@ -800,6 +935,13 @@ EFI_STATUS EFIAPI Test() {
           mGraphicsOutput->Mode->Info->HorizontalResolution,
           mGraphicsOutput->Mode->Info->VerticalResolution);
     Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
+    WAIT_FOR_KEYPRESS()
+
+    Print(L"Press key for SPIR-V Compute Shader Test (Vector Add)...\n");
+    TestComputeShader();
+    Print(L"Press key for SPIR-V Barrier Compute Shader Test (Parallel Reduction)...\n");
+    WAIT_FOR_KEYPRESS()
+    TestBarrierComputeShader();
     Print(L"Press key for SPIR-V Primitives Demo (Points, Lines, LineStrip, TriStrip, TriFan, Quads)...\n");
 
     WAIT_FOR_KEYPRESS()
@@ -824,6 +966,8 @@ EFI_STATUS EFIAPI Test() {
 
     TestBlendingSimt();
     
+
+
     WAIT_FOR_KEYPRESS()
 
     DEBUG((EFI_D_INFO, "Test end\n"));

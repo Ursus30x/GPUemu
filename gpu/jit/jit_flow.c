@@ -201,6 +201,27 @@ void handle_op_branch(JitContext* ctx, uint32_t* operands)
     }
 }
 
+static LLVMValueRef jit_to_simt_mask(JitContext* ctx, LLVMValueRef cond)
+{
+    if (!cond) return jit_get_emask(ctx);
+    LLVMTypeRef type = LLVMTypeOf(cond);
+    if (LLVMGetTypeKind(type) == LLVMVectorTypeKind)
+        return cond;
+    if (LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) != 1) {
+        cond = LLVMBuildICmp(ctx->builder, LLVMIntNE, cond, LLVMConstInt(type, 0, 0), "cond_i1");
+    }
+    if (LLVMIsConstant(cond)) {
+        LLVMValueRef vals[SIMT_WIDTH];
+        for (int i = 0; i < SIMT_WIDTH; i++) vals[i] = cond;
+        return LLVMConstVector(vals, SIMT_WIDTH);
+    }
+    LLVMValueRef vec = LLVMGetUndef(ctx->vec_i1_type);
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        vec = LLVMBuildInsertElement(ctx->builder, vec, cond, LLVMConstInt(ctx->int_type, i, 0), "mask_splat");
+    }
+    return vec;
+}
+
 void handle_op_branch_conditional(JitContext* ctx, uint32_t* operands)
 {
     if (!ctx->func)
@@ -219,13 +240,14 @@ void handle_op_branch_conditional(JitContext* ctx, uint32_t* operands)
             ctx->control_stack[ctx->control_stack_depth - 1].kind == JIT_CFG_SELECTION)
         {
             JitControlConstruct* construct = &ctx->control_stack[ctx->control_stack_depth - 1];
+            LLVMValueRef cond_mask = jit_to_simt_mask(ctx, cond);
             construct->true_id = true_id;
             construct->false_id = false_id;
-            construct->cond = cond;
+            construct->cond = cond_mask;
             construct->parent_mask = jit_get_emask(ctx);
 
             // Calculate active mask for 'then' branch: parent_mask & cond
-            LLVMValueRef true_mask = LLVMBuildAnd(ctx->builder, construct->parent_mask, cond, "simt_mask_then");
+            LLVMValueRef true_mask = LLVMBuildAnd(ctx->builder, construct->parent_mask, cond_mask, "simt_mask_then");
             ctx->emask = true_mask;
 
             // Enter 'then' block unconditionally to process active lanes
@@ -276,7 +298,20 @@ void resolve_pending_globals(JitContext* ctx)
         GlobalResolution* g = &ctx->globals[i];
         
         uint32_t field_idx = 0;
-        if (g->storage_class == SpvStorageClassUniform || g->storage_class == SpvStorageClassStorageBuffer ||  g->storage_class ==  SpvStorageClassUniformConstant)
+        if (g->storage_class == SpvStorageClassWorkgroup)
+        {
+            LLVMValueRef indices[] = {
+                LLVMConstInt(ctx->int_type, 0, 0),
+                LLVMConstInt(ctx->int_type, 3, 0)
+            };
+            LLVMValueRef shmem_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ectx_ptr, indices, 2, "shmem_slot");
+            LLVMValueRef shmem_base = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, shmem_slot, "shmem_base");
+            LLVMValueRef offset_val = LLVMConstInt(LLVMInt64TypeInContext(ctx->context), g->binding_or_loc, 0);
+            LLVMValueRef var_ptr = LLVMBuildGEP2(ctx->builder, LLVMInt8TypeInContext(ctx->context), shmem_base, &offset_val, 1, "workgroup_var_ptr");
+            set_val(ctx, g->res_id, var_ptr);
+            continue;
+        }
+        else if (g->storage_class == SpvStorageClassUniform || g->storage_class == SpvStorageClassStorageBuffer ||  g->storage_class ==  SpvStorageClassUniformConstant)
             field_idx = 0;
         else if (g->storage_class == SpvStorageClassInput)
             field_idx = 1;
@@ -317,6 +352,42 @@ void resolve_pending_globals(JitContext* ctx)
                 );
                 set_val(ctx, g->res_id, fs_in_addr);
             }
+            else if(ctx->shader_type == COMPUTE_SHADER)
+            {
+                SpvDecoInfo* d = &ctx->decorations[g->res_id];
+                int32_t builtin = d->builtin;
+                uint32_t cs_field_idx = 0;
+                if (builtin == SpvBuiltInGlobalInvocationId) cs_field_idx = 0;
+                else if (builtin == SpvBuiltInLocalInvocationId) cs_field_idx = 1;
+                else if (builtin == SpvBuiltInLocalInvocationIndex) cs_field_idx = 2;
+                else if (builtin == SpvBuiltInWorkgroupId) cs_field_idx = 3;
+                else if (builtin == SpvBuiltInNumWorkgroups) cs_field_idx = 4;
+                else if (builtin == SpvBuiltInWorkgroupSize) cs_field_idx = 5;
+                else if (builtin == SpvBuiltInSubgroupSize || builtin == SpvBuiltInSubgroupMaxSize) cs_field_idx = 6;
+                else if (builtin == SpvBuiltInSubgroupLocalInvocationId) cs_field_idx = 7;
+                else if (builtin == SpvBuiltInNumSubgroups || builtin == SpvBuiltInNumEnqueuedSubgroups) cs_field_idx = 8;
+                else if (builtin == SpvBuiltInSubgroupId) cs_field_idx = 9;
+                else if (builtin == SpvBuiltInSubgroupEqMask) cs_field_idx = 10;
+                else if (builtin == SpvBuiltInSubgroupGeMask) cs_field_idx = 11;
+                else if (builtin == SpvBuiltInSubgroupGtMask) cs_field_idx = 12;
+                else if (builtin == SpvBuiltInSubgroupLeMask) cs_field_idx = 13;
+                else if (builtin == SpvBuiltInSubgroupLtMask) cs_field_idx = 14;
+
+                LLVMValueRef cs_indices[] = {
+                    LLVMConstInt(ctx->int_type, 0, 0),
+                    LLVMConstInt(ctx->int_type, cs_field_idx, 0)
+                };
+                LLVMValueRef cs_data = ctx->cs_data_param;
+                LLVMValueRef cs_in_addr = LLVMBuildInBoundsGEP2(
+                    ctx->builder,
+                    ctx->cs_data_type,
+                    cs_data,
+                    cs_indices,
+                    2,
+                    "cs_in_ptr"
+                );
+                set_val(ctx, g->res_id, cs_in_addr);
+            }
         }
         else 
         {
@@ -350,21 +421,24 @@ void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
 
     if (ctx->func == NULL)
     {
-        LLVMTypeRef param_types[3];
+        LLVMTypeRef param_types[4];
         LLVMTypeRef ectx_ptr_type = LLVMPointerType(ctx->exec_ctx_type, 0);
         LLVMTypeRef vs_data_ptr_type = LLVMPointerType(ctx->vs_data_type, 0);
         LLVMTypeRef fs_data_ptr_type = LLVMPointerType(ctx->fs_data_type, 0);
+        LLVMTypeRef cs_data_ptr_type = LLVMPointerType(ctx->cs_data_type, 0);
 
         param_types[0] = ectx_ptr_type;
         param_types[1] = vs_data_ptr_type;
         param_types[2] = fs_data_ptr_type;
+        param_types[3] = cs_data_ptr_type;
 
-        LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), param_types, 3, 0);
+        LLVMTypeRef func_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), param_types, 4, 0);
         ctx->func = LLVMAddFunction(ctx->module, "main_simt", func_type);
 
         ctx->env_arg_param = LLVMGetParam(ctx->func, 0);
         ctx->vs_data_param = LLVMGetParam(ctx->func, 1);
         ctx->fs_data_param = LLVMGetParam(ctx->func, 2);
+        ctx->cs_data_param = LLVMGetParam(ctx->func, 3);
 
         LLVMAddTargetDependentFunctionAttr(ctx->func, "no-trapping-math", "true");
         LLVMAddTargetDependentFunctionAttr(ctx->func, "stack-protector-buffer-size", "8");
@@ -373,7 +447,32 @@ void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
         ctx->current_block = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "init_global");
         LLVMPositionBuilderAtEnd(ctx->builder, ctx->current_block);
 
-        ctx->emask = jit_get_emask(ctx);
+        LLVMValueRef mask_indices[] = {
+            LLVMConstInt(ctx->int_type, 0, 0),
+            LLVMConstInt(ctx->int_type, 6, 0)
+        };
+        LLVMValueRef mask_slot = LLVMBuildInBoundsGEP2(
+            ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param,
+            mask_indices, 2, "active_mask_slot");
+        LLVMValueRef active_mask = LLVMBuildLoad2(
+            ctx->builder, ctx->int_type, mask_slot, "active_mask");
+
+        ctx->emask = LLVMGetUndef(ctx->vec_i1_type);
+        for (int lane = 0; lane < SIMT_WIDTH; lane++) 
+        {
+            LLVMValueRef shifted = LLVMBuildLShr(
+                ctx->builder, active_mask,
+                LLVMConstInt(ctx->int_type, lane, 0), "active_lane_shift");
+            LLVMValueRef bit = LLVMBuildAnd(
+                ctx->builder, shifted,
+                LLVMConstInt(ctx->int_type, 1, 0), "active_lane_bit");
+            LLVMValueRef active = LLVMBuildICmp(
+                ctx->builder, LLVMIntNE, bit,
+                LLVMConstInt(ctx->int_type, 0, 0), "active_lane");
+            ctx->emask = LLVMBuildInsertElement(
+                ctx->builder, ctx->emask, active,
+                LLVMConstInt(ctx->int_type, lane, 0), "active_mask_insert");
+        }
 
         resolve_pending_globals(ctx);
     }

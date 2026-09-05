@@ -1,0 +1,12 @@
+#version 450
+#extension GL_KHR_shader_subgroup_basic : enable
+
+layout(local_size_x = 32) in;
+
+layout(binding = 0) buffer OutputData {
+    float values[];
+};
+
+void main() {
+    values[0] = 7.0;
+}
