@@ -4,6 +4,7 @@
 #include "jit_flow.h"
 #include "jit_mem.h"
 #include "jit_smpl.h"
+#include "jit_atomic.h"
 #include <llvm-c/Transforms/PassBuilder.h>
 #include "debug_gpu.h"
 
