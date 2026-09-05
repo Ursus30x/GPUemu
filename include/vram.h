@@ -61,6 +61,7 @@ typedef enum {
     CMD_CLEAR_FRAMEBUFFER  = 0x03,
     CMD_DMA_TRANSFER       = 0x04,
     CMD_DISPATCH           = 0x05,
+    CMD_DISPATCH_INDIRECT  = 0x06,
 } CommandOpcode;
 
 
@@ -82,6 +83,10 @@ typedef struct __attribute__((packed)) {
     uint32_t group_count_y;
     uint32_t group_count_z;
 } DispatchPayload;
+
+typedef struct __attribute__((packed)) {
+    uint32_t indirect_offset;
+} DispatchIndirectPayload;
 
 typedef struct __attribute__((packed)) {
     uint32_t binding;
@@ -170,6 +175,7 @@ typedef struct __attribute__((packed)) {
         ClearFramebufferPayload clear;
         DmaTransferPayload dma;
         DispatchPayload dispatch;
+        DispatchIndirectPayload dispatch_indirect;
         uint32_t raw_data[8];
     } payload;
 } Command;

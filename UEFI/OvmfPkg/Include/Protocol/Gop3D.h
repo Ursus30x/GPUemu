@@ -286,6 +286,13 @@ EFI_STATUS
   IN UINT32               GroupCountZ
   );
 
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_DISPATCH_INDIRECT)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  );
+
 /* -------------------------- Protocol structure -------------------------- */
 
 struct GOP_3D_PROTOCOL {
@@ -316,6 +323,7 @@ struct GOP_3D_PROTOCOL {
 
   GOP_3D_DRAW               GpuDraw;
   GOP_3D_DISPATCH           GpuDispatchCompute;
+  GOP_3D_DISPATCH_INDIRECT  GpuDispatchComputeIndirect;
   GOP_3D_CLEAR_FRAME        GpuClearFrame;
 
   GOP_3D_SUBMIT_CMD         GpuSubmitCmd;

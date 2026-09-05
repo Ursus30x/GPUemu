@@ -363,6 +363,15 @@ void resolve_pending_globals(JitContext* ctx)
                 else if (builtin == SpvBuiltInWorkgroupId) cs_field_idx = 3;
                 else if (builtin == SpvBuiltInNumWorkgroups) cs_field_idx = 4;
                 else if (builtin == SpvBuiltInWorkgroupSize) cs_field_idx = 5;
+                else if (builtin == SpvBuiltInSubgroupSize || builtin == SpvBuiltInSubgroupMaxSize) cs_field_idx = 6;
+                else if (builtin == SpvBuiltInSubgroupLocalInvocationId) cs_field_idx = 7;
+                else if (builtin == SpvBuiltInNumSubgroups || builtin == SpvBuiltInNumEnqueuedSubgroups) cs_field_idx = 8;
+                else if (builtin == SpvBuiltInSubgroupId) cs_field_idx = 9;
+                else if (builtin == SpvBuiltInSubgroupEqMask) cs_field_idx = 10;
+                else if (builtin == SpvBuiltInSubgroupGeMask) cs_field_idx = 11;
+                else if (builtin == SpvBuiltInSubgroupGtMask) cs_field_idx = 12;
+                else if (builtin == SpvBuiltInSubgroupLeMask) cs_field_idx = 13;
+                else if (builtin == SpvBuiltInSubgroupLtMask) cs_field_idx = 14;
 
                 LLVMValueRef cs_indices[] = {
                     LLVMConstInt(ctx->int_type, 0, 0),

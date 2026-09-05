@@ -702,6 +702,16 @@ void worker_compute_simt_impl(RenderThreadArgs *args)
                     cs_in.gl_WorkGroupSize.elem[0][i] = (float)Sx;
                     cs_in.gl_WorkGroupSize.elem[1][i] = (float)Sy;
                     cs_in.gl_WorkGroupSize.elem[2][i] = (float)Sz;
+
+                    cs_in.gl_SubgroupSize[i] = (float)SIMT_WIDTH;
+                    cs_in.gl_SubgroupInvocationID[i] = (float)i;
+                    cs_in.gl_NumSubgroups[i] = (float)warps_per_wg;
+                    cs_in.gl_SubgroupID[i] = (float)w;
+                    cs_in.gl_SubgroupEqMask.elem[0][i] = (float)(1u << i);
+                    cs_in.gl_SubgroupGeMask.elem[0][i] = (float)((0xFFFFu << i) & 0xFFFFu);
+                    cs_in.gl_SubgroupGtMask.elem[0][i] = (float)((0xFFFFu << (i + 1)) & 0xFFFFu);
+                    cs_in.gl_SubgroupLeMask.elem[0][i] = (float)((1u << (i + 1)) - 1u);
+                    cs_in.gl_SubgroupLtMask.elem[0][i] = (float)((1u << i) - 1u);
                 }
 
                 ExecutionContext ectx = {0};

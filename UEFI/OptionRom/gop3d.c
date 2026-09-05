@@ -409,6 +409,18 @@ EFI_STATUS EFIAPI GpuDispatchCompute(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
+EFI_STATUS EFIAPI GpuDispatchComputeIndirect(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_DISPATCH_INDIRECT;
+    cmd.payload.dispatch_indirect.indirect_offset = IndirectOffset;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
 EFI_STATUS EFIAPI GpuSubmitCmd(
   IN GOP_3D_PROTOCOL *This
   )
@@ -482,6 +494,7 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuClearFrame     = GpuClearFrame;
   Private->Gop3dProtocol.GpuDraw           = GpuDraw;
   Private->Gop3dProtocol.GpuDispatchCompute = GpuDispatchCompute;
+  Private->Gop3dProtocol.GpuDispatchComputeIndirect = GpuDispatchComputeIndirect;
 
   Private->Gop3dProtocol.GpuSubmitCmd      = GpuSubmitCmd;
   Private->Gop3dProtocol.GpuPresent        = GpuPresent;

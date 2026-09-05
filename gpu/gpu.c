@@ -368,9 +368,29 @@ static void execute_command(GpuState *gpu, Command *cmd)
         gpu->dispatch_group_count_z = gz > 0 ? gz : 1;
         gpu->dispatch_total_workgroups = gpu->dispatch_group_count_x * gpu->dispatch_group_count_y * gpu->dispatch_group_count_z;
 
-        
         compute_mode(gpu);
-        
+        break;
+    }
+
+    case CMD_DISPATCH_INDIRECT:
+    {
+        uint32_t offset = cmd->payload.dispatch_indirect.indirect_offset;
+        uint32_t gx = 1, gy = 1, gz = 1;
+        if (offset + sizeof(DispatchPayload) <= GPU_VRAM_SIZE)
+        {
+            DispatchPayload *indirect_params = (DispatchPayload *)(gpu->vram_ptr + offset);
+            gx = indirect_params->group_count_x;
+            gy = indirect_params->group_count_y;
+            gz = indirect_params->group_count_z;
+        }
+        DEBUG_PRINT("[CMD] Dispatch Indirect Compute: offset 0x%x, groups (%u, %u, %u)\n", offset, gx, gy, gz);
+
+        gpu->dispatch_group_count_x = gx > 0 ? gx : 1;
+        gpu->dispatch_group_count_y = gy > 0 ? gy : 1;
+        gpu->dispatch_group_count_z = gz > 0 ? gz : 1;
+        gpu->dispatch_total_workgroups = gpu->dispatch_group_count_x * gpu->dispatch_group_count_y * gpu->dispatch_group_count_z;
+
+        compute_mode(gpu);
         break;
     }
 

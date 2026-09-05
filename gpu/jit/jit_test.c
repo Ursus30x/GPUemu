@@ -463,6 +463,177 @@ TEST(compute_barrier_reduction, "out/barrier_reduction.spv", COMPUTE_SHADER, {
     }
 })
 
+TEST(compute_atomics, "out/atomic_test.spv", COMPUTE_SHADER, {
+    SimtInt in_data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    struct {
+        int32_t counter;
+        int32_t max_val;
+    } counter_buf = {0, 0};
+    SimtInt out_prev = {0};
+
+    jit_ctx->binding_buffers[0] = &in_data;
+    jit_ctx->binding_buffers[1] = &counter_buf;
+    jit_ctx->binding_buffers[2] = &out_prev;
+
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+        cs_in.gl_WorkGroupID.elem[0][i] = 0.0f;
+        cs_in.gl_NumWorkGroups.elem[0][i] = 1.0f;
+        cs_in.gl_WorkGroupSize.elem[0][i] = 16.0f;
+    }
+
+    RUN_JIT();
+
+    int expected_sum = 16 * 17 / 2; // 136
+    printf("[Atomics Test] Total sum = %d (Expected %d), Max = %d (Expected 16)... ", counter_buf.counter, expected_sum, counter_buf.max_val);
+    if (counter_buf.counter != expected_sum) {
+        printf("FAILED (counter %d != %d)\n", counter_buf.counter, expected_sum);
+        return 1;
+    }
+    if (counter_buf.max_val != 16) {
+        printf("FAILED (max_val %d != 16)\n", counter_buf.max_val);
+        return 1;
+    }
+})
+
+TEST(compute_subgroups, "out/subgroup_test.spv", COMPUTE_SHADER, {
+    SimtFloat in_data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f};
+    struct {
+        float sum_reduced;
+        float ballot_bits;
+        float elect_val;
+        float pad;
+        float shuffle_val[16];
+    } out_buf = {0};
+
+    jit_ctx->binding_buffers[0] = &in_data;
+    jit_ctx->binding_buffers[1] = &out_buf;
+
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+        cs_in.gl_WorkGroupID.elem[0][i] = 0.0f;
+        cs_in.gl_NumWorkGroups.elem[0][i] = 1.0f;
+        cs_in.gl_WorkGroupSize.elem[0][i] = 16.0f;
+    }
+
+    RUN_JIT();
+
+    float expected_sum = 136.0f;
+    printf("[Subgroup Test] sum = %.1f (Expected %.1f), elect = %.1f (Expected 42.0), ballot = 0x%X... ",
+           out_buf.sum_reduced, expected_sum, out_buf.elect_val, (uint32_t)out_buf.ballot_bits);
+
+    if (out_buf.sum_reduced != expected_sum) {
+        printf("FAILED (sum != 136.0)\n");
+        return 1;
+    }
+    if (out_buf.elect_val != 42.0f) {
+        printf("FAILED (elect_val != 42.0)\n");
+        return 1;
+    }
+    uint32_t expected_ballot = 0xFFE0;
+    if ((uint32_t)out_buf.ballot_bits != expected_ballot) {
+        printf("FAILED (ballot 0x%X != 0x%X)\n", (uint32_t)out_buf.ballot_bits, expected_ballot);
+        return 1;
+    }
+    for (int i = 0; i < 16; i++) {
+        float expected_shuf = 16.0f - (float)i;
+        if (out_buf.shuffle_val[i] != expected_shuf) {
+            printf("FAILED (shuffle[%d] = %f != %f)\n", i, out_buf.shuffle_val[i], expected_shuf);
+            return 1;
+        }
+    }
+})
+
+TEST(compute_image_store, "out/image_store_test.spv", COMPUTE_SHADER, {
+    uint8_t image_pixels[4 * 4 * 4] = {0};
+    TextureSamplerDescriptor desc = {
+        .data = image_pixels,
+        .width = 4,
+        .height = 4,
+        .channels = 4,
+        .filter = FILTER_NEAREST,
+        .wrap = WRAP_CLAMP
+    };
+    jit_ctx->binding_buffers[0] = &desc;
+
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+        cs_in.gl_WorkGroupID.elem[0][i] = 0.0f;
+        cs_in.gl_NumWorkGroups.elem[0][i] = 1.0f;
+        cs_in.gl_WorkGroupSize.elem[0][i] = 16.0f;
+    }
+
+    RUN_JIT();
+
+    for (int i = 0; i < 16; i++) {
+        int x = i % 4;
+        int y = i / 4;
+        int idx = (y * 4 + x) * 4;
+        uint8_t expected_r = (uint8_t)((float)x / 4.0f * 255.0f + 0.5f);
+        uint8_t expected_g = (uint8_t)((float)y / 4.0f * 255.0f + 0.5f);
+        uint8_t expected_b = 255;
+        uint8_t expected_a = 255;
+
+        if (image_pixels[idx + 0] != expected_r ||
+            image_pixels[idx + 1] != expected_g ||
+            image_pixels[idx + 2] != expected_b ||
+            image_pixels[idx + 3] != expected_a) {
+            printf("FAILED pixel (%d, %d): got (%d, %d, %d, %d) expected (%d, %d, %d, %d)\n",
+                   x, y,
+                   image_pixels[idx + 0], image_pixels[idx + 1], image_pixels[idx + 2], image_pixels[idx + 3],
+                   expected_r, expected_g, expected_b, expected_a);
+            return 1;
+        }
+    }
+})
+
+TEST(compute_bitwise, "out/bitwise_test.spv", COMPUTE_SHADER, {
+    SimtInt in_a = {0x0F, 0xF0, 0xAA, 0x55, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
+    SimtInt in_b = {0xFF, 0xFF, 0x55, 0xAA, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
+    struct {
+        SimtInt out_and;
+        SimtInt out_or;
+        SimtInt out_xor;
+        SimtInt out_shl;
+    } out_buf = {0};
+
+    jit_ctx->binding_buffers[0] = &in_a;
+    jit_ctx->binding_buffers[1] = &in_b;
+    jit_ctx->binding_buffers[2] = &out_buf;
+
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+        cs_in.gl_WorkGroupID.elem[0][i] = 0.0f;
+        cs_in.gl_NumWorkGroups.elem[0][i] = 1.0f;
+        cs_in.gl_WorkGroupSize.elem[0][i] = 16.0f;
+    }
+
+    RUN_JIT();
+
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        int expected_and = in_a[i] & in_b[i];
+        int expected_or  = in_a[i] | in_b[i];
+        int expected_xor = in_a[i] ^ in_b[i];
+        int expected_shl = in_a[i] << 2;
+
+        if (out_buf.out_and[i] != expected_and ||
+            out_buf.out_or[i]  != expected_or  ||
+            out_buf.out_xor[i] != expected_xor ||
+            out_buf.out_shl[i] != expected_shl) {
+            printf("FAILED bitwise at lane %d\n", i);
+            return 1;
+        }
+    }
+})
+
 int run_compilation_script(void) 
 {
     printf("--- Running compilation script ---\n");

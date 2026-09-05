@@ -23,7 +23,7 @@ for glsl_file in glsl_files:
 
     
     result = subprocess.run(
-        ["glslc", str(glsl_file), "-o", f"out/{name}.spv"],
+        ["glslc", "--target-env=vulkan1.1", str(glsl_file), "-o", f"out/{name}.spv"],
         capture_output=True,
         text=True
     )
