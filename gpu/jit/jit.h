@@ -121,6 +121,7 @@ typedef struct {
     void* shared_memory;
     void* spill_buffer;
     uint32_t current_phase;
+    uint32_t active_mask;
 } ExecutionContext;
 
 #define MAX_SHARED_MEM_SIZE (16 * 1024)

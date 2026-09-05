@@ -416,12 +416,69 @@ TEST(compute_vec_add, "out/vec_add.spv", COMPUTE_SHADER, {
     RUN_JIT();
 
     SimtFloat expected_c = {11.0f, 22.0f, 33.0f, 44.0f, 55.0f, 66.0f, 77.0f, 88.0f, 99.0f, 110.0f, 121.0f, 132.0f, 143.0f, 154.0f, 165.0f, 176.0f};
-    for (int i = 0; i < SIMT_WIDTH; i++) {
-        if (output_c[i] != expected_c[i]) {
+    for (int i = 0; i < SIMT_WIDTH; i++) 
+    {
+        if (output_c[i] != expected_c[i]) 
+        {
             printf("assert failed at lane %d: %f vs expected %f\n", i, output_c[i], expected_c[i]);
             return 1;
         }
     }
+})
+
+TEST(compute_multi_warp, "out/multi_warp.spv", COMPUTE_SHADER, {
+    SimtFloat output[4] = {0};
+    jit_ctx->active_mask = 0xFFFFu;
+
+    for (uint32_t workgroup = 0; workgroup < 2; workgroup++) 
+    {
+        for (uint32_t warp = 0; warp < 2; warp++) {
+            jit_ctx->binding_buffers[0] = &output[workgroup * 2 + warp];
+            for (uint32_t lane = 0; lane < SIMT_WIDTH; lane++)
+            {
+                cs_in.gl_LocalInvocationIndex[lane] = (float)(warp * SIMT_WIDTH + lane);
+                cs_in.gl_GlobalInvocationID.elem[0][lane] = (float)(workgroup * 32 + warp * SIMT_WIDTH + lane);
+                cs_in.gl_WorkGroupID.elem[0][lane] = (float)workgroup;
+                cs_in.gl_NumWorkGroups.elem[0][lane] = 2.0f;
+                cs_in.gl_WorkGroupSize.elem[0][lane] = 32.0f;
+                cs_in.gl_SubgroupID[lane] = (float)warp;
+            }
+            RUN_JIT();
+        }
+    }
+
+    for (uint32_t i = 0; i < 4; i++)
+    {
+        if (output[i][0] != 7.0f) 
+        {
+            printf("multi-warp mismatch at %u: %f != 7\n", i, output[i][0]);
+            return 1;
+        }
+    }
+})
+
+TEST(compute_memory_barrier, "out/memory_barrier.spv", COMPUTE_SHADER, {
+    SimtUint output[16] = {0};
+    uint8_t shared_memory[MAX_SHARED_MEM_SIZE] = {0};
+    uint8_t spill_buffer[2048] = {0};
+    jit_ctx->binding_buffers[0] = output;
+    jit_ctx->shared_memory = shared_memory;
+    jit_ctx->spill_buffer = spill_buffer;
+    jit_ctx->active_mask = 0xFFFFu;
+
+    for (uint32_t lane = 0; lane < SIMT_WIDTH; lane++) 
+    {
+        cs_in.gl_LocalInvocationIndex[lane] = (float)lane;
+        cs_in.gl_GlobalInvocationID.elem[0][lane] = (float)lane;
+        cs_in.gl_WorkGroupSize.elem[0][lane] = 16.0f;
+    }
+
+    for (uint32_t phase = 0; phase < ctx.shader_info.barrier_count + 1; phase++) 
+    {
+        jit_ctx->current_phase = phase;
+        RUN_JIT();
+    }
+
 })
 
 TEST(compute_barrier_reduction, "out/barrier_reduction.spv", COMPUTE_SHADER, {
@@ -448,7 +505,8 @@ TEST(compute_barrier_reduction, "out/barrier_reduction.spv", COMPUTE_SHADER, {
     printf("Shader has %u barriers -> %u phases\n", ctx.shader_info.barrier_count, num_phases);
     fflush(stdout);
 
-    for (uint32_t phase = 0; phase < num_phases; phase++) {
+    for (uint32_t phase = 0; phase < num_phases; phase++)
+    {
         printf("Executing phase %u...\n", phase);
         fflush(stdout);
         jit_ctx->current_phase = phase;
@@ -457,7 +515,8 @@ TEST(compute_barrier_reduction, "out/barrier_reduction.spv", COMPUTE_SHADER, {
 
     float expected_sum = 136.0f;
     printf("[Barrier Reduction Test] Output Sum = %.1f (Expected %.1f)... ", output_data[0], expected_sum);
-    if (output_data[0] != expected_sum) {
+    if (output_data[0] != expected_sum)
+    {
         printf("assert failed: output_data[0] = %f vs expected %f\n", output_data[0], expected_sum);
         return 1;
     }
@@ -633,6 +692,72 @@ TEST(compute_bitwise, "out/bitwise_test.spv", COMPUTE_SHADER, {
         }
     }
 })
+
+static int test_image_write_formats(void)
+{
+    for (uint32_t channels = 1; channels <= 4; channels++) {
+        uint8_t pixels[2 * 2 * 4] = {0};
+        TextureSamplerDescriptor desc = {
+            .data = pixels,
+            .width = 2,
+            .height = 2,
+            .channels = channels,
+            .filter = FILTER_NEAREST,
+            .wrap = WRAP_CLAMP
+        };
+        int32_t x[SIMT_WIDTH] = {0};
+        int32_t y[SIMT_WIDTH] = {0};
+        float red[SIMT_WIDTH], green[SIMT_WIDTH], blue[SIMT_WIDTH], alpha[SIMT_WIDTH];
+        for (uint32_t lane = 0; lane < SIMT_WIDTH; lane++) {
+            x[lane] = lane % 2;
+            y[lane] = (lane / 2) % 2;
+            red[lane] = 0.25f;
+            green[lane] = 0.5f;
+            blue[lane] = 0.75f;
+            alpha[lane] = 1.0f;
+        }
+        int32_t mask[SIMT_WIDTH];
+        for (uint32_t lane = 0; lane < SIMT_WIDTH; lane++) mask[lane] = 1;
+        image_write_2d_simt(&desc, x, y, red, green, blue, alpha, mask);
+
+        for (uint32_t pixel = 0; pixel < 4; pixel++) {
+            uint32_t offset = pixel * channels;
+            if (pixels[offset] != 64 || (channels > 1 && pixels[offset + 1] != 128) ||
+                (channels > 2 && pixels[offset + 2] != 191) ||
+                (channels > 3 && pixels[offset + 3] != 255)) {
+                printf("image channel test failed for %u channels at pixel %u\n", channels, pixel);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+__attribute__((constructor)) static void register_image_write_formats(void)
+{
+    register_test("image_write_formats", test_image_write_formats);
+}
+
+static int test_malformed_spirv(void)
+{
+    JitContext ctx = {0};
+    uint32_t bad_magic[5] = {0, 0, 0, 1, 0};
+    uint32_t truncated[1] = {0x07230203u};
+    init_jit(&ctx, COMPUTE_SHADER);
+    if (jit_compile_spirv(&ctx, bad_magic, 5) != NULL ||
+        jit_compile_spirv(&ctx, truncated, 1) != NULL) {
+        printf("malformed SPIR-V was accepted\n");
+        free_jit(&ctx);
+        return 1;
+    }
+    free_jit(&ctx);
+    return 0;
+}
+
+__attribute__((constructor)) static void register_malformed_spirv(void)
+{
+    register_test("malformed_spirv", test_malformed_spirv);
+}
 
 int run_compilation_script(void) 
 {

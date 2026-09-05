@@ -447,7 +447,32 @@ void handle_op_function(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
         ctx->current_block = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "init_global");
         LLVMPositionBuilderAtEnd(ctx->builder, ctx->current_block);
 
-        ctx->emask = jit_get_emask(ctx);
+        LLVMValueRef mask_indices[] = {
+            LLVMConstInt(ctx->int_type, 0, 0),
+            LLVMConstInt(ctx->int_type, 6, 0)
+        };
+        LLVMValueRef mask_slot = LLVMBuildInBoundsGEP2(
+            ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param,
+            mask_indices, 2, "active_mask_slot");
+        LLVMValueRef active_mask = LLVMBuildLoad2(
+            ctx->builder, ctx->int_type, mask_slot, "active_mask");
+
+        ctx->emask = LLVMGetUndef(ctx->vec_i1_type);
+        for (int lane = 0; lane < SIMT_WIDTH; lane++) 
+        {
+            LLVMValueRef shifted = LLVMBuildLShr(
+                ctx->builder, active_mask,
+                LLVMConstInt(ctx->int_type, lane, 0), "active_lane_shift");
+            LLVMValueRef bit = LLVMBuildAnd(
+                ctx->builder, shifted,
+                LLVMConstInt(ctx->int_type, 1, 0), "active_lane_bit");
+            LLVMValueRef active = LLVMBuildICmp(
+                ctx->builder, LLVMIntNE, bit,
+                LLVMConstInt(ctx->int_type, 0, 0), "active_lane");
+            ctx->emask = LLVMBuildInsertElement(
+                ctx->builder, ctx->emask, active,
+                LLVMConstInt(ctx->int_type, lane, 0), "active_mask_insert");
+        }
 
         resolve_pending_globals(ctx);
     }

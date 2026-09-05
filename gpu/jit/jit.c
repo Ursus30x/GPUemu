@@ -728,6 +728,11 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
 
 jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_count) 
 {   
+    if (!ctx || !binary || word_count < 5 || binary[0] != 0x07230203u || binary[3] == 0) {
+        DEBUG_PRINT("Invalid SPIR-V module\n");
+        return NULL;
+    }
+
     uint32_t* p = binary + 5;
     uint32_t* end = binary + word_count;
         
@@ -931,10 +936,11 @@ void init_jit(JitContext* ctx,shader_t shader_type)
         ptr_type,                                  // shared_memory (3)
         ptr_type,                                  // spill_buffer (4)
         ctx->int_type,                             // current_phase (5)
-        builtin_vertex_output_type                 // vertexOut (6)
+        ctx->int_type,                             // active_mask (6)
+        builtin_vertex_output_type                 // vertexOut (7)
     };
 
-    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 7, 0);
+    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 8, 0);
 
     LLVMTypeRef vs_data_fields[] = {
         simt_vec4_type,// gl_Position (Index 0)
