@@ -73,16 +73,26 @@ typedef enum {
     STATE_ID_BLEND_CONFIG,
     STATE_ID_DEPTH_CONFIG
 } StateID;
-
+#define MAX_MIP_LEVELS 14
 typedef struct __attribute__((packed)) {
-    uint32_t data_vram_addr; // VRAM offset where pixel bytes start
-    uint32_t width;
-    uint32_t height;
-    uint32_t channels;       // 1, 2, 3, 4
-    uint32_t filter;         // 0: FILTER_NEAREST, 1: FILTER_LINEAR
-    uint32_t wrap;           // 0: WRAP_REPEAT,    1: WRAP_CLAMP
+    uint32_t data_vram_addr;          // VRAM offset of Mip level 0 pixel data
+    uint32_t mip_vram_addr[MAX_MIP_LEVELS]; // VRAM relative offsets for Mip levels 0..13
+    uint32_t width;                   // Base width (Level 0)
+    uint32_t height;                  // Base height (Level 0)
+    uint32_t depth;                   // Base depth (Level 0, set to 1 for 2D)
+    uint32_t channels;                // 1, 2, 3, 4
+    uint32_t dimension;               // 0: 2D, 1: 3D (GpuTextureDimension)
+    uint32_t filter;
+    uint32_t wrap;                     
+    uint32_t wrap_u;                  // WrapMode for U/S
+    uint32_t wrap_v;                  // WrapMode for V/T
+    uint32_t wrap_w;                  // WrapMode for W/R (3D volume depth axis)
+    uint32_t num_mip_levels;          // Number of mipmap levels present (1 = base level only)
+    float    max_anisotropy;          // Max anisotropic ratio (1.0f = disabled, up to 16.0f)
+    float    min_lod;                 // Minimum clamp for LOD (e.g. 0.0f)
+    float    max_lod;                 // Maximum clamp for LOD (e.g. 13.0f)
+    float    lod_bias;                // User LOD bias (added to computed LOD)
 } GpuTextureDescriptorVram;
-
 typedef struct __attribute__((packed)) {
     uint32_t binding_slot;   // 1..MAX_BINDINGS-1
     uint32_t desc_vram_addr; // VRAM offset of GpuTextureDescriptorVram

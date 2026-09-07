@@ -14,7 +14,8 @@ QemuMutex jit_mutex;
 
 static inline float get_blend_factor(GpuBlendFactor factor, float src_a, float dst_a, float src_c, float dst_c) 
 {
-    switch (factor) {
+    switch (factor) 
+    {
         case GPU_BLEND_FACTOR_ZERO:                return 0.0f;
         case GPU_BLEND_FACTOR_ONE:                 return 1.0f;
         case GPU_BLEND_FACTOR_SRC_ALPHA:           return src_a;
@@ -56,7 +57,8 @@ void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
     }
     int idx = y * gpu->width + x;
 
-    if (!gpu->blend_enable) {
+    if (!gpu->blend_enable) 
+    {
         FB(gpu)[idx] = color;
         return;
     }
@@ -127,8 +129,10 @@ void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, u
         if (x0 == x1 && y0 == y1) break;
 
         e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x0 += sx; }
-        if (e2 <= dx) { err += dx; y0 += sy; }
+        if (e2 >= dy) 
+        { err += dy; x0 += sx; }
+        if (e2 <= dx) 
+        { err += dx; y0 += sy; }
         step++;
     }
 }
@@ -177,7 +181,8 @@ static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *
             float w1 = edge_func(s[2], s[0], p) / area;
             float w2 = edge_func(s[0], s[1], p) / area;
 
-            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) 
+            {
                 float z = w0 * (1.0f/s[0].z) + w1 * (1.0f/s[1].z) + w2 * (1.0f/s[2].z);
                 int idx = y * width + x;
 
@@ -202,7 +207,8 @@ void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
     draw_triangle_band(v0, v1, v2, color, gpu, 0, gpu->height - 1);
 }
 
-static void worker_transform_vertices_impl(RenderThreadArgs *args) {
+static void worker_transform_vertices_impl(RenderThreadArgs *args) 
+{
     GpuState local_gpu = *(args->orig_gpu); 
     GpuState *gpu = &local_gpu;
 
