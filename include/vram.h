@@ -62,7 +62,7 @@ typedef enum {
     CMD_DMA_TRANSFER       = 0x04,
     CMD_DMA_UPDATE         = 0x05,
     CMD_DISPATCH           = 0x06,
-    CMD_DISPATCH_INDIRECT  = 0x07,
+    CMD_DISPATCH_INDIRECT  = 0x07
 } CommandOpcode;
 
 

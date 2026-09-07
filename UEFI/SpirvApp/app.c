@@ -198,7 +198,7 @@ VOID Test3DTrianglesSimt(){
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
         else{
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
 
         // Upload/Update Model 2 UBO
@@ -206,25 +206,25 @@ VOID Test3DTrianglesSimt(){
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
         }
         else{
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
         }
 
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
         
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 8);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 12);
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 8);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
 
         // Draw Model 1
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
         // Draw Model 2
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP2, sizeof(SimtMat4UBO));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP2, sizeof(SimtMat4UBO));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
@@ -439,19 +439,19 @@ VOID TestShaderArt() {
         if(hMVP1 == 0){
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
         } else {
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
         }
 
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 4);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 2);
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 4);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 2);
 
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(struct UniformBuffer));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(struct UniformBuffer));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
@@ -597,21 +597,21 @@ VOID Test3DObszar()
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
         else{
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
 
         // --- RENDER ---
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
         
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 24);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 12);
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 24);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
         mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
 
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
 
         mGOP3D->GpuCmdEnd(mGOP3D);
@@ -766,20 +766,20 @@ VOID Test3DVolumeSimt()
         if (hMVP1 == 0) {
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         } else {
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
 
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF050515);
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF050515);
         
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_volume_vs));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_volume_3d_fs));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 24);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 12);
-        mGOP3D->GpuBindTexture(mGOP3D, 1, hTexDesc);
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_volume_vs));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_volume_3d_fs));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 24);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
+        mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
 
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
@@ -881,25 +881,25 @@ VOID TestSmokeVolume3D(VOID)
         if (hUBO == 0) {
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
         } else {
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
         }
 
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF1E1E1F); // Dark clear color matching OpenGL demo background[cite: 2]
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF1E1E1F); // Dark clear color matching OpenGL demo background[cite: 2]
 
-        mGOP3D->GpuSetBlendState(mGOP3D, TRUE, Gop3dBlendFactorSrcAlpha, Gop3dBlendFactorOneMinusSrcAlpha);
-        mGOP3D->GpuSetDepthWrite(mGOP3D, FALSE);
+        mGOP3D->GpuCmdSetBlendState(mGOP3D, TRUE, Gop3dBlendFactorSrcAlpha, Gop3dBlendFactorOneMinusSrcAlpha);
+        mGOP3D->GpuCmdSetDepthWrite(mGOP3D, FALSE);
 
         // Bind Pipeline States
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 4);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 2);
-        mGOP3D->GpuBindTexture(mGOP3D, 1, hTexDesc);
-        mGOP3D->GpuBindUBO(mGOP3D, hUBO, sizeof(struct UniformBuffer));
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 4);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 2);
+        mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hUBO, sizeof(struct UniformBuffer));
 
         // Draw quad
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
@@ -1006,26 +1006,23 @@ VOID TestBlendingSimt() {
         if (hMVP1 == 0) {
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         } else {
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
 
         if (hMVP2 == 0) {
             mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
         } else {
-            mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
         }
 
         // --- RENDER PASS ---
         mGOP3D->GpuCmdBegin(mGOP3D);
-        mGOP3D->GpuClearFrame(mGOP3D, 0xFF101010); // Clear to dark gray
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF101010); // Clear to dark gray
         
-        mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-        mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO, 24);
-        mGOP3D->GpuBindIBO(mGOP3D, hIBO, 4);
-        //         mGOP3D->GpuBindVBO(mGOP3D, hVBO, 8);
-        // mGOP3D->GpuBindIBO(mGOP3D, hIBO, 12);
-        mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_Transparent, 8);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 4);
 
         // ---------------------------------------------------------------------
         // PASS 1: Render Opaque Object (Solid Red/Blue Cube)
@@ -1033,9 +1030,9 @@ VOID TestBlendingSimt() {
         mGOP3D->GpuCmdSetBlendState(mGOP3D, FALSE, Gop3dBlendFactorOne, Gop3dBlendFactorZero);
         mGOP3D->GpuCmdSetDepthWrite(mGOP3D, TRUE); // Enable Z-buffer updates
 
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO_Opaque, 8);
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_Opaque, 8);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
         // ---------------------------------------------------------------------
         // PASS 2: Render Transparent Object with Alpha Blending
@@ -1043,9 +1040,9 @@ VOID TestBlendingSimt() {
         mGOP3D->GpuCmdSetBlendState(mGOP3D, TRUE, Gop3dBlendFactorSrcAlpha, Gop3dBlendFactorOneMinusSrcAlpha);
         mGOP3D->GpuCmdSetDepthWrite(mGOP3D, FALSE); // Disable Z-writes to avoid blocking subsequent geometry
 
-        mGOP3D->GpuBindVBO(mGOP3D, hVBO_Transparent, 8);
-        mGOP3D->GpuBindUBO(mGOP3D, hMVP2, sizeof(SimtMat4UBO));
-        mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_Transparent, 8);
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP2, sizeof(SimtMat4UBO));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
         mGOP3D->GpuCmdEnd(mGOP3D);
         mGOP3D->GpuPresent(mGOP3D);
@@ -1151,39 +1148,39 @@ VOID TestPrimitivesSimt() {
     mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, quad_verts, sizeof(quad_verts), &hVBO_Quads);
 
     mGOP3D->GpuCmdBegin(mGOP3D);
-    mGOP3D->GpuClearFrame(mGOP3D, 0xFF101010);
-    mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
-    mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+    mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF101010);
+    mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+    mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
 
     // Render Points
-    mGOP3D->GpuBindVBO(mGOP3D, hVBO_Points, 4);
-    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
-    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyPoints, 4);
+    mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_Points, 4);
+    mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyPoints, 4);
 
     // Render Lines
-    mGOP3D->GpuBindVBO(mGOP3D, hVBO_Lines, 4);
-    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
-    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLines, 4);
+    mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_Lines, 4);
+    mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyLines, 4);
 
     // Render Line Strip
-    mGOP3D->GpuBindVBO(mGOP3D, hVBO_LineStrip, 5);
-    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
-    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyLineStrip, 5);
+    mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_LineStrip, 5);
+    mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyLineStrip, 5);
 
     // Render Triangle Strip
-    mGOP3D->GpuBindVBO(mGOP3D, hVBO_TriStrip, 4);
-    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
-    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangleStrip, 4);
+    mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_TriStrip, 4);
+    mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangleStrip, 4);
 
     // Render Triangle Fan
-    mGOP3D->GpuBindVBO(mGOP3D, hVBO_TriFan, 5);
-    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
-    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangleFan, 5);
+    mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_TriFan, 5);
+    mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangleFan, 5);
 
     // Render Quads
-    mGOP3D->GpuBindVBO(mGOP3D, hVBO_Quads, 4);
-    mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
-    mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyQuads, 4);
+    mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_Quads, 4);
+    mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+    mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyQuads, 4);
 
     mGOP3D->GpuCmdEnd(mGOP3D);
     mGOP3D->GpuPresent(mGOP3D);
