@@ -57,172 +57,254 @@ graph TD
         RASTER["Rasterizer / Vertex Thread Pool"]
         FUNC --> RASTER
     end
+# Jitter JIT
+
+Jitter is GPUemu's LLVM-backed SPIR-V JIT. It translates a shader into one
+LLVM function that evaluates **16 lanes at once**. The implementation targets
+the shader subset used by GPUemu's UEFI demos and JIT tests; it is not intended
+to be a complete SPIR-V runtime.
+
+## Current status
+
+The JIT test suite covers vertex, fragment, and compute shaders. The latest
+run passes **20/20 tests**:
+
+| Area | Validated coverage |
+| --- | --- |
+| Vertex | Attributes, `gl_Position`, matrices, loops, and selections |
+| Fragment | Varyings, `gl_FragCoord`, samplers, filtering, and wrapping |
+| Compute | Buffers, integer arithmetic, bitwise operations, atomics, barriers, and image stores |
+| Subgroups | Add reduction, elect, ballot, and shuffle |
+| GLSL.std.450 | Trigonometric, geometric, interpolation, and scalar math helpers |
+
+Run the suite from the repository root:
+
+```sh
+make -C gpu/jit
+cd gpu/jit/test
+./test_jit
 ```
 
----
+The test runner recompiles the GLSL fixtures before executing the JIT tests.
 
-## 2. SIMT Vector Memory Layouts & Data Representations
+## SPIR-V support
 
-The JIT compiler processes work in **16-lane SIMT blocks**. Vector components are stored non-interleaved (component-wise arrays of 16 floats), guaranteeing 64-byte vector alignment for hardware SSE/AVX vectorization.
+The dispatcher in `gpu/jit/jit.c` currently has handlers for these families:
 
-```mermaid
-graph TD
-    subgraph SimtFloat ["SimtFloat Layout (64 Bytes)"]
-        SF0["Lane 0 (float)"] --- SF1["Lane 1 (float)"] --- SF2["..."] --- SF15["Lane 15 (float)"]
-    end
+- Types and constants: void, bool, integer, float, vectors, matrices, arrays,
+  structs, pointers, functions, constants, and composite constants.
+- Shader structure: entry points, execution modes, labels, branches, selection
+  and loop control, phi values, returns, variables, loads, stores, and access
+  chains.
+- Arithmetic: integer and floating-point add, subtract, multiply, divide,
+  modulo/remainder, negate, comparisons, select, logical operations,
+  conversions, and bitcasts.
+- Composites and matrices: construction, extraction, vector shuffle, dot,
+  vector-times-scalar, and matrix-times-vector operations.
+- Resources: sampled images, image fetch/read/write, image size queries, and
+  2D texture sampling.
+- Parallel execution: control/memory barriers, atomics, subgroup reductions,
+  elect, ballot, broadcast, and shuffle operations.
+- GLSL.std.450: trigonometric, exponential, interpolation, vector geometry,
+  reflection, and refraction helpers.
 
-    subgraph SimtVec3 ["vec3 Layout (192 Bytes = 3 x 64 Bytes)"]
-        subgraph X ["Comp 0: X (64 Bytes)"]
-            X0["X[0]"] --- X1["X[1]"] --- X15["X[15]"]
-        end
-        subgraph Y ["Comp 1: Y (64 Bytes)"]
-            Y0["Y[0]"] --- Y1["Y[1]"] --- Y15["Y[15]"]
-        end
-        subgraph Z ["Comp 2: Z (64 Bytes)"]
-            Z0["Z[0]"] --- Z1["Z[1]"] --- Z15["Z[15]"]
-        end
-    end
+### Implemented core opcodes
 
-    subgraph SimtMat4 ["mat4 Layout (1024 Bytes = 4 Cols x 4 Rows x 64 Bytes)"]
-        C0["Column 0 (256 B: R0, R1, R2, R3)"]
-        C1["Column 1 (256 B: R0, R1, R2, R3)"]
-        C2["Column 2 (256 B: R0, R1, R2, R3)"]
-        C3["Column 3 (256 B: R0, R1, R2, R3)"]
-    end
+The following SPIR-V opcodes are present in the dispatcher. Names are grouped
+by the implementation area rather than listed in numeric opcode order.
+
+**Module, type, and structure**
+
+`OpName`, `OpMemberDecorate`, `OpDecorate`, `OpEntryPoint`,
+`OpExecutionMode`, `OpTypeVoid`, `OpTypeBool`, `OpTypeInt`, `OpTypeFloat`,
+`OpTypeVector`, `OpTypeMatrix`, `OpTypeArray`, `OpTypeStruct`,
+`OpTypePointer`, `OpTypeFunction`, `OpTypeImage`, `OpTypeSampler`,
+`OpTypeSampledImage`, `OpConstant`, `OpConstantComposite`, `OpVariable`,
+`OpFunction`, `OpFunctionEnd`, `OpLabel`, `OpReturn`, `OpReturnValue`,
+`OpKill`, `OpUnreachable`, and `OpExtInst`.
+
+**Memory and composites**
+
+`OpLoad`, `OpStore`, `OpAccessChain`, `OpCompositeConstruct`,
+`OpCompositeExtract`, `OpVectorShuffle`, `OpSampledImage`, `OpImage`, and
+`OpPhi`.
+
+**Control flow and synchronization**
+
+`OpBranch`, `OpBranchConditional`, `OpSelectionMerge`, `OpLoopMerge`,
+`OpControlBarrier`, and `OpMemoryBarrier`.
+
+**Arithmetic and conversion**
+
+`OpIAdd`, `OpISub`, `OpIMul`, `OpSDiv`, `OpUDiv`, `OpUMod`, `OpSRem`,
+`OpSMod`, `OpSNegate`, `OpFAdd`, `OpFSub`, `OpFMul`, `OpFDiv`, `OpFMod`,
+`OpFNegate`, `OpVectorTimesScalar`, `OpDot`, `OpMatrixTimesVector`,
+`OpConvertSToF`, `OpConvertFToS`, `OpConvertFToU`, `OpConvertUToF`,
+`OpBitcast`, `OpBitwiseAnd`, `OpBitwiseOr`, `OpBitwiseXor`, `OpNot`,
+`OpShiftLeftLogical`, `OpShiftRightLogical`, and `OpShiftRightArithmetic`.
+
+**Comparisons and logical operations**
+
+`OpIEqual`, `OpINotEqual`, `OpSLessThan`, `OpULessThan`,
+`OpSLessThanEqual`, `OpULessThanEqual`, `OpSGreaterThan`,
+`OpUGreaterThan`, `OpSGreaterThanEqual`, `OpUGreaterThanEqual`,
+`OpFOrdLessThan`, `OpFOrdGreaterThan`, `OpSelect`, `OpLogicalAnd`,
+`OpLogicalOr`, `OpLogicalNot`, `OpLogicalEqual`, `OpLogicalNotEqual`,
+`OpAny`, `OpAll`, `OpIsNan`, and `OpIsInf`.
+
+**Images and sampling**
+
+`OpImageSampleImplicitLod`, `OpImageSampleExplicitLod`, `OpImageFetch`,
+`OpImageQuerySize`, `OpImageQuerySizeLod`, `OpImageRead`, and
+`OpImageWrite`.
+
+**Atomics**
+
+`OpAtomicLoad`, `OpAtomicStore`, `OpAtomicExchange`,
+`OpAtomicCompareExchange`, `OpAtomicCompareExchangeWeak`,
+`OpAtomicIIncrement`, `OpAtomicIDecrement`, `OpAtomicIAdd`, `OpAtomicISub`,
+`OpAtomicSMin`, `OpAtomicUMin`, `OpAtomicSMax`, `OpAtomicUMax`,
+`OpAtomicAnd`, `OpAtomicOr`, and `OpAtomicXor`.
+
+**Subgroups**
+
+`OpGroupNonUniformElect`, `OpGroupNonUniformAll`, `OpGroupNonUniformAny`,
+`OpGroupNonUniformAllEqual`, `OpGroupNonUniformBroadcast`,
+`OpGroupNonUniformBroadcastFirst`, `OpGroupNonUniformBallot`,
+`OpGroupNonUniformInverseBallot`, `OpGroupNonUniformBallotBitExtract`,
+`OpGroupNonUniformBallotBitCount`, `OpGroupNonUniformBallotFindLSB`,
+`OpGroupNonUniformBallotFindMSB`, `OpGroupNonUniformShuffle`,
+`OpGroupNonUniformShuffleXor`, `OpGroupNonUniformShuffleUp`,
+`OpGroupNonUniformShuffleDown`, `OpGroupNonUniformIAdd`,
+`OpGroupNonUniformFAdd`, `OpGroupNonUniformIMul`, `OpGroupNonUniformFMul`,
+`OpGroupNonUniformSMin`, `OpGroupNonUniformUMin`, `OpGroupNonUniformFMin`,
+`OpGroupNonUniformSMax`, `OpGroupNonUniformUMax`, `OpGroupNonUniformFMax`,
+`OpGroupNonUniformBitwiseAnd`, `OpGroupNonUniformBitwiseOr`,
+`OpGroupNonUniformBitwiseXor`, `OpGroupNonUniformLogicalAnd`,
+`OpGroupNonUniformLogicalOr`, `OpGroupNonUniformLogicalXor`,
+`OpGroupNonUniformQuadBroadcast`, `OpGroupNonUniformQuadSwap`,
+`OpSubgroupBallotKHR`, `OpSubgroupFirstInvocationKHR`, `OpSubgroupAllKHR`,
+`OpSubgroupAnyKHR`, `OpSubgroupAllEqualKHR`, and
+`OpSubgroupReadInvocationKHR`.
+
+This is an implementation inventory, not a conformance claim. An opcode may
+only support the type shapes and storage classes exercised by current tests.
+
+## Known limitations
+
+- Only a single shader function is currently supported.
+- The backend is specialized for `SIMT_WIDTH == 16`.
+- Many integer registers use `<16 x float>` storage. Bitwise operations must
+  preserve bit patterns, while indices, shift counts, modulo, and division use
+  numeric integer conversion.
+- Resource descriptors are GPUemu host-side descriptors, not Vulkan descriptors.
+- Image support is currently centered on 2D host buffers and sampler helpers.
+- Function parameters/calls, matrix multiplication, vector-times-matrix, wider
+  image formats/dimensions, and broader multi-function control flow remain
+  follow-up work where they are not covered by tests.
+- Unsupported instructions are reported by the dispatcher and should receive a
+  focused test before being marked complete.
+
+## Implementation map
+
+| Concern | Primary files |
+| --- | --- |
+| Opcode dispatch and JIT lifecycle | `gpu/jit/jit.c`, `gpu/jit/jit.h` |
+| Arithmetic, conversions, comparisons, subgroups | `gpu/jit/jit_alu.c` |
+| Control flow and execution masks | `gpu/jit/jit_flow.c` |
+| Loads, stores, access chains, memory layout | `gpu/jit/jit_mem.c` |
+| Sampling and image operations | `gpu/jit/jit_smpl.c` |
+| GLSL.std.450 mapping | `gpu/jit/glsl_std_450.h` and `gpu/jit/jit_alu.c` |
+| End-to-end tests | `gpu/jit/jit_test.c`, `gpu/jit/test/glsl/` |
+
+Generated SPIR-V binaries live under `gpu/jit/test/out/` and should be
+regenerated through the test runner rather than edited by hand.
+
+## Design rules
+
+When adding an opcode:
+
+1. Confirm its operand and result types in the SPIR-V specification.
+2. Decide whether each operand is a bit pattern or a numeric value. This is
+   important because the register backend stores many integers as float bits.
+3. Preserve the execution mask for stores, atomics, image writes, and subgroup
+   operations.
+4. Add a small shader test that exercises the path across multiple lanes.
+5. Run the complete JIT suite before updating this document.
+
+## TODO priorities
+
+- Add explicit support tracking and tests for function parameters and calls.
+- Complete matrix multiplication and vector-times-matrix operations.
+- Expand image formats, dimensions, and access qualifiers.
+- Improve diagnostics for unsupported opcodes and invalid type combinations.
+- Generate coverage data from the dispatcher and test suite instead of keeping
+  a manually counted opcode table.
+
+## SIMT memory layout
+
+The JIT uses a 16-lane SIMT vector backend. A scalar is represented as one
+LLVM vector, and a composite is an LLVM array of those vectors.
+
+### Scalar
+
+```text
+LLVM type: <16 x float>
+Size:      64 bytes
+Alignment: 64 bytes
+Layout:    [lane 0][lane 1] ... [lane 15]
 ```
 
-### Memory Layout Summary Table
-
-| Type | LLVM IR Representation | C Structural Representation | Byte Size | Lane Values & Access Pattern |
-| :--- | :--- | :--- | :--- | :--- |
-| `float` | `<16 x float>` | `struct { float lane[16]; }` | 64 B | Uniform scalar value broadcasted across all 16 lanes |
-| `vec2` | `[2 x <16 x float>]` | `struct { SimtFloat x, y; }` | 128 B | 2 component arrays $\times$ 16 floats per component |
-| `vec3` | `[3 x <16 x float>]` | `struct { SimtFloat x, y, z; }` | 192 B | 3 component arrays $\times$ 16 floats per component |
-| `vec4` | `[4 x <16 x float>]` | `struct { SimtFloat x, y, z, w; }` | 256 B | 4 component arrays $\times$ 16 floats per component |
-| `mat2` | `[2 x [2 x <16 x float>]]` | `struct { vec2 col[2]; }` | 256 B | 2 column vectors $\times$ 2 rows $\times$ 16 lanes |
-| `mat3` | `[3 x [3 x <16 x float>]]` | `struct { vec3 col[3]; }` | 576 B | 3 column vectors $\times$ 3 rows $\times$ 16 lanes |
-| `mat4` | `[4 x [4 x <16 x float>]]` | `struct { vec4 col[4]; }` | 1024 B | 4 column vectors $\times$ 4 rows $\times$ 16 lanes |
-
----
-
-## 3. Supported SPIR-V Instructions
-
-| Opcode | Instruction Name | Description | Status |
-| :--- | :--- | :--- | :--- |
-| `3` | `OpSource` | Source language documentation | ✅ Supported |
-| `5` | `OpName` | Debug variable naming | ✅ Supported |
-| `6` | `OpMemberName` | Debug struct member naming | ✅ Supported |
-| `11` | `OpExtInstImport` | Import extended instruction set (GLSL.std.450) | ✅ Supported |
-| `12` | `OpExtInst` | Execute extended instruction | ✅ Supported |
-| `14` | `OpMemoryModel` | Memory model specification | ✅ Supported |
-| `15` | `OpEntryPoint` | Entry point declaration | ✅ Supported |
-| `16` | `OpExecutionMode` | Shader execution mode setup | ✅ Supported |
-| `17` | `OpCapability` | Capability declaration | ✅ Supported |
-| `19` | `OpTypeVoid` | Void type definition | ✅ Supported |
-| `20` | `OpTypeBool` | Boolean type definition | ✅ Supported |
-| `21` | `OpTypeInt` | Integer type definition | ✅ Supported |
-| `22` | `OpTypeFloat` | Floating point type definition | ✅ Supported |
-| `23` | `OpTypeVector` | Vector type definition | ✅ Supported |
-| `24` | `OpTypeMatrix` | Matrix type definition | ✅ Supported |
-| `28` | `OpTypeArray` | Array type definition | ✅ Supported |
-| `30` | `OpTypeStruct` | Struct type definition | ✅ Supported |
-| `32` | `OpTypePointer` | Pointer type definition | ✅ Supported |
-| `33` | `OpTypeFunction` | Function signature type definition | ✅ Supported |
-| `43` | `OpConstant` | Scalar constant definition | ✅ Supported |
-| `44` | `OpConstantComposite` | Composite constant construction | ✅ Supported |
-| `54` | `OpFunction` | Function definition | ✅ Supported |
-| `56` | `OpFunctionEnd` | Function end marker | ✅ Supported |
-| `59` | `OpVariable` | Memory variable declaration | ✅ Supported |
-| `61` | `OpLoad` | Load from variable/pointer | ✅ Supported |
-| `62` | `OpStore` | Store to variable/pointer | ✅ Supported |
-| `65` | `OpAccessChain` | Struct/array/vector pointer indexing | ✅ Supported |
-| `71` | `OpDecorate` | Variable decorations (Binding, Location, BufferBlock) | ✅ Supported |
-| `72` | `OpMemberDecorate` | Struct member decorations | ✅ Supported |
-| `79` | `OpVectorShuffle` | Vector swizzling & permutation | ✅ Supported |
-| `80` | `OpCompositeConstruct` | Composite construction from components | ✅ Supported |
-| `81` | `OpCompositeExtract` | Component extraction from composite | ✅ Supported |
-| `111` | `OpConvertSToF` | Signed integer to float conversion | ✅ Supported |
-| `127` | `OpFNegate` | Floating point negation | ✅ Supported |
-| `128` | `OpIAdd` | Integer addition | ✅ Supported |
-| `129` | `OpFAdd` | Floating point addition | ✅ Supported |
-| `130` | `OpISub` | Integer subtraction | ✅ Supported |
-| `131` | `OpFSub` | Floating point subtraction | ✅ Supported |
-| `133` | `OpFMul` | Floating point multiplication | ✅ Supported |
-| `136` | `OpFDiv` | Floating point division | ✅ Supported |
-| `141` | `OpFMod` | Floating point modulo | ✅ Supported |
-| `142` | `OpVectorTimesScalar` | Vector-scalar multiplication | ✅ Supported |
-| `145` | `OpMatrixTimesVector` | Matrix-vector multiplication | ✅ Supported |
-| `148` | `OpDot` | Vector dot product | ✅ Supported |
-| `169` | `OpSelect` | Conditional select | ✅ Supported |
-| `177` | `OpSLessThan` | Signed integer less-than comparison | ✅ Supported |
-| `184` | `OpFOrdLessThan` | Float ordered less-than comparison | ✅ Supported |
-| `186` | `OpFOrdGreaterThan` | Float ordered greater-than comparison | ✅ Supported |
-| `246` | `OpLoopMerge` | Loop merge control block annotation | ✅ Supported |
-| `247` | `OpSelectionMerge` | Selection merge control block annotation | ✅ Supported |
-| `248` | `OpLabel` | Control flow basic block label | ✅ Supported |
-| `249` | `OpBranch` | Unconditional branch | ✅ Supported |
-| `250` | `OpBranchConditional` | Conditional branch | ✅ Supported |
-| `253` | `OpReturn` | Function return (void) | ✅ Supported |
-| `254` | `OpReturnValue` | Function return with value | ✅ Supported |
-
----
-
-## 4. Supported Extended GLSL 450 Instructions (`GLSL.std.450`)
-
-All 20 required GLSL extended math functions are fully supported:
-
-```mermaid
-graph LR
-    subgraph GLSL450 ["GLSL.std.450 Extended Set"]
-        TRIG["Trigonometry: Sin, Cos, Atan2"]
-        MATH["Basic Math: FAbs, Sqrt, Pow, Log, FSign"]
-        GEOM["Geometry: Length, Distance, Normalize, Cross, Reflect, Refract"]
-        CLAM["Range & Interpolation: FMin, FMax, FClamp, Step, SmoothStep, FMix"]
-    end
+```c
+typedef struct {
+    float lane[16];
+} SimtFloat;
 ```
 
-| GLSL Function ID | Function Name | Execution Mode | SIMT Behavior |
-| :--- | :--- | :--- | :--- |
-| `1` | `Round` / `FAbs` | Vectorized | Absolute value per lane |
-| `4` | `FSign` | Vectorized | Signum (-1.0, 0.0, 1.0) per lane |
-| `13` | `Sin` | Vectorized | Taylor series / LLVM intrinsic sine |
-| `14` | `Cos` | Vectorized | Cosine evaluation across 16 lanes |
-| `25` | `Atan2` | Vectorized | Arc tangent of $y/x$ |
-| `26` | `Pow` | Vectorized | Base raised to exponent $x^y$ |
-| `28` | `Log` | Vectorized | Natural logarithm $\ln(x)$ |
-| `31` | `Sqrt` | Vectorized | Square root evaluation |
-| `37` | `FMin` | Vectorized | Component-wise minimum |
-| `40` | `FMax` | Vectorized | Component-wise maximum |
-| `43` | `FClamp` | Vectorized | Clamping value to $[\text{minVal}, \text{maxVal}]$ |
-| `46` | `FMix` | Vectorized | Linear interpolation $x \cdot (1 - a) + y \cdot a$ |
-| `48` | `Step` | Vectorized | Step function ($x < \text{edge} ? 0.0 : 1.0$) |
-| `49` | `SmoothStep` | Vectorized | Hermite interpolation between 0 and 1 |
-| `66` | `Length` | Vectorized | Vector magnitude $\sqrt{v \cdot v}$ |
-| `67` | `Distance` | Vectorized | Distance between points $\text{Length}(p_0 - p_1)$ |
-| `69` | `Normalize` | Vectorized | Unit vector scaling $v / \text{Length}(v)$ |
-| `71` | `Cross` | Vectorized | 3D Cross product $v_0 \times v_1$ |
-| `72` | `Reflect` | Vectorized | Reflection vector $I - 2 \cdot (N \cdot I) \cdot N$ |
-| `73` | `Refract` | Vectorized | Refraction vector following Snell's law |
+Scalar constants are broadcast to every lane. Values loaded from buffers may
+instead differ per lane.
 
----
+### Vectors
 
-## 5. Control Flow & Masked Store Execution Model
+`vecN` is stored as `[N x <16 x float>]`: each component has its own 16-lane
+vector. Components are not interleaved.
 
-```mermaid
-graph TD
-    subgraph ControlFlow ["Masked Store Execution Flow"]
-        EXEC_MASK["16-Lane Execution Mask (exec_mask)"]
-        COND["Check Active Lane Bit (exec_mask & (1 << lane))"]
-        WRITE["Execute Conditional Store (*ptr = value)"]
-        SKIP["Skip Inactive Lane Store"]
+| Type | LLVM type | Size |
+| --- | --- | ---: |
+| `vec2` | `[2 x <16 x float>]` | 128 bytes |
+| `vec3` | `[3 x <16 x float>]` | 192 bytes |
+| `vec4` | `[4 x <16 x float>]` | 256 bytes |
 
-        EXEC_MASK --> COND
-        COND -->|Bit set = 1| WRITE
-        COND -->|Bit set = 0| SKIP
-    end
+For a `vec3`, `vector[0]` contains all X values, `vector[1]` all Y values,
+and `vector[2]` all Z values.
+
+### Matrices
+
+Matrices are column-major arrays of column vectors. A `matN` is represented as
+`[N x [N x <16 x float>]]`; each matrix element is a complete 16-lane vector.
+
+| Type | LLVM type | Size |
+| --- | --- | ---: |
+| `mat2` | `[2 x [2 x <16 x float>]]` | 256 bytes |
+| `mat3` | `[3 x [3 x <16 x float>]]` | 576 bytes |
+| `mat4` | `[4 x [4 x <16 x float>]]` | 1024 bytes |
+
+For a matrix element at column `c`, row `r`, and lane `l`, the byte offset is:
+
+```text
+c * (N * 64) + r * 64 + l * 4
 ```
 
-For conditional branches, control flow, and depth/stamp execution masks, memory writes operate under execution mask gating:
-- Each lane computes independently with its own attribute data.
-- Stores to VRAM and framebuffer registers verify the active lane mask before writing.
-- SIMT vectors maintain 64-byte alignment throughout processing to maximize SIMD instruction generation (SSE4.2/AVX2) by LLVM.
+### Masked memory operations
+
+Control flow maintains an execution mask with one boolean per lane. Stores,
+atomics, and image writes update only active lanes. This keeps divergent
+branches from modifying inactive lanes or their associated memory.
+
+## Performance notes
+
+- One JIT function processes 16 work items in parallel.
+- 64-byte SIMT vectors are aligned for efficient host loads and stores.
+- LLVM may lower the vector operations to host SIMD instructions.
+- Array-of-vectors storage favors component-wise operations and predictable
+  lane access over interleaved scalar layout.
