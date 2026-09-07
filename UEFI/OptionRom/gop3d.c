@@ -346,22 +346,6 @@ EFI_STATUS EFIAPI GpuCmdUpdateBuffer(
     return EFI_SUCCESS;
 }
 
-EFI_STATUS EFIAPI GpuFreeBuffer(
-  IN  GOP_3D_PROTOCOL     *This,
-  IN  VRAMADDR            *GpuAddress
-)
-{
-    if (GpuAddress == NULL) {
-      return EFI_INVALID_PARAMETER;
-    }
-
-    if (*GpuAddress != 0) {
-        GpuFreeMem(*GpuAddress);
-        *GpuAddress = 0;
-    }
-
-    return EFI_SUCCESS;
-}
 
 EFI_STATUS EFIAPI GpuCmdReadBuffer(
   IN  GOP_3D_PROTOCOL     *This,
