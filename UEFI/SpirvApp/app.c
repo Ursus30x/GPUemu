@@ -274,6 +274,8 @@ VOID TestComputeShader() {
         Print(L"  [%02d] A = %d, B = %d  ", i, (INT32)input_a[i], (INT32)input_b[i]);
     }
 
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
     mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, (VOID*)bin_compute_shader, sizeof(bin_compute_shader), &hCS);
     Print(L"\n[VRAM] Shader uploaded. Handle: 0x%LX (Size: %u bytes)\n", (UINT64)hCS, (UINT32)sizeof(bin_compute_shader));
 
@@ -322,6 +324,8 @@ VOID TestComputeShader() {
     mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_B);
     mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_C);
 
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+
     Print(L"GOP3D: Compute Shader Dispatch Complete.\n");
 }
 
@@ -342,6 +346,8 @@ VOID TestBarrierComputeShader(VOID) {
     output_data[0] = 0.0f;
 
     Print(L"[INPUT DATA] 16 elements: 1..16 (Expected Sum = 136)\n");
+
+    mGOP3D->GpuSetMode(mGOP3D, 1);
 
     mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, (VOID*)bin_barrier_reduction_shader, sizeof(bin_barrier_reduction_shader), &hCS);
     Print(L"[VRAM] Barrier Shader uploaded. Handle: 0x%LX (Size: %u bytes)\n", (UINT64)hCS, (UINT32)sizeof(bin_barrier_reduction_shader));
@@ -378,6 +384,8 @@ VOID TestBarrierComputeShader(VOID) {
     mGOP3D->GpuFreeBuffer(mGOP3D, &hCS);
     mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_In);
     mGOP3D->GpuFreeBuffer(mGOP3D, &hSSBO_Out);
+
+    mGOP3D->GpuSetMode(mGOP3D, 0);
 
     Print(L"GOP3D: Barrier Compute Shader Test Complete.\n");
 }

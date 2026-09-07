@@ -542,6 +542,7 @@ void compute_mode(GpuState *gpu)
         if (render.args[i].end_block > total_wg) render.args[i].end_block = total_wg;
     }
     dispatch_task(TASK_COMPUTE_SIMT);
+    gpu->gpu_mode = GPU_MODE_3D;
 }
 void gpu_render_triangles(void *opaque)
 {

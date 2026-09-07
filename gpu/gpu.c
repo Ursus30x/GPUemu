@@ -570,7 +570,7 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         break;
     case REG_RING_BUFFER_HEAD_ADDR:
         target_reg = &s->ring_buffer_head;
-        if(s->gpu_mode != GPU_MODE_GOP) trigger_command_processor = 1;
+        trigger_command_processor = 1;
         break;
     case REG_RING_BUFFER_TAIL_ADDR:
         target_reg = &s->ring_buffer_tail;
