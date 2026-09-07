@@ -38,7 +38,8 @@ typedef enum {
   Gop3dBufferTypeUniform,
   Gop3dBufferTypeShaderCode,
   Gop3dBufferTypeTexture,
-  Gop3dBufferTypeTextureDesc
+  Gop3dBufferTypeTextureDesc,
+  Gop3dBufferTypeSSBO
 } GOP_3D_BUFFER_TYPE;
 
 typedef enum {
@@ -223,6 +224,32 @@ EFI_STATUS
   );
 
 /**
+ * Frees VRAM allocated resource.
+ * @param GpuAddress  Adress under which resource is located.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_FREE_BUFFER)(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN VRAMADDR            *GpuAddress
+  );
+
+/**
+ * Reads data from GPU VRAM to Host Memory.
+ * @param GpuAddress  VRAM offset to read from.
+ * @param HostData    Pointer to destination buffer in System Memory.
+ * @param Size        Size in bytes to copy.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_READ_BUFFER)(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  VRAMADDR            GpuAddress,
+  OUT VOID                *HostData,
+  IN  UINT32              Size
+  );
+
+/**
  * Issues a draw call.
  * @param Topology    Primitive type (Points, Lines, Triangles).
  * @param VertexCount Number of vertices (or indices if IBO is bound) to draw.
@@ -281,37 +308,72 @@ EFI_STATUS
   IN BOOLEAN              EnableDepthWrite
 );
 
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_BIND_SSBO)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               BindingSlot,
+  IN VRAMADDR             GpuAddress,
+  IN UINT32               Size
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_CMD_3D_DISPATCH)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               GroupCountX,
+  IN UINT32               GroupCountY,
+  IN UINT32               GroupCountZ
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_CMD_3D_DISPATCH_INDIRECT)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  );
+
 /* -------------------------- Protocol structure -------------------------- */
 
 struct GOP_3D_PROTOCOL {
-  GOP_3D_INIT                 GpuInit;
-  GOP_3D_DESTROY              GpuDestroy;
+  GOP_3D_INIT                  GpuInit;
+  GOP_3D_DESTROY               GpuDestroy;
 
-  GOP_3D_SET_MODE             GpuSetMode;
+  GOP_3D_SET_MODE              GpuSetMode;
 
-  GOP_3D_CMD_BEGIN            GpuCmdBegin;
-  GOP_3D_CMD_END              GpuCmdEnd;
+  GOP_3D_CMD_BEGIN             GpuCmdBegin;
+  GOP_3D_CMD_END               GpuCmdEnd;
 
-  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindUBO;
-  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindVBO;
-  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindIBO;
-  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindFragShader;
-  GOP_3D_CMD_BIND_RESOURCE    GpuCmdBindVertShader;
-  GOP_3D_CMD_BIND_TEXTURE     GpuCmdBindTexture;
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindUBO;
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindVBO;
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindIBO;
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindFragShader;
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindVertShader;
+  GOP_3D_CMD_BIND_TEXTURE      GpuCmdBindTexture;
 
-  GOP_3D_CMD_SET_BLEND_STATE  GpuCmdSetBlendState;
-  GOP_3D_CMD_SET_DEPTH_WRITE  GpuCmdSetDepthWrite;
+  GOP_3D_CMD_SET_BLEND_STATE   GpuCmdSetBlendState;
+  GOP_3D_CMD_SET_DEPTH_WRITE   GpuCmdSetDepthWrite;
 
-  GOP_3D_FREE_BUFFER          GpuFreeBuffer;
-  GOP_3D_CMD_TRANSFER_BUFFER  GpuCmdTransferBuffer;
-  GOP_3D_CMD_UPDATE_BUFFER    GpuCmdUpdateBuffer;
+  GOP_3D_FREE_BUFFER           GpuFreeBuffer;
+  GOP_3D_CMD_TRANSFER_BUFFER   GpuCmdTransferBuffer;
+  GOP_3D_CMD_UPDATE_BUFFER     GpuCmdUpdateBuffer;
+
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindCompShader;
+  GOP_3D_BIND_SSBO             GpuCmdBindSSBO;
+  
+  GOP_3D_CMD_TRANSFER_BUFFER   GpuTransferBuffer;
+  GOP_3D_CMD_READ_BUFFER       GpuCmdReadBuffer;
 
 
-  GOP_3D_CMD_DRAW             GpuCmdDraw;
-  GOP_3D_CMD_CLEAR_FRAME      GpuCmdClearFrame;
+  GOP_CMD_3D_DISPATCH          GpuCmdDispatchCompute;
+  GOP_CMD_3D_DISPATCH_INDIRECT GpuCmdDispatchComputeIndirect;
 
-  GOP_3D_SUBMIT_CMD           GpuSubmitCmd;
-  GOP_3D_PRESENT              GpuPresent;
+
+  GOP_3D_CMD_DRAW              GpuCmdDraw;
+  GOP_3D_CMD_CLEAR_FRAME       GpuCmdClearFrame;
+
+  GOP_3D_SUBMIT_CMD            GpuSubmitCmd;
+  GOP_3D_PRESENT               GpuPresent;
 };
 
 /* ----------------------------------------------------------------------- */

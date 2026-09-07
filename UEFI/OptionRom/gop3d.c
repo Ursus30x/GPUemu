@@ -159,7 +159,38 @@ EFI_STATUS EFIAPI GpuCmdBindFragShader(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
-EFI_STATUS EFIAPI GpuCmdBindTexture(
+EFI_STATUS EFIAPI GpuCmdBindCompShader(
+  IN GOP_3D_PROTOCOL *This,
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_COMPUTE_SHADER_PTR;
+    cmd.payload.state.value.shader_ptrs.cs_addr = GpuAddress;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdBindSSBO(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32 BindingSlot,
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_SSBO_CONFIG;
+    cmd.payload.state.value.ssbo_config.binding = BindingSlot;
+    cmd.payload.state.value.ssbo_config.addr = GpuAddress;
+    cmd.payload.state.value.ssbo_config.size = Size;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuBindTexture(
   IN GOP_3D_PROTOCOL *This,
   IN UINT32 BindingSlot,
   IN VRAMADDR DescAddress
@@ -315,6 +346,39 @@ EFI_STATUS EFIAPI GpuCmdUpdateBuffer(
     return EFI_SUCCESS;
 }
 
+EFI_STATUS EFIAPI GpuFreeBuffer(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  VRAMADDR            *GpuAddress
+)
+{
+    if (GpuAddress == NULL) {
+      return EFI_INVALID_PARAMETER;
+    }
+
+    if (*GpuAddress != 0) {
+        GpuFreeMem(*GpuAddress);
+        *GpuAddress = 0;
+    }
+
+    return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI GpuCmdReadBuffer(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  VRAMADDR            GpuAddress,
+  OUT VOID                *HostData,
+  IN  UINT32              Size
+)
+{
+    if (HostData == NULL || Size == 0 || GpuAddress == 0) {
+      return EFI_INVALID_PARAMETER;
+    }
+
+    GpuCmdSync();
+
+    return GpuVramRead(HostData, GpuAddress, Size);
+}
+
 /* -------------------------------------------------------------------------
  * Drawing & Execution
  * ------------------------------------------------------------------------- */
@@ -355,6 +419,34 @@ EFI_STATUS EFIAPI GpuCmdDraw(
     Command cmd;
     cmd.opcode = CMD_DRAW_PRIMITIVE;
     cmd.payload.draw.type = primType;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdDispatchCompute(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               GroupCountX,
+  IN UINT32               GroupCountY,
+  IN UINT32               GroupCountZ
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_DISPATCH;
+    cmd.payload.dispatch.group_count_x = GroupCountX;
+    cmd.payload.dispatch.group_count_y = GroupCountY;
+    cmd.payload.dispatch.group_count_z = GroupCountZ;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdDispatchComputeIndirect(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_DISPATCH_INDIRECT;
+    cmd.payload.dispatch_indirect.indirect_offset = IndirectOffset;
 
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
@@ -417,16 +509,17 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuCmdBindUBO        = GpuCmdBindUBO;
   Private->Gop3dProtocol.GpuCmdBindVertShader = GpuCmdBindVertShader;
   Private->Gop3dProtocol.GpuCmdBindFragShader = GpuCmdBindFragShader;
-  Private->Gop3dProtocol.GpuCmdBindTexture    = GpuCmdBindTexture;
-  
-  Private->Gop3dProtocol.GpuCmdSetBlendState  = GpuCmdSetBlendState;
-  Private->Gop3dProtocol.GpuCmdSetDepthWrite  = GpuCmdSetDepthWrite;
-
 
   Private->Gop3dProtocol.GpuFreeBuffer        = GpuFreeBuffer;
 
   Private->Gop3dProtocol.GpuCmdTransferBuffer = GpuCmdTransferBuffer;
   Private->Gop3dProtocol.GpuCmdUpdateBuffer   = GpuCmdUpdateBuffer;
+
+
+  Private->Gop3dProtocol.GpuCmdReadBuffer     = GpuCmdReadBuffer;
+
+  Private->Gop3dProtocol.GpuCmdDispatchCompute = GpuCmdDispatchCompute;
+  Private->Gop3dProtocol.GpuCmdDispatchComputeIndirect = GpuCmdDispatchComputeIndirect;
 
   Private->Gop3dProtocol.GpuCmdClearFrame     = GpuCmdClearFrame;
   Private->Gop3dProtocol.GpuCmdDraw           = GpuCmdDraw;

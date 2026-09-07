@@ -26,6 +26,12 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
             // Store binding for Uniforms/Buffers, Location for Inputs/Outputs
             if (storage_class == SpvStorageClassUniform || storage_class == SpvStorageClassStorageBuffer || storage_class == SpvStorageClassUniformConstant)
                 ctx->globals[idx].binding_or_loc = deco->binding;
+            else if (storage_class == SpvStorageClassWorkgroup)
+            {
+                uint32_t offset = ctx->shared_mem_offset;
+                ctx->shared_mem_offset += (1024 + 63) & ~63; // Default 1KB per workgroup var chunk
+                ctx->globals[idx].binding_or_loc = offset;
+            }
             else
                 ctx->globals[idx].binding_or_loc = deco->location;
         }
@@ -97,7 +103,7 @@ static LLVMValueRef build_recursive_load(JitContext *ctx, LLVMTypeRef type, LLVM
     if (kind == LLVMVectorTypeKind) 
     {
         LLVMValueRef load = LLVMBuildLoad2(ctx->builder, type, ptr, "load_simt");
-        LLVMSetAlignment(load, 64);
+        LLVMSetAlignment(load, 4);
         return load;
     } 
     else if (kind == LLVMArrayTypeKind) 
@@ -120,7 +126,7 @@ static LLVMValueRef build_recursive_load(JitContext *ctx, LLVMTypeRef type, LLVM
     }
 
     LLVMValueRef load = LLVMBuildLoad2(ctx->builder, type, ptr, "load_scalar");
-    LLVMSetAlignment(load, 64);
+    LLVMSetAlignment(load, 4);
     return load;
 }
 
@@ -159,11 +165,12 @@ static void build_recursive_store(JitContext *ctx, LLVMValueRef val_to_store, LL
     if (kind == LLVMVectorTypeKind) 
     {
         LLVMValueRef current_mem_val = LLVMBuildLoad2(ctx->builder, type, ptr, "current_mem");
+        LLVMSetAlignment(current_mem_val, 4);
         
         LLVMValueRef masked_val = LLVMBuildSelect(ctx->builder, mask, val_to_store, current_mem_val, "masked_val");
         
         LLVMValueRef store_inst = LLVMBuildStore(ctx->builder, masked_val, ptr);
-        LLVMSetAlignment(store_inst, 64);
+        LLVMSetAlignment(store_inst, 4);
     } 
     else if (kind == LLVMArrayTypeKind) 
     {
@@ -184,7 +191,7 @@ static void build_recursive_store(JitContext *ctx, LLVMValueRef val_to_store, LL
     else
     {
         LLVMValueRef store_inst = LLVMBuildStore(ctx->builder, val_to_store, ptr);
-        LLVMSetAlignment(store_inst, 64);
+        LLVMSetAlignment(store_inst, 4);
     }
 }
 
@@ -197,6 +204,20 @@ void handle_op_store(JitContext* ctx, uint32_t* operands) {
     LLVMValueRef val = get_val(ctx, val_id);
 
     build_recursive_store(ctx, val, ptr, ctx->emask);
+}
+
+static LLVMValueRef jit_to_i64_index(JitContext* ctx, LLVMValueRef idx_val) {
+    if (!idx_val) return LLVMConstInt(LLVMInt64TypeInContext(ctx->context), 0, 0);
+    LLVMTypeRef i64_type = LLVMInt64TypeInContext(ctx->context);
+    LLVMTypeRef type = LLVMTypeOf(idx_val);
+    if (LLVMGetTypeKind(type) == LLVMVectorTypeKind) {
+        idx_val = LLVMBuildExtractElement(ctx->builder, idx_val, LLVMConstInt(ctx->int_type, 0, 0), "idx_s");
+        type = LLVMTypeOf(idx_val);
+    }
+    if (LLVMGetTypeKind(type) == LLVMFloatTypeKind || LLVMGetTypeKind(type) == LLVMDoubleTypeKind) {
+        return LLVMBuildFPToSI(ctx->builder, idx_val, i64_type, "idx_f2i");
+    }
+    return LLVMBuildZExt(ctx->builder, idx_val, i64_type, "idx64");
 }
 
 /**
@@ -218,7 +239,10 @@ void handle_op_access_chain(JitContext *ctx, uint32_t res_id, uint32_t type_id, 
 
     LLVMTypeRef i64_type = LLVMInt64TypeInContext(ctx->context);
     LLVMValueRef total_offset = LLVMConstInt(i64_type, 0, 0);
-    uint32_t current_type_id = ctx->type_info[type_id].base_type_id;
+    uint32_t base_ptr_type = ctx->type_kind_map[base_id];
+    uint32_t current_type_id = (base_ptr_type != 0 && ctx->type_info[base_ptr_type].opcode == SpvOpTypePointer) 
+                                ? ctx->type_info[base_ptr_type].base_type_id 
+                                : ctx->type_info[type_id].base_type_id;
 
     DEBUG_PRINT("Dereferenced pointer: current_type_id=%u\n", current_type_id);
 
@@ -250,7 +274,14 @@ void handle_op_access_chain(JitContext *ctx, uint32_t res_id, uint32_t type_id, 
             // ==========================================
             uint64_t member_idx = 0;
             if (LLVMIsConstant(idx_val)) {
-                member_idx = LLVMConstIntGetZExtValue(idx_val);
+                LLVMTypeRef t = LLVMTypeOf(idx_val);
+                if (LLVMGetTypeKind(t) == LLVMFloatTypeKind || LLVMGetTypeKind(t) == LLVMDoubleTypeKind) {
+                    LLVMBool loses;
+                    double d = LLVMConstRealGetDouble(idx_val, &loses);
+                    member_idx = (uint64_t)d;
+                } else {
+                    member_idx = LLVMConstIntGetZExtValue(idx_val);
+                }
                 DEBUG_PRINT("  Struct member index: %lu\n", member_idx);
             } else {
                 DEBUG_PRINT("  WARNING: Index is not a constant, using 0\n");
@@ -277,7 +308,7 @@ void handle_op_access_chain(JitContext *ctx, uint32_t res_id, uint32_t type_id, 
             // ==========================================
             // Array Handling
             // ==========================================
-            idx_val = LLVMBuildZExt(ctx->builder, idx_val, i64_type, "idx64");
+            idx_val = jit_to_i64_index(ctx, idx_val);
             
             int32_t stride = ctx->decorations[current_type_id].array_stride;
             stride = (stride <= 0) ? 4 : stride;
@@ -299,7 +330,7 @@ void handle_op_access_chain(JitContext *ctx, uint32_t res_id, uint32_t type_id, 
             MemberDecoNode* m = ctx->member_decorations[struct_type_info];
             LLVMValueRef offset;
             
-            idx_val = LLVMBuildZExt(ctx->builder, idx_val, i64_type, "idx64");
+            idx_val = jit_to_i64_index(ctx, idx_val);
 
             if (m == NULL) {
                 uint32_t size = get_spv_type_size(info->opcode);
@@ -360,9 +391,7 @@ uint32_t get_spv_type_size(uint32_t spv_type_id)
     case SpvOpTypeInt:
         return 4;
     default:
-        DEBUG_PRINT("Error: Size query for unhandled SPIR-V type ID %u\n", spv_type_id);
-        exit(1);
-        break;
+        return 4;
     }
-    return 0;
+    return 4;
 }

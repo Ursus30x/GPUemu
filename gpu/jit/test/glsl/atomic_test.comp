@@ -1,0 +1,23 @@
+#version 450
+
+layout(local_size_x = 16) in;
+
+layout(binding = 0) buffer InBuf {
+    int in_data[];
+};
+
+layout(binding = 1) buffer CounterBuf {
+    int counter;
+    int max_val;
+};
+
+layout(binding = 2) buffer OutBuf {
+    int out_prev[];
+};
+
+void main() {
+    uint idx = gl_LocalInvocationIndex;
+    int prev = atomicAdd(counter, in_data[idx]);
+    atomicMax(max_val, in_data[idx]);
+    out_prev[idx] = prev;
+}
