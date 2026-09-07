@@ -1,6 +1,6 @@
 # Architectural Specification: SIMT Control Flow Linearization & Execution Masking
 
-This document describes how `jit_flow.c` converts SPIR-V **Single Instruction, Multiple Threads (SIMT)** control flow into linearized vector code for execution on a host CPU using SIMD.
+This document describes how the JIT control-flow module converts SPIR-V **Single Instruction, Multiple Threads (SIMT)** control flow into linearized vector code for execution on a host CPU using SIMD.
 
 The main idea is simple:
 
@@ -314,7 +314,7 @@ Control-flow masking must also apply to memory operations.
 
 A vector computation can produce a value for every lane even when some lanes are inactive. An inactive lane must not overwrite memory.
 
-`jit_flow.c` obtains the current execution mask using:
+The JIT control-flow module obtains the current execution mask using:
 
 ```c
 jit_get_emask(ctx)
@@ -432,7 +432,7 @@ The architecture has three main parts:
 flowchart TD
     SPIRV["SPIR-V control flow"]
 
-    CFG["jit_flow.c<br/>Control-flow handling"]
+    CFG["JIT Control-Flow Engine<br/>Control-flow handling"]
 
     STACK["JitControlConstruct<br/>Control stack"]
 
@@ -572,7 +572,7 @@ Execution masks
 
 # 11. Summary
 
-`jit_flow.c` converts divergent SPIR-V SIMT control flow into CPU-friendly SIMD execution using **control-flow linearization and execution masks**.
+The JIT control-flow system converts divergent SPIR-V SIMT control flow into CPU-friendly SIMD execution using **control-flow linearization and execution masks**.
 
 The process is:
 
