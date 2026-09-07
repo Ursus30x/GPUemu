@@ -744,7 +744,6 @@ VOID TestSmokeVolume3D(VOID)
         mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuClearFrame(mGOP3D, 0xFF1E1E1F); // Dark clear color matching OpenGL demo background[cite: 2]
 
-        // Enable Alpha Blending (SrcAlpha, OneMinusSrcAlpha)[cite: 2]
         mGOP3D->GpuSetBlendState(mGOP3D, TRUE, Gop3dBlendFactorSrcAlpha, Gop3dBlendFactorOneMinusSrcAlpha);
         mGOP3D->GpuSetDepthWrite(mGOP3D, FALSE);
 
@@ -1092,7 +1091,7 @@ EFI_STATUS EFIAPI Test() {
 
     WAIT_FOR_KEYPRESS()
 
-    TestSmokeVolume3D();
+    TestPrimitivesSimt();
 
     Print(L"Press key for SPIR-V 3D SIMT Triangles Demo...\n");
 

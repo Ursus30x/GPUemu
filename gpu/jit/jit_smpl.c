@@ -346,9 +346,9 @@ static inline void sample_single_level(
 
     bool is_3d = (desc->dimension == TEXTURE_DIM_3D || desc->depth > 1);
 
-    WrapMode wrap_u = desc->wrap_u ? desc->wrap_u : (desc->wrap ? desc->wrap : WRAP_CLAMP);
-    WrapMode wrap_v = desc->wrap_v ? desc->wrap_v : (desc->wrap ? desc->wrap : WRAP_CLAMP);
-    WrapMode wrap_w = desc->wrap_w ? desc->wrap_w : (desc->wrap ? desc->wrap : WRAP_CLAMP);
+    WrapMode wrap_u = (desc->wrap_u == WRAP_REPEAT && desc->wrap != WRAP_REPEAT) ? desc->wrap : desc->wrap_u;
+    WrapMode wrap_v = (desc->wrap_v == WRAP_REPEAT && desc->wrap != WRAP_REPEAT) ? desc->wrap : desc->wrap_v;
+    WrapMode wrap_w = (desc->wrap_w == WRAP_REPEAT && desc->wrap != WRAP_REPEAT) ? desc->wrap : desc->wrap_w;
 
     FilterMode filter = desc->filter;
     bool is_linear = (filter == FILTER_LINEAR ||

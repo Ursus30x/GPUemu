@@ -195,6 +195,7 @@ static uint32_t compute_shader_hash(const uint32_t *code, uint32_t words)
 
 static void execute_command(GpuState *gpu, Command *cmd)
 {
+    if(gpu->gpu_mode == GPU_MODE_GOP)return;
     switch (cmd->opcode)
     {
     case CMD_CLEAR_FRAMEBUFFER:
@@ -464,6 +465,16 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         if (val == GPU_MODE_GOP) {
             memset(s->texture_desc_addr, 0, sizeof(s->texture_desc_addr));
             memset(s->textures, 0, sizeof(s->textures));
+            memset(&s->vbo_config, 0, sizeof(s->vbo_config));
+            memset(&s->edge_config, 0, sizeof(s->edge_config));
+            memset(&s->uinform_config, 0, sizeof(s->uinform_config));
+            s->blend_enable = 0;
+            s->blend_src_factor = 0;
+            s->blend_dst_factor = 0;
+            s->depth_write_enable = 1;
+            s->primitive_type = GPU_PRIM_TRIANGLES;
+            s->point_size = 1.0f;
+            s->line_width = 1.0f;
         }
         break;
     case REG_RING_BUFFER_HEAD_ADDR:

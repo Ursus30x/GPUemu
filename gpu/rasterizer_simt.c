@@ -332,7 +332,7 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
         uint8_t r = color_to_u8(out_color.elem[0][lane]);
         uint8_t g = color_to_u8(out_color.elem[1][lane]);
         uint8_t b = color_to_u8(out_color.elem[2][lane]);
-        uint8_t a = color_to_u8(fs_in_color->elem[3][lane]);
+        uint8_t a = color_to_u8(out_color.elem[3][lane] * fs_in_color->elem[3][lane]);
         put_pixel(gpu, px, py, RGBA_TO_UINT(r, g, b, a));
     }
 }
