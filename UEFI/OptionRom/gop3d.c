@@ -158,6 +158,37 @@ EFI_STATUS EFIAPI GpuBindFragShader(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
+EFI_STATUS EFIAPI GpuBindCompShader(
+  IN GOP_3D_PROTOCOL *This,
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_COMPUTE_SHADER_PTR;
+    cmd.payload.state.value.shader_ptrs.cs_addr = GpuAddress;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuBindSSBO(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32 BindingSlot,
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_SSBO_CONFIG;
+    cmd.payload.state.value.ssbo_config.binding = BindingSlot;
+    cmd.payload.state.value.ssbo_config.addr = GpuAddress;
+    cmd.payload.state.value.ssbo_config.size = Size;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
 EFI_STATUS EFIAPI GpuBindTexture(
   IN GOP_3D_PROTOCOL *This,
   IN UINT32 BindingSlot,
@@ -302,6 +333,22 @@ EFI_STATUS EFIAPI GpuFreeBuffer(
     return EFI_SUCCESS;
 }
 
+EFI_STATUS EFIAPI GpuReadBuffer(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  VRAMADDR            GpuAddress,
+  OUT VOID                *HostData,
+  IN  UINT32              Size
+)
+{
+    if (HostData == NULL || Size == 0 || GpuAddress == 0) {
+      return EFI_INVALID_PARAMETER;
+    }
+
+    GpuCmdSync();
+
+    return GpuVramRead(HostData, GpuAddress, Size);
+}
+
 /* -------------------------------------------------------------------------
  * Drawing & Execution
  * ------------------------------------------------------------------------- */
@@ -342,6 +389,34 @@ EFI_STATUS EFIAPI GpuDraw(
     Command cmd;
     cmd.opcode = CMD_DRAW_PRIMITIVE;
     cmd.payload.draw.type = primType;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuDispatchCompute(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               GroupCountX,
+  IN UINT32               GroupCountY,
+  IN UINT32               GroupCountZ
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_DISPATCH;
+    cmd.payload.dispatch.group_count_x = GroupCountX;
+    cmd.payload.dispatch.group_count_y = GroupCountY;
+    cmd.payload.dispatch.group_count_z = GroupCountZ;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuDispatchComputeIndirect(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_DISPATCH_INDIRECT;
+    cmd.payload.dispatch_indirect.indirect_offset = IndirectOffset;
 
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
@@ -404,6 +479,8 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuBindUBO        = GpuBindUBO;
   Private->Gop3dProtocol.GpuBindVertShader = GpuBindVertShader;
   Private->Gop3dProtocol.GpuBindFragShader = GpuBindFragShader;
+  Private->Gop3dProtocol.GpuBindCompShader = GpuBindCompShader;
+  Private->Gop3dProtocol.GpuBindSSBO       = GpuBindSSBO;
   Private->Gop3dProtocol.GpuBindTexture    = GpuBindTexture;
   Private->Gop3dProtocol.GpuSetBlendState  = GpuSetBlendState;
   Private->Gop3dProtocol.GpuSetDepthWrite  = GpuSetDepthWrite;
@@ -412,9 +489,12 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuTransferBuffer = GpuTransferBuffer;
   Private->Gop3dProtocol.GpuUpdateBuffer   = GpuUpdateBuffer;
   Private->Gop3dProtocol.GpuFreeBuffer     = GpuFreeBuffer;
+  Private->Gop3dProtocol.GpuReadBuffer     = GpuReadBuffer;
 
   Private->Gop3dProtocol.GpuClearFrame     = GpuClearFrame;
   Private->Gop3dProtocol.GpuDraw           = GpuDraw;
+  Private->Gop3dProtocol.GpuDispatchCompute = GpuDispatchCompute;
+  Private->Gop3dProtocol.GpuDispatchComputeIndirect = GpuDispatchComputeIndirect;
 
   Private->Gop3dProtocol.GpuSubmitCmd      = GpuSubmitCmd;
   Private->Gop3dProtocol.GpuPresent        = GpuPresent;

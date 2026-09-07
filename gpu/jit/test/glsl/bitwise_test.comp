@@ -1,0 +1,24 @@
+#version 450
+
+layout(local_size_x = 16) in;
+
+layout(binding = 0) buffer InBuf {
+    int in_a[16];
+};
+layout(binding = 1) buffer InBuf2 {
+    int in_b[16];
+};
+layout(binding = 2) buffer OutBuf {
+    int out_and[16];
+    int out_or[16];
+    int out_xor[16];
+    int out_shl[16];
+};
+
+void main() {
+    uint idx = gl_LocalInvocationIndex;
+    out_and[idx] = in_a[idx] & in_b[idx];
+    out_or[idx] = in_a[idx] | in_b[idx];
+    out_xor[idx] = in_a[idx] ^ in_b[idx];
+    out_shl[idx] = in_a[idx] << 2;
+}

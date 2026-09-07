@@ -60,6 +60,8 @@ typedef enum {
     CMD_SET_STATE          = 0x02,
     CMD_CLEAR_FRAMEBUFFER  = 0x03,
     CMD_DMA_TRANSFER       = 0x04,
+    CMD_DISPATCH           = 0x05,
+    CMD_DISPATCH_INDIRECT  = 0x06,
 } CommandOpcode;
 
 
@@ -71,9 +73,27 @@ typedef enum {
     STATE_ID_FRAGMENT_SHADER_PTR,
     STATE_ID_TEXTURE_CONFIG,
     STATE_ID_BLEND_CONFIG,
-    STATE_ID_DEPTH_CONFIG
+    STATE_ID_DEPTH_CONFIG,
+    STATE_ID_COMPUTE_SHADER_PTR,
+    STATE_ID_SSBO_CONFIG
 } StateID;
 #define MAX_MIP_LEVELS 14
+typedef struct __attribute__((packed)) {
+    uint32_t group_count_x;
+    uint32_t group_count_y;
+    uint32_t group_count_z;
+} DispatchPayload;
+
+typedef struct __attribute__((packed)) {
+    uint32_t indirect_offset;
+} DispatchIndirectPayload;
+
+typedef struct __attribute__((packed)) {
+    uint32_t binding;
+    uint32_t addr;
+    uint32_t size;
+} SsboConfigPayload;
+
 typedef struct __attribute__((packed)) {
     uint32_t data_vram_addr;          // VRAM offset of Mip level 0 pixel data
     uint32_t mip_vram_addr[MAX_MIP_LEVELS]; // VRAM relative offsets for Mip levels 0..13
@@ -136,10 +156,12 @@ typedef struct __attribute__((packed)) {
         struct __attribute__((packed)) {
             uint32_t vs_addr;
             uint32_t fs_addr;
+            uint32_t cs_addr;
         } shader_ptrs;
         SetTexturePayload texture_config;
         SetDepthPayload depth_config;
         SetBlendPayload blend_config;
+        SsboConfigPayload ssbo_config;
     } value;
 } SetStatePayload;
 
@@ -162,6 +184,8 @@ typedef struct __attribute__((packed)) {
         SetStatePayload state;
         ClearFramebufferPayload clear;
         DmaTransferPayload dma;
+        DispatchPayload dispatch;
+        DispatchIndirectPayload dispatch_indirect;
         uint32_t raw_data[8];
     } payload;
 } Command;
