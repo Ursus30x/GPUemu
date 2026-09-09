@@ -361,7 +361,6 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindCompShader;
   GOP_3D_BIND_SSBO             GpuCmdBindSSBO;
   
-  GOP_3D_CMD_TRANSFER_BUFFER   GpuTransferBuffer;
   GOP_3D_CMD_READ_BUFFER       GpuCmdReadBuffer;
 
 
