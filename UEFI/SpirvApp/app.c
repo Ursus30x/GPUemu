@@ -132,14 +132,17 @@ VOID Test3DTrianglesSimt(){
     // --- Static Asset Transfer ---
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO, hIBO, hVS, hFS;
-    VRAMADDR hMVP1 = 0;
-    VRAMADDR hMVP2 = 0;
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR;
+    VRAMADDR hMVP1 = GPU_NULL_ADDR;
+    VRAMADDR hMVP2 = GPU_NULL_ADDR;
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
 
     float angle = 0.0f;
     Print(L"Animating... Press Key to Exit.\n");
@@ -193,24 +196,25 @@ VOID Test3DTrianglesSimt(){
         Mat4_ToSimtUBO(&mvp1, &simt_mvp1);
         Mat4_ToSimtUBO(&mvp2, &simt_mvp2);
 
+        // --- RENDER ---
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
         // Upload/Update Model 1 UBO
-        if(hMVP1 == 0){
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        if(hMVP1 == GPU_NULL_ADDR){
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
         else{
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
 
         // Upload/Update Model 2 UBO
-        if(hMVP2 == 0){
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
+        if(hMVP2 == GPU_NULL_ADDR){
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
         }
         else{
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
         }
 
-        // --- RENDER ---
-        mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
         
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
@@ -251,10 +255,10 @@ VOID Test3DTrianglesSimt(){
 VOID TestComputeShader() {
 
     #include "vec_add.h"
-    VRAMADDR hCS = 0;
-    VRAMADDR hSSBO_A = 0;
-    VRAMADDR hSSBO_B = 0;
-    VRAMADDR hSSBO_C = 0;
+    VRAMADDR hCS = GPU_NULL_ADDR;
+    VRAMADDR hSSBO_A = GPU_NULL_ADDR;
+    VRAMADDR hSSBO_B = GPU_NULL_ADDR;
+    VRAMADDR hSSBO_C = GPU_NULL_ADDR;
 
     float input_a[16];
     float input_b[16];
@@ -276,20 +280,13 @@ VOID TestComputeShader() {
 
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, (VOID*)bin_compute_shader, sizeof(bin_compute_shader), &hCS);
-    Print(L"\n[VRAM] Shader uploaded. Handle: 0x%LX (Size: %u bytes)\n", (UINT64)hCS, (UINT32)sizeof(bin_compute_shader));
-
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_a, sizeof(input_a), &hSSBO_A);
-    Print(L"[VRAM] SSBO A Handle: 0x%LX\n", (UINT64)hSSBO_A);
-
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_b, sizeof(input_b), &hSSBO_B);
-    Print(L"[VRAM] SSBO B Handle: 0x%LX\n", (UINT64)hSSBO_B);
-
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, output_c, sizeof(output_c), &hSSBO_C);
-    Print(L"[VRAM] SSBO C Handle: 0x%LX\n", (UINT64)hSSBO_C);
-
-    Print(L"[CMD] Recording Compute Command Batch (1, 1, 1)...\n");
+    Print(L"\n[CMD] Recording Compute Command Batch (1, 1, 1)...\n");
     mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, (VOID*)bin_compute_shader, sizeof(bin_compute_shader), &hCS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_a, sizeof(input_a), &hSSBO_A);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_b, sizeof(input_b), &hSSBO_B);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, output_c, sizeof(output_c), &hSSBO_C);
+
     mGOP3D->GpuCmdBindCompShader(mGOP3D, hCS, sizeof(bin_compute_shader));
     mGOP3D->GpuCmdBindSSBO(mGOP3D, 0, hSSBO_A, sizeof(input_a));
     mGOP3D->GpuCmdBindSSBO(mGOP3D, 1, hSSBO_B, sizeof(input_b));
@@ -331,9 +328,9 @@ VOID TestComputeShader() {
 
 VOID TestBarrierComputeShader(VOID) {
     #include "barrier_reduction.h"
-    VRAMADDR hCS = 0;
-    VRAMADDR hSSBO_In = 0;
-    VRAMADDR hSSBO_Out = 0;
+    VRAMADDR hCS = GPU_NULL_ADDR;
+    VRAMADDR hSSBO_In = GPU_NULL_ADDR;
+    VRAMADDR hSSBO_Out = GPU_NULL_ADDR;
 
     float input_data[16];
     float output_data[1];
@@ -349,17 +346,12 @@ VOID TestBarrierComputeShader(VOID) {
 
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, (VOID*)bin_barrier_reduction_shader, sizeof(bin_barrier_reduction_shader), &hCS);
-    Print(L"[VRAM] Barrier Shader uploaded. Handle: 0x%LX (Size: %u bytes)\n", (UINT64)hCS, (UINT32)sizeof(bin_barrier_reduction_shader));
-
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_data, sizeof(input_data), &hSSBO_In);
-    Print(L"[VRAM] SSBO In Handle: 0x%LX\n", (UINT64)hSSBO_In);
-
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, output_data, sizeof(output_data), &hSSBO_Out);
-    Print(L"[VRAM] SSBO Out Handle: 0x%LX\n", (UINT64)hSSBO_Out);
-
     Print(L"[CMD] Recording Barrier Compute Command Batch (1, 1, 1)...\n");
     mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, (VOID*)bin_barrier_reduction_shader, sizeof(bin_barrier_reduction_shader), &hCS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, input_data, sizeof(input_data), &hSSBO_In);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, output_data, sizeof(output_data), &hSSBO_Out);
+
     mGOP3D->GpuCmdBindCompShader(mGOP3D, hCS, sizeof(bin_barrier_reduction_shader));
     mGOP3D->GpuCmdBindSSBO(mGOP3D, 0, hSSBO_In, sizeof(input_data));
     mGOP3D->GpuCmdBindSSBO(mGOP3D, 1, hSSBO_Out, sizeof(output_data));
@@ -413,12 +405,15 @@ VOID TestShaderArt() {
 
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO, hIBO, hVS, hFS, hMVP1 = 0;
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR, hMVP1 = GPU_NULL_ADDR;
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
 
     Print(L"Rendering Full Screen Quad... Press Key to Exit.\n");
     FpsCounterStart();
@@ -436,13 +431,15 @@ VOID TestShaderArt() {
         {
             uniform.iTime[i] = time;
         }
-        if(hMVP1 == 0){
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
+
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if(hMVP1 == GPU_NULL_ADDR){
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
         } else {
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hMVP1);
         }
 
-        mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
 
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
@@ -537,24 +534,30 @@ VOID Test3DObszar()
     // --- Static Asset Transfer ---
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO, hIBO, hVS, hFS, hTexData, hTexDesc;
-    VRAMADDR hMVP1 = 0;
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR, hTexData = GPU_NULL_ADDR, hTexDesc = GPU_NULL_ADDR;
+    VRAMADDR hMVP1 = GPU_NULL_ADDR;
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTexture, image, sizeof(image), &hTexData);
+    GOP_3D_TEXTURE_DESC tex_desc;
+    SetMem(&tex_desc, sizeof(tex_desc), 0);
+    tex_desc.DataAddr = GPU_NULL_ADDR;
+    tex_desc.Width = 200;
+    tex_desc.Height = 200;
+    tex_desc.Channels = 3;
+    tex_desc.Filter = Gop3dFilterLinear;
+    tex_desc.Wrap = Gop3dWrapRepeat;
 
-    GOP_3D_TEXTURE_DESC tex_desc = {
-        .DataAddr = hTexData,
-        .Width = 200,
-        .Height = 200,
-        .Channels = 3,
-        .Filter = Gop3dFilterLinear,
-        .Wrap = Gop3dWrapRepeat
-    };
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTextureDesc, &tex_desc, sizeof(tex_desc), &hTexDesc);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeTexture, image, sizeof(image), &hTexData);
+
+    tex_desc.DataAddr = hTexData;
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeTextureDesc, &tex_desc, sizeof(tex_desc), &hTexDesc);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
+
     float angle = 0.0f;
     Print(L"Animating... Press Key to Exit.\n");
 
@@ -593,15 +596,16 @@ VOID Test3DObszar()
         SimtMat4UBO simt_mvp1;
         Mat4_ToSimtUBO(&mvp1, &simt_mvp1);
 
-        if(hMVP1 == 0){
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        // --- RENDER ---
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if(hMVP1 == GPU_NULL_ADDR){
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
         else{
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
 
-        // --- RENDER ---
-        mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
         
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
@@ -628,6 +632,8 @@ VOID Test3DObszar()
     mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
     mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
     mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTexData);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTexDesc);
     mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP1);
 
     mGOP3D->GpuSetMode(mGOP3D, 0);
@@ -705,18 +711,12 @@ VOID Test3DVolumeSimt()
 
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO, hIBO, hVS, hFS, hTexData, hTexDesc;
-    VRAMADDR hMVP1 = 0;
-
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_volume_vs, sizeof(bin_volume_vs), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_volume_3d_fs, sizeof(bin_volume_3d_fs), &hFS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTexture, vol3d, sizeof(vol3d), &hTexData);
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR, hTexData = GPU_NULL_ADDR, hTexDesc = GPU_NULL_ADDR;
+    VRAMADDR hMVP1 = GPU_NULL_ADDR;
 
     GOP_3D_TEXTURE_DESC tex_desc;
     SetMem(&tex_desc, sizeof(tex_desc), 0);
-    tex_desc.DataAddr = hTexData;
+    tex_desc.DataAddr = GPU_NULL_ADDR;
     tex_desc.Width = 4;
     tex_desc.Height = 4;
     tex_desc.Depth = 4;
@@ -734,7 +734,18 @@ VOID Test3DVolumeSimt()
 
     Gop3dCalculateMipMapOffsets(&tex_desc);
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTextureDesc, &tex_desc, sizeof(tex_desc), &hTexDesc);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,    sizeof(indices),    &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_volume_vs, sizeof(bin_volume_vs), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_volume_3d_fs, sizeof(bin_volume_3d_fs), &hFS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeTexture, vol3d, sizeof(vol3d), &hTexData);
+
+    tex_desc.DataAddr = hTexData;
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeTextureDesc, &tex_desc, sizeof(tex_desc), &hTexDesc);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
+
     float angle = 0.0f;
     Print(L"Animating 3D Volume Texture Demo... Press Key to Exit.\n");
 
@@ -763,13 +774,15 @@ VOID Test3DVolumeSimt()
         SimtMat4UBO simt_mvp1;
         Mat4_ToSimtUBO(&mvp1, &simt_mvp1);
 
-        if (hMVP1 == 0) {
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        // --- RENDER ---
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if (hMVP1 == GPU_NULL_ADDR) {
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         } else {
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
 
-        mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF050515);
         
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_volume_vs));
@@ -830,18 +843,12 @@ VOID TestSmokeVolume3D(VOID)
     // --- GPU Mode Initialization & Asset Allocations ---
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO = 0, hIBO = 0, hVS = 0, hFS = 0, hTexData = 0, hTexDesc = 0, hUBO = 0;
-
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex, indices, sizeof(indices), &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTexture, vol3d, sizeof(vol3d), &hTexData);
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR, hTexData = GPU_NULL_ADDR, hTexDesc = GPU_NULL_ADDR, hUBO = GPU_NULL_ADDR;
 
     // --- 3D Texture Descriptor Setup ---
     GOP_3D_TEXTURE_DESC tex_desc;
     SetMem(&tex_desc, sizeof(tex_desc), 0);
-    tex_desc.DataAddr     = hTexData;
+    tex_desc.DataAddr     = GPU_NULL_ADDR;
     tex_desc.Width        = VOL_SIZE;
     tex_desc.Height       = VOL_SIZE;
     tex_desc.Depth        = VOL_SIZE;
@@ -856,7 +863,18 @@ VOID TestSmokeVolume3D(VOID)
     tex_desc.MaxAnisotropy= 1.0f;
 
     Gop3dCalculateMipMapOffsets(&tex_desc);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeTextureDesc, &tex_desc, sizeof(tex_desc), &hTexDesc);
+
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex, indices, sizeof(indices), &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeTexture, vol3d, sizeof(vol3d), &hTexData);
+
+    tex_desc.DataAddr = hTexData;
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeTextureDesc, &tex_desc, sizeof(tex_desc), &hTexDesc);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
 
     // Uniform buffer struct carrying vectorized SIMT lanes for u_Time
     struct UniformBuffer {
@@ -878,13 +896,14 @@ VOID TestSmokeVolume3D(VOID)
             uniform.u_Time[i] = time;
         }
 
-        if (hUBO == 0) {
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if (hUBO == GPU_NULL_ADDR) {
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
         } else {
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
         }
 
-        mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF1E1E1F); // Dark clear color matching OpenGL demo background[cite: 2]
 
         mGOP3D->GpuCmdSetBlendState(mGOP3D, TRUE, Gop3dBlendFactorSrcAlpha, Gop3dBlendFactorOneMinusSrcAlpha);
@@ -953,15 +972,18 @@ VOID TestBlendingSimt() {
     // --- Static Asset Transfer ---
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVBO_Opaque, hVBO_Transparent, hIBO, hVS, hFS;
-    VRAMADDR hMVP1 = 0;
-    VRAMADDR hMVP2 = 0;
+    VRAMADDR hVBO_Opaque = GPU_NULL_ADDR, hVBO_Transparent = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR;
+    VRAMADDR hMVP1 = GPU_NULL_ADDR;
+    VRAMADDR hMVP2 = GPU_NULL_ADDR;
 
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices_opaque,      sizeof(vertices_opaque),      &hVBO_Opaque);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices_transparent, sizeof(vertices_transparent), &hVBO_Transparent);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,             sizeof(indices),             &hIBO);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader,   sizeof(bin_vertex_shader),   &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices_opaque,      sizeof(vertices_opaque),      &hVBO_Opaque);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices_transparent, sizeof(vertices_transparent), &hVBO_Transparent);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  indices,             sizeof(indices),             &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader,   sizeof(bin_vertex_shader),   &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
 
     float angle = 0.0f;
     Print(L"Testing Alpha Blending & Depth Masking... Press Key to Exit.\n");
@@ -1003,26 +1025,26 @@ VOID TestBlendingSimt() {
         Mat4_ToSimtUBO(&mvp1, &simt_mvp1);
         Mat4_ToSimtUBO(&mvp2, &simt_mvp2);
 
-        if (hMVP1 == 0) {
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
+        // --- RENDER PASS ---
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if (hMVP1 == GPU_NULL_ADDR) {
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         } else {
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp1, sizeof(SimtMat4UBO), &hMVP1);
         }
 
-        if (hMVP2 == 0) {
-            mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
+        if (hMVP2 == GPU_NULL_ADDR) {
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
         } else {
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp2, sizeof(SimtMat4UBO), &hMVP2);
         }
 
-        // --- RENDER PASS ---
-        mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF101010); // Clear to dark gray
         
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
         mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
-        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_Transparent, 8);
-        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 4);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
 
         // ---------------------------------------------------------------------
         // PASS 1: Render Opaque Object (Solid Red/Blue Cube)
@@ -1075,15 +1097,14 @@ VOID TestPrimitivesSimt() {
 
     mGOP3D->GpuSetMode(mGOP3D, 1);
 
-    VRAMADDR hVS, hFS, hMVP;
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    VRAMADDR hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR, hMVP = GPU_NULL_ADDR;
+    VRAMADDR hVBO_Points = GPU_NULL_ADDR, hVBO_Lines = GPU_NULL_ADDR, hVBO_LineStrip = GPU_NULL_ADDR;
+    VRAMADDR hVBO_TriStrip = GPU_NULL_ADDR, hVBO_TriFan = GPU_NULL_ADDR, hVBO_Quads = GPU_NULL_ADDR;
 
     Mat4 identity;
     Mat4_Identity(&identity);
     SimtMat4UBO simt_mvp;
     Mat4_ToSimtUBO(&identity, &simt_mvp);
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp, sizeof(SimtMat4UBO), &hMVP);
 
     Print(L"Testing New Primitives (Points, Lines, LineStrip, TriStrip, TriFan, Quads)...\n");
 
@@ -1094,16 +1115,12 @@ VOID TestPrimitivesSimt() {
         { 0.2f,  0.5f, 0.5f, 0x0000FF},
         { 0.6f,  0.5f, 0.5f, 0xFFFF00}
     };
-    VRAMADDR hVBO_Points;
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, point_verts, sizeof(point_verts), &hVBO_Points);
 
     // 2. Lines
     Vec3 line_verts[] = {
         {-0.8f,  0.2f, 0.5f, 0xFF0000}, {-0.4f,  0.2f, 0.5f, 0x00FF00},
         { 0.4f,  0.2f, 0.5f, 0x0000FF}, { 0.8f,  0.2f, 0.5f, 0xFFFF00}
     };
-    VRAMADDR hVBO_Lines;
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, line_verts, sizeof(line_verts), &hVBO_Lines);
 
     // 3. Line Strip
     Vec3 line_strip_verts[] = {
@@ -1113,8 +1130,6 @@ VOID TestPrimitivesSimt() {
         { 0.4f,  0.1f, 0.5f, 0xFFFF00},
         { 0.8f, -0.1f, 0.5f, 0x00FFFF}
     };
-    VRAMADDR hVBO_LineStrip;
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, line_strip_verts, sizeof(line_strip_verts), &hVBO_LineStrip);
 
     // 4. Triangle Strip
     Vec3 tri_strip_verts[] = {
@@ -1123,8 +1138,6 @@ VOID TestPrimitivesSimt() {
         {-0.5f, -0.5f, 0.5f, 0x0000FF},
         {-0.5f, -0.2f, 0.5f, 0xFFFF00}
     };
-    VRAMADDR hVBO_TriStrip;
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, tri_strip_verts, sizeof(tri_strip_verts), &hVBO_TriStrip);
 
     // 5. Triangle Fan
     Vec3 tri_fan_verts[] = {
@@ -1134,8 +1147,6 @@ VOID TestPrimitivesSimt() {
         { 0.2f, -0.5f,  0.5f, 0x0000FF},
         { 0.1f, -0.2f,  0.5f, 0xFFFF00}
     };
-    VRAMADDR hVBO_TriFan;
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, tri_fan_verts, sizeof(tri_fan_verts), &hVBO_TriFan);
 
     // 6. Quads
     Vec3 quad_verts[] = {
@@ -1144,10 +1155,18 @@ VOID TestPrimitivesSimt() {
         { 0.8f, -0.2f, 0.5f, 0x0000FF},
         { 0.4f, -0.2f, 0.5f, 0xFFFF00}
     };
-    VRAMADDR hVBO_Quads;
-    mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, quad_verts, sizeof(quad_verts), &hVBO_Quads);
 
     mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp, sizeof(SimtMat4UBO), &hMVP);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, point_verts, sizeof(point_verts), &hVBO_Points);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, line_verts, sizeof(line_verts), &hVBO_Lines);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, line_strip_verts, sizeof(line_strip_verts), &hVBO_LineStrip);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, tri_strip_verts, sizeof(tri_strip_verts), &hVBO_TriStrip);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, tri_fan_verts, sizeof(tri_fan_verts), &hVBO_TriFan);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, quad_verts, sizeof(quad_verts), &hVBO_Quads);
+
     mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF101010);
     mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
     mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
@@ -1261,8 +1280,6 @@ EFI_STATUS EFIAPI Test() {
     WAIT_FOR_KEYPRESS()
 
     TestBlendingSimt();
-    
-
 
     WAIT_FOR_KEYPRESS()
 

@@ -157,7 +157,7 @@ static void update_32bit_register(uint32_t *target_ptr, hwaddr offset_in_word, u
     *target_ptr |= ((uint32_t)val & data_mask) << (offset_in_word * 8);
 }
 
-static void handle_dma(GpuState *s)
+static void handle_dma_internal(GpuState *s, bool signal_interrupt)
 {
     PCIDevice *pdev = PCI_DEVICE(s);
 
@@ -190,16 +190,28 @@ static void handle_dma(GpuState *s)
         pci_dma_read(pdev, host_addr, s->vram_ptr + vram_offset, size);
     }
 
-    s->int_status |= GPU_INT_DMA_DONE;
+    // Only signal the interrupt for MMIO-driven DMA (where the guest polls
+    // GpuDmaSync).  In-band CMD_DMA_TRANSFER runs synchronously inside the
+    // command processor; raising GPU_INT_DMA_DONE here would race with a
+    // subsequent GpuDmaSync for an unrelated MMIO DMA transfer, causing the
+    // guest to think the MMIO DMA completed before data actually landed.
+    if (signal_interrupt) {
+        s->int_status |= GPU_INT_DMA_DONE;
 
-    // Notify host with interrupt if unmasked
-    if (s->int_mask & GPU_INT_DMA_DONE) {
-        if (msi_enabled(pdev)) {
-            bql_lock();
-            msi_notify(pdev, 0);
-            bql_unlock();
+        if (s->int_mask & GPU_INT_DMA_DONE) {
+            if (msi_enabled(pdev)) {
+                bql_lock();
+                msi_notify(pdev, 0);
+                bql_unlock();
+            }
         }
     }
+}
+
+/* MMIO-driven DMA: always signals GPU_INT_DMA_DONE for GpuDmaSync() polling */
+static void handle_dma(GpuState *s)
+{
+    handle_dma_internal(s, true);
 }
 
 static uint32_t compute_shader_hash(const uint32_t *code, uint32_t words)
@@ -433,7 +445,7 @@ static void execute_command(GpuState *gpu, Command *cmd)
         gpu->dma_vram = cmd->payload.dma.vram_offset;
         gpu->dma_size = cmd->payload.dma.size;
         gpu->dma_cmd  = cmd->payload.dma.cmd;
-        handle_dma(gpu);
+        handle_dma_internal(gpu, false);
         break;
 
     case CMD_DRAW_PRIMITIVE:
@@ -838,9 +850,6 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->vram_ptr = memory_region_get_ram_ptr(&gpu->vrammem);
 
     gpu->con = graphic_console_init(DEVICE(pdev), 0, &ghwops, gpu);
-    gpu->vs_shader_func = NULL;
-    gpu->fs_shader_func = NULL;
-    gpu->cs_shader_func = NULL;
     gpu->vs_hash = 0;
     gpu->fs_hash = 0;
     gpu->cs_hash = 0;
