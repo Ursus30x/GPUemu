@@ -6,7 +6,7 @@
 #include "jit_smpl.h"
 #include "jit_atomic.h"
 #include <llvm-c/Transforms/PassBuilder.h>
-#include "debug_gpu.h"
+#include "../debug_gpu.h"
 
 static void debug_print_single_deco(uint32_t id, SpvDecoInfo* d)
 {

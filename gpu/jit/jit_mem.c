@@ -1,5 +1,5 @@
 #include "jit_mem.h"
-#include "debug_gpu.h"
+#include "../debug_gpu.h"
 
 
 //handle_op_variable: Maps SPIR-V variables to physical resources or local memory.

@@ -2,7 +2,7 @@
 #include "gpu.h"
 #endif
 #ifdef JIT
-#include "jit.h"
+#include "jit/jit.h"
 #endif
 //#define DEBUG
 #define DEBUG_VAR __attribute__((unused))
