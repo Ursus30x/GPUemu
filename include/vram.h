@@ -5,7 +5,6 @@
 
 #define MAX_UNIFORMS_PER_SHADER  16
 #define MAX_ATTRIBUTES_PER_SHADER 8
-
 typedef enum {
     D_TYPE_FLOAT = 1,
     D_TYPE_VEC2,
@@ -76,7 +75,8 @@ typedef enum {
     STATE_ID_BLEND_CONFIG,
     STATE_ID_DEPTH_CONFIG,
     STATE_ID_COMPUTE_SHADER_PTR,
-    STATE_ID_SSBO_CONFIG
+    STATE_ID_SSBO_CONFIG,
+    STATE_ID_VERTEX_ATTRIB_CONFIG
 } StateID;
 #define MAX_MIP_LEVELS 14
 typedef struct __attribute__((packed)) {
@@ -149,6 +149,35 @@ typedef struct __attribute__((packed)) {
     PrimitiveType type;
 } DrawPrimitivePayload;
 
+#ifndef _GPU_ATTRIB_TYPE_DEFINED
+#define _GPU_ATTRIB_TYPE_DEFINED
+typedef enum {
+    GPU_ATTRIB_FLOAT       = 1,  /* 32-bit IEEE Float (1 to 4 components) */
+    GPU_ATTRIB_UBYTE_NORM  = 2,  /* Unsigned 8-bit integer normalized to [0.0, 1.0] */
+    GPU_ATTRIB_INT32       = 3,  /* 32-bit signed integer */
+    GPU_ATTRIB_UINT32      = 4   /* 32-bit unsigned integer */
+} GpuAttribType;
+#endif
+
+#ifndef _GPU_VERTEX_ATTRIB_DESC_DEFINED
+#define _GPU_VERTEX_ATTRIB_DESC_DEFINED
+typedef struct __attribute__((packed)) {
+    uint32_t location;      /* Shader input location (0 .. 7) */
+    uint32_t size;          /* Component count: 1, 2, 3, or 4 */
+    uint32_t type;          /* GpuAttribType */
+    uint8_t  normalized;    /* 1 = normalize integer types to float; 0 = direct */
+    uint8_t  enabled;       /* 1 = active; 0 = disabled */
+    uint16_t reserved;      /* Padding for 4-byte alignment */
+    uint32_t stride;        /* Byte offset between consecutive vertices (0 = tightly packed) */
+    uint32_t offset;        /* Byte offset of attribute from VBO base address */
+} GpuVertexAttribDesc;
+
+typedef struct __attribute__((packed)) {
+    uint32_t enabled_mask;  /* Bitmask: bit i indicates if location i is enabled */
+    GpuVertexAttribDesc attribs[MAX_ATTRIBUTES_PER_SHADER];
+} SetVertexAttribConfigPayload;
+#endif
+
 typedef struct __attribute__((packed)) {
     StateID state_id;
 
@@ -163,6 +192,7 @@ typedef struct __attribute__((packed)) {
         SetDepthPayload depth_config;
         SetBlendPayload blend_config;
         SsboConfigPayload ssbo_config;
+        SetVertexAttribConfigPayload attrib_config;
     } value;
 } SetStatePayload;
 
@@ -290,6 +320,18 @@ typedef struct __attribute__((packed)) {
                 .binding_slot = slot, \
                 .desc_vram_addr = desc_addr \
             }}}; \
+    memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
+    current_offset += cmd_size; \
+}
+
+#define CMD_SET_VERTEX_ATTRIBS(ring_buffer_base, conf) \
+{ \
+    Command cmd1 = { \
+        .opcode = CMD_SET_STATE, \
+        .payload.state = { \
+            .state_id = STATE_ID_VERTEX_ATTRIB_CONFIG, \
+            .value.attrib_config = conf \
+        }}; \
     memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
     current_offset += cmd_size; \
 }

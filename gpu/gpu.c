@@ -402,6 +402,13 @@ static void execute_command(GpuState *gpu, Command *cmd)
             }
             break;
         }
+        case STATE_ID_VERTEX_ATTRIB_CONFIG:
+        {
+            DEBUG_PRINT("[CMD] Vertex attrib config (mask: 0x%x)\n", cmd->payload.state.value.attrib_config.enabled_mask);
+            gpu->vertex_attribs = cmd->payload.state.value.attrib_config;
+            gpu->has_custom_vertex_layout = (gpu->vertex_attribs.enabled_mask != 0);
+            break;
+        }
         default:
             break;
         }
@@ -571,6 +578,8 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
             memset(&s->vbo_config, 0, sizeof(s->vbo_config));
             memset(&s->edge_config, 0, sizeof(s->edge_config));
             memset(&s->uinform_config, 0, sizeof(s->uinform_config));
+            memset(&s->vertex_attribs, 0, sizeof(s->vertex_attribs));
+            s->has_custom_vertex_layout = false;
             s->blend_enable = 0;
             s->blend_src_factor = 0;
             s->blend_dst_factor = 0;

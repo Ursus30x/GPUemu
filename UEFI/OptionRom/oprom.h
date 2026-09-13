@@ -33,6 +33,7 @@ typedef struct {
 
   GOP_3D_PROTOCOL           Gop3dProtocol;
   GPU_DMA_FENCE             DmaFence;
+  SetVertexAttribConfigPayload VertexAttribs;
 } GPU_CONTEXT;
 
 // Macro for accessing from GOP protocol
