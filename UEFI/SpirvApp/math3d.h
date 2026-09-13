@@ -93,9 +93,9 @@ static void Mat4_Translate(float x, float y, float z, Mat4 *res) {
     res->m[0][3] = x; res->m[1][3] = y; res->m[2][3] = z;
 }
 
-// static void Mat4_Scale(float s, Mat4 *res) {
+// static void Mat4_Scale(float sx, float sy, float sz, Mat4 *res) {
 //     Mat4_Identity(res);
-//     res->m[0][0] = s; res->m[1][1] = s; res->m[2][2] = s;
+//     res->m[0][0] = sx; res->m[1][1] = sy; res->m[2][2] = sz;
 // }
 
 static void Mat4_Perspective(float fov, float aspect, float nearPlane, float farPlane, Mat4 *res) {

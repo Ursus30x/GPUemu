@@ -437,9 +437,9 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_SUBMIT_CMD            GpuSubmitCmd;
   GOP_3D_PRESENT               GpuPresent;
 
-  GOP_3D_CMD_VERTEX_ATTRIB_POINTER       GpuCmdVertexAttribPointer;       /* NEW */
-  GOP_3D_CMD_ENABLE_VERTEX_ATTRIB_ARRAY  GpuCmdEnableVertexAttribArray;   /* NEW */
-  GOP_3D_CMD_DISABLE_VERTEX_ATTRIB_ARRAY GpuCmdDisableVertexAttribArray;  /* NEW */
+  GOP_3D_CMD_VERTEX_ATTRIB_POINTER       GpuCmdVertexAttribPointer;       
+  GOP_3D_CMD_ENABLE_VERTEX_ATTRIB_ARRAY  GpuCmdEnableVertexAttribArray;   
+  GOP_3D_CMD_DISABLE_VERTEX_ATTRIB_ARRAY GpuCmdDisableVertexAttribArray;  
 
 };
 
