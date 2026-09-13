@@ -231,10 +231,18 @@ static void execute_command(GpuState *gpu, Command *cmd)
     {
     case CMD_CLEAR_FRAMEBUFFER:
         DEBUG_PRINT("[CMD] Clear FB %x \n", (gpu->width * gpu->height));
+        uint32_t clear_color = cmd->payload.clear.color;
+        uint8_t clear_opts = cmd->payload.clear.options;
         for (uint32_t i = 0; i < (gpu->width * gpu->height); i++)
         {
-            FB(gpu)[i] = 0xff000000;
-            Z_BUFFER(gpu)[i] = FLT_MAX;
+            if (clear_opts == 0 || (clear_opts & 0x01))
+            {
+                FB(gpu)[i] = clear_color;
+            }
+            if (clear_opts == 0 || (clear_opts & 0x02))
+            {
+                Z_BUFFER(gpu)[i] = FLT_MAX;
+            }
         }
         break;
     case CMD_SET_STATE:

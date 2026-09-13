@@ -197,7 +197,9 @@ typedef struct __attribute__((packed)) {
 } SetStatePayload;
 
 typedef struct __attribute__((packed)) {
-    uint8_t options; // TO-DO in future
+    uint8_t  options; // Bit 0: Clear Color, Bit 1: Clear Depth
+    uint8_t  reserved[3];
+    uint32_t color;   // Background color (ARGB)
 } ClearFramebufferPayload;
 
 typedef struct __attribute__((packed)) {
@@ -238,7 +240,8 @@ typedef struct __attribute__((packed)) {
     Command cmd1 = { \
         .opcode = CMD_CLEAR_FRAMEBUFFER, \
         .payload.clear = { \
-            .options = 0b11}}; \
+            .options = 0b11, \
+            .color = 0xFF000000}}; \
     memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
     current_offset += cmd_size; \
 }

@@ -375,6 +375,10 @@ EFI_STATUS EFIAPI GpuCmdClearFrame(
     Command cmd;
     cmd.opcode = CMD_CLEAR_FRAMEBUFFER;
     cmd.payload.clear.options = 0b11; // Clear Color + Depth
+    cmd.payload.clear.reserved[0] = 0;
+    cmd.payload.clear.reserved[1] = 0;
+    cmd.payload.clear.reserved[2] = 0;
+    cmd.payload.clear.color = Color;
 
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }

@@ -689,7 +689,7 @@ void handle_ext_pow(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMTypeRef vec_float_type = ctx->vec_float_type;
     unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.pow", 8); 
-    LLVMValueRef pow_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 2);
+    LLVMValueRef pow_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
     LLVMValueRef x = get_val(ctx, operands[0]);
     LLVMValueRef y = get_val(ctx, operands[1]);
 
@@ -756,7 +756,7 @@ void handle_ext_fmax(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMTypeRef vec_float_type = ctx->vec_float_type;
     unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.maxnum", 11); 
-    LLVMValueRef max_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 2);
+    LLVMValueRef max_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
     LLVMValueRef x = get_val(ctx, operands[0]);
     LLVMValueRef y = get_val(ctx, operands[1]);
 
@@ -774,7 +774,7 @@ void handle_ext_fmin(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMTypeRef vec_float_type = ctx->vec_float_type;
     unsigned intrinsic_id = LLVMLookupIntrinsicID("llvm.minnum", 11); 
-    LLVMValueRef min_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 2);
+    LLVMValueRef min_func = LLVMGetIntrinsicDeclaration(ctx->module, intrinsic_id, &vec_float_type, 1);
     LLVMValueRef x = get_val(ctx, operands[0]);
     LLVMValueRef y = get_val(ctx, operands[1]);
 
