@@ -222,6 +222,14 @@ VOID Test3DTrianglesSimt(){
         mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 8);
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
 
+        // Configure vertex attributes: Location 0 (Position), Location 2 (Color)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 2, 4, Gop3dAttribUbyteNorm, TRUE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, color));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
+
         // Draw Model 1
         mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
@@ -447,6 +455,13 @@ VOID TestShaderArt() {
         mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 4);
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 2);
 
+        // Configure vertex attributes: Location 0 (Position)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
+
         mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(struct UniformBuffer));
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
@@ -613,6 +628,14 @@ VOID Test3DObszar()
         mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 24);
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
         mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
+
+        // Configure vertex attributes: Location 0 (Position), Location 1 (TexCoord)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 1, 2, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, u));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
 
         mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
@@ -791,6 +814,14 @@ VOID Test3DVolumeSimt()
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
         mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
 
+        // Configure vertex attributes: Location 0 (Position), Location 1 (TexCoord)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 1, 2, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, u));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
+
         mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
@@ -904,7 +935,7 @@ VOID TestSmokeVolume3D(VOID)
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
         }
 
-        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF1E1E1F); // Dark clear color matching OpenGL demo background[cite: 2]
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF1E1E1F); 
 
         mGOP3D->GpuCmdSetBlendState(mGOP3D, TRUE, Gop3dBlendFactorSrcAlpha, Gop3dBlendFactorOneMinusSrcAlpha);
         mGOP3D->GpuCmdSetDepthWrite(mGOP3D, FALSE);
@@ -916,6 +947,14 @@ VOID TestSmokeVolume3D(VOID)
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 2);
         mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
         mGOP3D->GpuCmdBindUBO(mGOP3D, hUBO, sizeof(struct UniformBuffer));
+
+        // Configure vertex attributes: Location 0 (Position), Location 1 (TexCoord)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 1, 2, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, u));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
 
         // Draw quad
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
@@ -955,7 +994,6 @@ VOID TestBlendingSimt() {
         {-0.5, -0.5, -0.5, 0xFF0000FF}, { 0.5, -0.5, -0.5, 0xFF0000FF}, { 0.5,  0.5, -0.5, 0xFF00FFFF}, {-0.5,  0.5, -0.5, 0xFF00FFFF}
     };
 
-    // --- Mesh 2: Semi-Transparent Foreground Cube (Alpha = 0x80 -> ~50% Opacity) ---
     Vec3 vertices_transparent[] = {
         {-0.5, -0.5,  0.5, 0x8000FF00}, { 0.5, -0.5,  0.5, 0x8000FF00}, { 0.5,  0.5,  0.5, 0x8000FF00}, {-0.5,  0.5,  0.5, 0x80FFFF00},
         {-0.5, -0.5, -0.5, 0x80FFFF00}, { 0.5, -0.5, -0.5, 0x80FFFF00}, { 0.5,  0.5, -0.5, 0x8000FFFF}, {-0.5,  0.5, -0.5, 0x8000FFFF}
@@ -1045,6 +1083,14 @@ VOID TestBlendingSimt() {
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
         mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
+
+        // Configure vertex attributes: Location 0 (Position), Location 2 (Color)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 2, 4, Gop3dAttribUbyteNorm, TRUE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, color));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
 
         // ---------------------------------------------------------------------
         // PASS 1: Render Opaque Object (Solid Red/Blue Cube)
@@ -1170,6 +1216,14 @@ VOID TestPrimitivesSimt() {
     mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF101010);
     mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
     mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+
+    // Configure vertex attributes: Location 0 (Position), Location 2 (Color)
+    mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+    mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+    mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 2, 4, Gop3dAttribUbyteNorm, TRUE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, color));
+    mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 2);
+    mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 1);
+    mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
 
     // Render Points
     mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_Points, 4);

@@ -26,11 +26,13 @@ typedef struct {
 
     float r_inv_w[3], g_inv_w[3], b_inv_w[3], a_inv_w[3];
     float u_inv_w[3], v_inv_w[3];  /* perspective-correct UV interpolants */
+    float nx_inv_w[3], ny_inv_w[3], nz_inv_w[3]; /* perspective-correct Normal interpolants */
 } TriangleContext;
 
 
 typedef struct {
     Vec4 pos;
+    Vec3Raw normal;   /* per-vertex normal vector */
     uint32_t color;
     float u, v;       /* per-vertex texture coordinates */
 } TransformedVertex;
@@ -60,6 +62,7 @@ typedef struct {
     uint16_t raster_exec_mask;
     SimtVec4 transformed_simt;
     SimtVec2 transformed_uv_simt;
+    SimtVec3 transformed_normal_simt;
 
     /* Assembled primitive buffer (triangles or line pairs) */
     Triangle *assembled_triangles;

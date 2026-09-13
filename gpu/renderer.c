@@ -234,6 +234,7 @@ static void worker_transform_vertices_impl(RenderThreadArgs *args)
             (uint8_t)gpu->pRegs[REG_PB].u32);
         out_vertices[i].u = vertices[i].u;
         out_vertices[i].v = vertices[i].v;
+        out_vertices[i].normal = (Vec3Raw){0.0f, 0.0f, 1.0f};
     }
 }
 
