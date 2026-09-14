@@ -20,11 +20,14 @@ source ./edksetup.sh BaseTools
 # List of components to build
 EDK2_MODULES=(
     "OptionRom/Rom.inf:OptionRom"
-    "DemoApp/DemoApp.inf:DemoApp"
-    "LegacyAsmApp/LegacyAsmApp.inf:LegacyAsmApp"
     "SpirvApp/SpirvApp.inf:SpirvApp"
     "FrameBenchmark/FrameBenchmark.inf:FrameBenchmark"
 )
+
+# If TestHarness directory exists on this branch, build it
+if [ -d "$UEFI_DIR/TestHarness" ]; then
+    EDK2_MODULES+=("TestHarness/TestHarness.inf:TestHarness")
+fi
 
 for entry in "${EDK2_MODULES[@]}"; do
     inf="${entry%%:*}"
