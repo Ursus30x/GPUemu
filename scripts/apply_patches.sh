@@ -31,6 +31,7 @@ python3 gen_glsl_header.py
 ################################################
 #################### COMMON ####################
 ################################################
+cd "$CWD"
 
 git submodule init
 git submodule update --recursive
@@ -46,6 +47,10 @@ cd "$CWD/qemu"
 # Restore QEMU repo to avoid conflicts
 git restore .
 git clean -qfdx
+
+# Internal symlinks
+ln -sf "$CWD/gpu/debug_gpu.h" "$CWD/gpu/jit/debug_gpu.h"
+
 
 # Symlink gpu implementation to QEMU hardware
 ln -sf "$CWD/gpu/gpu.c" "$CWD/qemu/hw/misc/gpu.c"
