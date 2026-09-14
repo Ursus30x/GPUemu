@@ -1,5 +1,5 @@
 #define JIT
-#include "debug_gpu.h"
+#include "../debug_gpu.h"
 #include "jit.h"
 #include "jit_smpl.h"
 

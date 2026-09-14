@@ -1,5 +1,5 @@
 #include "jit_decorators.h"
-#include "debug_gpu.h"
+#include "../debug_gpu.h"
 
 void handle_op_decorate(JitContext* ctx, uint32_t* operands, int op_count) 
 {
