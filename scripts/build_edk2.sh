@@ -25,6 +25,11 @@ EDK2_MODULES=(
     "BlendingTest/BlendingTest.inf:BlendingTest"
 )
 
+# If TestHarness directory exists on this branch, build it
+if [ -d "$UEFI_DIR/TestHarness" ]; then
+    EDK2_MODULES+=("TestHarness/TestHarness.inf:TestHarness")
+fi
+
 for entry in "${EDK2_MODULES[@]}"; do
     inf="${entry%%:*}"
     name="${entry##*:}"
