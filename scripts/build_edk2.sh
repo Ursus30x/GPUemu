@@ -61,6 +61,14 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
+echo "=== Building TestHarness ==="
+build -p OvmfPkg/OvmfPkgX64.dsc -m TestHarness/TestHarness.inf -b "$BUILD_TYPE"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to build TestHarness"
+    exit 1
+fi
+
+echo ""
 echo "=== Creating Option ROM image ==="
 
 # FIX: Use ${BUILD_TYPE}_GCC5 to correctly expand the directory name
