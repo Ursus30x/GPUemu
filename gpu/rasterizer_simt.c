@@ -78,8 +78,9 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
     GpuState local_gpu = *(args->orig_gpu); 
     GpuState *gpu = &local_gpu;
 
-    Vec3 *vertices = VERTEX_TABLE(gpu);
     uint32_t total_vertices = gpu->vbo_config.size;
+    uint8_t *vbo_base = gpu->vram_ptr + gpu->vbo_config.addr;
+    bool custom_layout = gpu->has_custom_vertex_layout;
 
     for (uint32_t b = args->start_block; b < args->end_block; b++)
     {
@@ -92,37 +93,106 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
             exec_mask = (1 << active_lanes) - 1;
         }
 
-        SimtVec3 in_vec;
-        SimtVec2 in_uv;
-        for (int lane = 0; lane < SIMT_WIDTH; lane++)
-        {
-            if (exec_mask & (1 << lane))
-            {
-                uint32_t i = base_idx + lane;
-                in_vec.elem[0][lane] = vertices[i].x;
-                in_vec.elem[1][lane] = vertices[i].y;
-                in_vec.elem[2][lane] = vertices[i].z;
+        SimtVec4 in_attribs[MAX_ATTRIBUTES_PER_SHADER];
+        memset(in_attribs, 0, sizeof(in_attribs));
 
-                in_uv.elem[0][lane]  = vertices[i].u;
-                in_uv.elem[1][lane]  = vertices[i].v;
-            }
-            else
+        if (__builtin_expect(!custom_layout, 0))
+        {
+            Vec3 *vertices = (Vec3*)vbo_base;
+            for (int lane = 0; lane < SIMT_WIDTH; lane++)
             {
-                in_vec.elem[0][lane] = 0.0f;
-                in_vec.elem[1][lane] = 0.0f;
-                in_vec.elem[2][lane] = 0.0f;
-                in_uv.elem[0][lane] = 0.0f;
-                in_uv.elem[1][lane] = 0.0f;
+                if (exec_mask & (1 << lane))
+                {
+                    uint32_t i = base_idx + lane;
+                    in_attribs[0].elem[0][lane] = vertices[i].x;
+                    in_attribs[0].elem[1][lane] = vertices[i].y;
+                    in_attribs[0].elem[2][lane] = vertices[i].z;
+                    in_attribs[0].elem[3][lane] = 1.0f;
+
+                    in_attribs[1].elem[0][lane] = vertices[i].u;
+                    in_attribs[1].elem[1][lane] = vertices[i].v;
+                }
+            }
+        }
+        else
+        {
+            uint32_t mask = gpu->vertex_attribs.enabled_mask;
+            while (mask != 0)
+            {
+                int loc = __builtin_ctz(mask);
+                mask &= ~(1u << loc);
+
+                const GpuVertexAttribDesc *desc = &gpu->vertex_attribs.attribs[loc];
+                uint32_t stride = desc->stride;
+                uint32_t offset = desc->offset;
+                uint32_t components = desc->size;
+                uint32_t type = desc->type;
+
+                #pragma GCC unroll 16
+                for (int lane = 0; lane < SIMT_WIDTH; lane++)
+                {
+                    if (!(exec_mask & (1 << lane))) continue;
+
+                    uint32_t vert_idx = base_idx + lane;
+                    const uint8_t *src_ptr = vbo_base + (vert_idx * stride) + offset;
+
+                    if (type == GPU_ATTRIB_FLOAT)
+                    {
+                        const float *fsrc = (const float *)src_ptr;
+                        switch (components)
+                        {
+                            case 4: in_attribs[loc].elem[3][lane] = fsrc[3]; /* fallthrough */
+                            case 3: in_attribs[loc].elem[2][lane] = fsrc[2]; /* fallthrough */
+                            case 2: in_attribs[loc].elem[1][lane] = fsrc[1]; /* fallthrough */
+                            case 1: in_attribs[loc].elem[0][lane] = fsrc[0]; break;
+                        }
+                        if (components < 4 && loc == 0) in_attribs[loc].elem[3][lane] = 1.0f;
+                    }
+                    else if (type == GPU_ATTRIB_UBYTE_NORM)
+                    {
+                        const uint8_t *bsrc = (const uint8_t *)src_ptr;
+                        const float inv255 = 1.0f / 255.0f;
+                        switch (components)
+                        {
+                            case 4: in_attribs[loc].elem[3][lane] = bsrc[3] * inv255; /* fallthrough */
+                            case 3: in_attribs[loc].elem[2][lane] = bsrc[2] * inv255; /* fallthrough */
+                            case 2: in_attribs[loc].elem[1][lane] = bsrc[1] * inv255; /* fallthrough */
+                            case 1: in_attribs[loc].elem[0][lane] = bsrc[0] * inv255; break;
+                        }
+                        if (components < 4) in_attribs[loc].elem[3][lane] = 1.0f;
+                    }
+                    else
+                    {
+                        const uint32_t *usrc = (const uint32_t *)src_ptr;
+                        switch (components)
+                        {
+                            case 4: in_attribs[loc].elem[3][lane] = *(float*)&usrc[3]; /* fallthrough */
+                            case 3: in_attribs[loc].elem[2][lane] = *(float*)&usrc[2]; /* fallthrough */
+                            case 2: in_attribs[loc].elem[1][lane] = *(float*)&usrc[1]; /* fallthrough */
+                            case 1: in_attribs[loc].elem[0][lane] = *(float*)&usrc[0]; break;
+                        }
+                    }
+                }
             }
         }
 
         ExecutionContext jit_ctx = {0};
-        jit_ctx.active_mask = 0xFFFFu;
+        jit_ctx.active_mask = exec_mask;
         BuiltinVertexOutput vs_out = {0};
         bind_resources_to_context(gpu, &jit_ctx);
-        jit_ctx.location_in_buffers[0] = &in_vec;
-        jit_ctx.location_in_buffers[1] = &in_uv;
-        jit_ctx.location_out_buffers[0] = &args->transformed_uv_simt;
+
+        for (int i = 0; i < MAX_ATTRIBUTES_PER_SHADER; i++)
+        {
+            jit_ctx.location_in_buffers[i] = &in_attribs[i];
+        }
+
+        SimtVec4 vs_out_varyings[MAX_ATTRIBUTES_PER_SHADER];
+        memset(vs_out_varyings, 0, sizeof(vs_out_varyings));
+        for (int i = 0; i < MAX_ATTRIBUTES_PER_SHADER; i++)
+        {
+            jit_ctx.location_out_buffers[i] = &vs_out_varyings[i];
+        }
+
         gpu->vs_shader_func(&jit_ctx, &vs_out, NULL, NULL);
         args->transformed_simt = vs_out.gl_Position;
 
@@ -131,13 +201,101 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
             uint32_t global_idx = base_idx + i;
             if (global_idx < total_vertices)
             {
-                args->transformed_vertices[global_idx].pos.x = args->transformed_simt.elem[0][i];
-                args->transformed_vertices[global_idx].pos.y = args->transformed_simt.elem[1][i];
-                args->transformed_vertices[global_idx].pos.z = args->transformed_simt.elem[2][i];
-                args->transformed_vertices[global_idx].pos.w = args->transformed_simt.elem[3][i];
-                args->transformed_vertices[global_idx].color = vertices[global_idx].rgba;
-                args->transformed_vertices[global_idx].u     = args->transformed_uv_simt.elem[0][i];
-                args->transformed_vertices[global_idx].v     = args->transformed_uv_simt.elem[1][i];
+                args->transformed_vertices[global_idx].pos.x = vs_out.gl_Position.elem[0][i];
+                args->transformed_vertices[global_idx].pos.y = vs_out.gl_Position.elem[1][i];
+                args->transformed_vertices[global_idx].pos.z = vs_out.gl_Position.elem[2][i];
+                args->transformed_vertices[global_idx].pos.w = vs_out.gl_Position.elem[3][i];
+
+                if (!custom_layout)
+                {
+                    Vec3 *vertices = (Vec3*)vbo_base;
+                    args->transformed_vertices[global_idx].color    = vertices[global_idx].rgba;
+                    args->transformed_vertices[global_idx].normal.x = 0.0f;
+                    args->transformed_vertices[global_idx].normal.y = 0.0f;
+                    args->transformed_vertices[global_idx].normal.z = 1.0f;
+                    args->transformed_vertices[global_idx].u        = vs_out_varyings[0].elem[0][i];
+                    args->transformed_vertices[global_idx].v        = vs_out_varyings[0].elem[1][i];
+                }
+                else
+                {
+                    bool has_vs_out_1 = (vs_out_varyings[1].elem[0][i] != 0.0f || vs_out_varyings[1].elem[1][i] != 0.0f || vs_out_varyings[1].elem[2][i] != 0.0f || vs_out_varyings[1].elem[3][i] != 0.0f);
+                    bool has_vs_out_0 = (vs_out_varyings[0].elem[0][i] != 0.0f || vs_out_varyings[0].elem[1][i] != 0.0f || vs_out_varyings[0].elem[2][i] != 0.0f || vs_out_varyings[0].elem[3][i] != 0.0f);
+
+                    // 1. Setup Normal
+                    if (has_vs_out_1)
+                    {
+                        // Multi-varying output: Loc 0 = Normal, Loc 1 = UV
+                        args->transformed_vertices[global_idx].normal.x = vs_out_varyings[0].elem[0][i];
+                        args->transformed_vertices[global_idx].normal.y = vs_out_varyings[0].elem[1][i];
+                        args->transformed_vertices[global_idx].normal.z = vs_out_varyings[0].elem[2][i];
+                    }
+                    else if ((gpu->vertex_attribs.enabled_mask & (1 << 1)) && gpu->vertex_attribs.attribs[1].size >= 3)
+                    {
+                        args->transformed_vertices[global_idx].normal.x = in_attribs[1].elem[0][i];
+                        args->transformed_vertices[global_idx].normal.y = in_attribs[1].elem[1][i];
+                        args->transformed_vertices[global_idx].normal.z = in_attribs[1].elem[2][i];
+                    }
+                    else
+                    {
+                        args->transformed_vertices[global_idx].normal.x = 0.0f;
+                        args->transformed_vertices[global_idx].normal.y = 0.0f;
+                        args->transformed_vertices[global_idx].normal.z = 1.0f;
+                    }
+
+                    // 2. Setup UV
+                    if (has_vs_out_1)
+                    {
+                        args->transformed_vertices[global_idx].u = vs_out_varyings[1].elem[0][i];
+                        args->transformed_vertices[global_idx].v = vs_out_varyings[1].elem[1][i];
+                    }
+                    else if (has_vs_out_0)
+                    {
+                        // Single varying output: Loc 0 = UV / TexCoord
+                        args->transformed_vertices[global_idx].u = vs_out_varyings[0].elem[0][i];
+                        args->transformed_vertices[global_idx].v = vs_out_varyings[0].elem[1][i];
+                    }
+                    else if (gpu->vertex_attribs.enabled_mask & (1 << 3))
+                    {
+                        args->transformed_vertices[global_idx].u = in_attribs[3].elem[0][i];
+                        args->transformed_vertices[global_idx].v = in_attribs[3].elem[1][i];
+                    }
+                    else if ((gpu->vertex_attribs.enabled_mask & (1 << 1)) && gpu->vertex_attribs.attribs[1].size <= 2)
+                    {
+                        args->transformed_vertices[global_idx].u = in_attribs[1].elem[0][i];
+                        args->transformed_vertices[global_idx].v = in_attribs[1].elem[1][i];
+                    }
+                    else
+                    {
+                        args->transformed_vertices[global_idx].u = 0.0f;
+                        args->transformed_vertices[global_idx].v = 0.0f;
+                    }
+
+                    // 3. Setup Color
+                    if (vs_out_varyings[2].elem[0][i] != 0.0f || vs_out_varyings[2].elem[1][i] != 0.0f || vs_out_varyings[2].elem[2][i] != 0.0f || vs_out_varyings[2].elem[3][i] != 0.0f)
+                    {
+                        uint8_t cr = color_to_u8(vs_out_varyings[2].elem[0][i]);
+                        uint8_t cg = color_to_u8(vs_out_varyings[2].elem[1][i]);
+                        uint8_t cb = color_to_u8(vs_out_varyings[2].elem[2][i]);
+                        uint8_t ca = color_to_u8(vs_out_varyings[2].elem[3][i]);
+                        args->transformed_vertices[global_idx].color = RGBA_TO_UINT(cr, cg, cb, ca);
+                    }
+                    else if (gpu->vertex_attribs.enabled_mask & (1 << 2))
+                    {
+                        // In Vec3, uint32_t color in memory is [B, G, R, A]
+                        uint8_t cb = color_to_u8(in_attribs[2].elem[0][i]);
+                        uint8_t cg = color_to_u8(in_attribs[2].elem[1][i]);
+                        uint8_t cr = color_to_u8(in_attribs[2].elem[2][i]);
+                        uint8_t ca = color_to_u8(in_attribs[2].elem[3][i]);
+                        args->transformed_vertices[global_idx].color = RGBA_TO_UINT(cr, cg, cb, ca);
+                    }
+                    else
+                    {
+                        // Fallback when color is not bound: encode (u, v) into color so shaders expecting varying at loc 0 (like volume3d) also receive u,v
+                        uint8_t cu = color_to_u8(args->transformed_vertices[global_idx].u);
+                        uint8_t cv = color_to_u8(args->transformed_vertices[global_idx].v);
+                        args->transformed_vertices[global_idx].color = RGBA_TO_UINT(cu, cv, 128, 255);
+                    }
+                }
             }
         }
     }
@@ -186,7 +344,7 @@ static bool setup_geometry_and_bounds(Vec4 v0, Vec4 v1, Vec4 v2, GpuState *gpu, 
     return true;
 }
 
-static void setup_invariants(Col3 color, float u[3], float v[3], float inv_area, TriangleContext *ctx) 
+static void setup_invariants(Col3 color, Vec3Raw normals[3], float u[3], float v[3], float inv_area, TriangleContext *ctx) 
 {
     Vec3 p_zero = {0.0f, 0.0f, 0.0f};
     Vec3 p_dx1  = {1.0f, 0.0f, 0.0f};
@@ -227,6 +385,18 @@ static void setup_invariants(Col3 color, float u[3], float v[3], float inv_area,
     ctx->v_inv_w[0] = v[0] * ctx->s_inv_w[0];
     ctx->v_inv_w[1] = v[1] * ctx->s_inv_w[1];
     ctx->v_inv_w[2] = v[2] * ctx->s_inv_w[2];
+
+    ctx->nx_inv_w[0] = normals[0].x * ctx->s_inv_w[0];
+    ctx->nx_inv_w[1] = normals[1].x * ctx->s_inv_w[1];
+    ctx->nx_inv_w[2] = normals[2].x * ctx->s_inv_w[2];
+
+    ctx->ny_inv_w[0] = normals[0].y * ctx->s_inv_w[0];
+    ctx->ny_inv_w[1] = normals[1].y * ctx->s_inv_w[1];
+    ctx->ny_inv_w[2] = normals[2].y * ctx->s_inv_w[2];
+
+    ctx->nz_inv_w[0] = normals[0].z * ctx->s_inv_w[0];
+    ctx->nz_inv_w[1] = normals[1].z * ctx->s_inv_w[1];
+    ctx->nz_inv_w[2] = normals[2].z * ctx->s_inv_w[2];
 
     ctx->d_w3_dx = ctx->d_w0_dx * ctx->a_inv_w[0] + ctx->d_w1_dx * ctx->a_inv_w[1] + ctx->d_w2_dx * ctx->a_inv_w[2];
     ctx->d_w3_dy = ctx->d_w0_dy * ctx->a_inv_w[0] + ctx->d_w1_dy * ctx->a_inv_w[1] + ctx->d_w2_dy * ctx->a_inv_w[2];
@@ -270,7 +440,7 @@ static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stam
     return exec_mask;
 }
 
-static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, float *lane_w0, float *lane_w1, float *lane_w2, float *lane_a, TriangleContext *ctx, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv) 
+static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, float *lane_w0, float *lane_w1, float *lane_w2, float *lane_a, TriangleContext *ctx, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv, SimtVec3 *fs_in_normal) 
 {
     uint16_t shade_mask = 0x0000;
     uint32_t width = gpu->width;
@@ -307,12 +477,16 @@ static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, floa
 
             fs_in_uv->elem[0][lane] = (w0 * ctx->u_inv_w[0] + w1 * ctx->u_inv_w[1] + w2 * ctx->u_inv_w[2]) * pixel_w;
             fs_in_uv->elem[1][lane] = (w0 * ctx->v_inv_w[0] + w1 * ctx->v_inv_w[1] + w2 * ctx->v_inv_w[2]) * pixel_w;
+
+            fs_in_normal->elem[0][lane] = (w0 * ctx->nx_inv_w[0] + w1 * ctx->nx_inv_w[1] + w2 * ctx->nx_inv_w[2]) * pixel_w;
+            fs_in_normal->elem[1][lane] = (w0 * ctx->ny_inv_w[0] + w1 * ctx->ny_inv_w[1] + w2 * ctx->ny_inv_w[2]) * pixel_w;
+            fs_in_normal->elem[2][lane] = (w0 * ctx->nz_inv_w[0] + w1 * ctx->nz_inv_w[1] + w2 * ctx->nz_inv_w[2]) * pixel_w;
         }
     }
     return shade_mask;
 }
 
-static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv, BuiltinFragmentInput* fs_input) 
+static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv, SimtVec3 *fs_in_normal, BuiltinFragmentInput* fs_input) 
 {
     SimtVec4 out_color = {0};
     ExecutionContext jit_ctx = {0};
@@ -322,6 +496,7 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
     
     jit_ctx.location_in_buffers[0] = fs_in_color;
     jit_ctx.location_in_buffers[1] = fs_in_uv;
+    jit_ctx.location_in_buffers[2] = fs_in_normal;
     jit_ctx.location_out_buffers[0] = &out_color;
     gpu->fs_shader_func(&jit_ctx, NULL, fs_input, NULL);
 
@@ -340,7 +515,7 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
     }
 }
 
-void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, float u[3], float v[3], GpuState *gpu, int band_min_y, int band_max_y, RenderThreadArgs *args)
+void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, Vec3Raw normals[3], float u[3], float v[3], GpuState *gpu, int band_min_y, int band_max_y, RenderThreadArgs *args)
 {
     TriangleContext ctx = {0};
     float inv_area;
@@ -350,7 +525,7 @@ void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, float u[3], 
         return; 
     }
 
-    setup_invariants(color, u, v, inv_area, &ctx);
+    setup_invariants(color, normals, u, v, inv_area, &ctx);
     BuiltinFragmentInput fs_in = {0};
 
     for (int sy = ctx.stamp_min_y; sy <= ctx.stamp_max_y; sy += 4) 
@@ -377,7 +552,8 @@ void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, float u[3], 
 
             SimtVec4 fs_in_color = {0};
             SimtVec2 fs_in_uv    = {0};
-            uint16_t shade_mask = process_z_and_interpolate(sx, sy, exec_mask, lane_w0, lane_w1, lane_w2, lane_w3, &ctx, gpu, &fs_in_color, &fs_in_uv);
+            SimtVec3 fs_in_normal = {0};
+            uint16_t shade_mask = process_z_and_interpolate(sx, sy, exec_mask, lane_w0, lane_w1, lane_w2, lane_w3, &ctx, gpu, &fs_in_color, &fs_in_uv, &fs_in_normal);
             if (shade_mask == 0x0000) continue;
             
             for (int lane = 0; lane < 16; lane++)
@@ -388,7 +564,7 @@ void draw_triangle_simt_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, float u[3], 
                 fs_in.gl_FragCoord.elem[0][lane] = (float)(sx + dx) + 0.5f;
                 fs_in.gl_FragCoord.elem[1][lane] = (float)(sy + dy) + 0.5f;
             }
-            execute_shader_and_write(sx, sy, shade_mask, gpu, &fs_in_color, &fs_in_uv, &fs_in);
+            execute_shader_and_write(sx, sy, shade_mask, gpu, &fs_in_color, &fs_in_uv, &fs_in_normal, &fs_in);
         }
     }
 }
@@ -417,10 +593,16 @@ void worker_rasterize_bands_simt_impl(RenderThreadArgs *args)
             .c_col = vertices[indices[i].c].color,
         };
 
+        Vec3Raw normals[3] = {
+            vertices[indices[i].a].normal,
+            vertices[indices[i].b].normal,
+            vertices[indices[i].c].normal
+        };
+
         float u[3] = { vertices[indices[i].a].u, vertices[indices[i].b].u, vertices[indices[i].c].u };
         float v[3] = { vertices[indices[i].a].v, vertices[indices[i].b].v, vertices[indices[i].c].v };
 
-        draw_triangle_simt_band(v0, v1, v2, color, u, v, gpu, band_min_y, band_max_y, args);
+        draw_triangle_simt_band(v0, v1, v2, color, normals, u, v, gpu, band_min_y, band_max_y, args);
     }
 }
 
@@ -478,6 +660,7 @@ void worker_rasterize_points_simt_impl(RenderThreadArgs *args)
 
                 SimtVec4 fs_in_color = {0};
                 SimtVec2 fs_in_uv = {0};
+                SimtVec3 fs_in_normal = {0};
 
                 const float inv_255 = 1.0f / 255.0f;
                 float r_col = GET_R(vertices[i].color) * inv_255;
@@ -523,6 +706,10 @@ void worker_rasterize_points_simt_impl(RenderThreadArgs *args)
                             fs_in_uv.elem[0][lane] = fmaxf(0.0f, fminf(1.0f, u_val));
                             fs_in_uv.elem[1][lane] = fmaxf(0.0f, fminf(1.0f, v_val));
 
+                            fs_in_normal.elem[0][lane] = vertices[i].normal.x;
+                            fs_in_normal.elem[1][lane] = vertices[i].normal.y;
+                            fs_in_normal.elem[2][lane] = vertices[i].normal.z;
+
                             fs_in.gl_FragCoord.elem[0][lane] = pxf;
                             fs_in.gl_FragCoord.elem[1][lane] = pyf;
                         }
@@ -532,7 +719,7 @@ void worker_rasterize_points_simt_impl(RenderThreadArgs *args)
                 if (shade_mask == 0) continue;
                 args->raster_exec_mask = exec_mask;
 
-                execute_shader_and_write(sx, sy, shade_mask, gpu, &fs_in_color, &fs_in_uv, &fs_in);
+                execute_shader_and_write(sx, sy, shade_mask, gpu, &fs_in_color, &fs_in_uv, &fs_in_normal, &fs_in);
             }
         }
     }
@@ -605,14 +792,16 @@ void worker_rasterize_lines_simt_impl(RenderThreadArgs *args)
         }
 
         Col3 c1 = { q[0].color, q[1].color, q[2].color };
+        Vec3Raw n1[3] = { q[0].normal, q[1].normal, q[2].normal };
         float u1[3] = { q[0].u, q[1].u, q[2].u };
         float v1[3] = { q[0].v, q[1].v, q[2].v };
-        draw_triangle_simt_band(q[0].pos, q[1].pos, q[2].pos, c1, u1, v1, gpu, band_min_y, band_max_y, args);
+        draw_triangle_simt_band(q[0].pos, q[1].pos, q[2].pos, c1, n1, u1, v1, gpu, band_min_y, band_max_y, args);
 
         Col3 c2 = { q[0].color, q[2].color, q[3].color };
+        Vec3Raw n2[3] = { q[0].normal, q[2].normal, q[3].normal };
         float u2[3] = { q[0].u, q[2].u, q[3].u };
         float v2[3] = { q[0].v, q[2].v, q[3].v };
-        draw_triangle_simt_band(q[0].pos, q[2].pos, q[3].pos, c2, u2, v2, gpu, band_min_y, band_max_y, args);
+        draw_triangle_simt_band(q[0].pos, q[2].pos, q[3].pos, c2, n2, u2, v2, gpu, band_min_y, band_max_y, args);
     }
 }
 

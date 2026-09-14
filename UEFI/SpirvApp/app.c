@@ -222,6 +222,14 @@ VOID Test3DTrianglesSimt(){
         mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 8);
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
 
+        // Configure vertex attributes: Location 0 (Position), Location 2 (Color)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 2, 4, Gop3dAttribUbyteNorm, TRUE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, color));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
+
         // Draw Model 1
         mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
@@ -447,6 +455,13 @@ VOID TestShaderArt() {
         mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 4);
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 2);
 
+        // Configure vertex attributes: Location 0 (Position)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
+
         mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(struct UniformBuffer));
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
@@ -613,6 +628,14 @@ VOID Test3DObszar()
         mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 24);
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
         mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
+
+        // Configure vertex attributes: Location 0 (Position), Location 1 (TexCoord)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 1, 2, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, u));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
 
         mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
@@ -791,6 +814,14 @@ VOID Test3DVolumeSimt()
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
         mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
 
+        // Configure vertex attributes: Location 0 (Position), Location 1 (TexCoord)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 1, 2, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, u));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
+
         mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP1, sizeof(SimtMat4UBO));
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
 
@@ -904,7 +935,7 @@ VOID TestSmokeVolume3D(VOID)
             mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &uniform, sizeof(struct UniformBuffer), &hUBO);
         }
 
-        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF1E1E1F); // Dark clear color matching OpenGL demo background[cite: 2]
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF1E1E1F); 
 
         mGOP3D->GpuCmdSetBlendState(mGOP3D, TRUE, Gop3dBlendFactorSrcAlpha, Gop3dBlendFactorOneMinusSrcAlpha);
         mGOP3D->GpuCmdSetDepthWrite(mGOP3D, FALSE);
@@ -916,6 +947,14 @@ VOID TestSmokeVolume3D(VOID)
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 2);
         mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTexDesc);
         mGOP3D->GpuCmdBindUBO(mGOP3D, hUBO, sizeof(struct UniformBuffer));
+
+        // Configure vertex attributes: Location 0 (Position), Location 1 (TexCoord)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 1, 2, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, u));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
 
         // Draw quad
         mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
@@ -955,7 +994,6 @@ VOID TestBlendingSimt() {
         {-0.5, -0.5, -0.5, 0xFF0000FF}, { 0.5, -0.5, -0.5, 0xFF0000FF}, { 0.5,  0.5, -0.5, 0xFF00FFFF}, {-0.5,  0.5, -0.5, 0xFF00FFFF}
     };
 
-    // --- Mesh 2: Semi-Transparent Foreground Cube (Alpha = 0x80 -> ~50% Opacity) ---
     Vec3 vertices_transparent[] = {
         {-0.5, -0.5,  0.5, 0x8000FF00}, { 0.5, -0.5,  0.5, 0x8000FF00}, { 0.5,  0.5,  0.5, 0x8000FF00}, {-0.5,  0.5,  0.5, 0x80FFFF00},
         {-0.5, -0.5, -0.5, 0x80FFFF00}, { 0.5, -0.5, -0.5, 0x80FFFF00}, { 0.5,  0.5, -0.5, 0x8000FFFF}, {-0.5,  0.5, -0.5, 0x8000FFFF}
@@ -1045,6 +1083,14 @@ VOID TestBlendingSimt() {
         mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
         mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
         mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
+
+        // Configure vertex attributes: Location 0 (Position), Location 2 (Color)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 2, 4, Gop3dAttribUbyteNorm, TRUE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, color));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 2);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 1);
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
 
         // ---------------------------------------------------------------------
         // PASS 1: Render Opaque Object (Solid Red/Blue Cube)
@@ -1171,6 +1217,14 @@ VOID TestPrimitivesSimt() {
     mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
     mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
 
+    // Configure vertex attributes: Location 0 (Position), Location 2 (Color)
+    mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, x));
+    mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+    mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 2, 4, Gop3dAttribUbyteNorm, TRUE, sizeof(Vec3), (UINT32)OFFSET_OF(Vec3, color));
+    mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 2);
+    mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 1);
+    mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
+
     // Render Points
     mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO_Points, 4);
     mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
@@ -1218,6 +1272,412 @@ VOID TestPrimitivesSimt() {
     mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP);
     mGOP3D->GpuSetMode(mGOP3D, 0);
 }
+
+VOID TestPhongLightingSimt(VOID)
+{
+    EFI_INPUT_KEY Key;
+
+    #include "phong_vs.h"
+    #include "phong_fs.h"
+
+    typedef struct {
+        float Position[3];
+        float Normal[3];
+        float Color[4];
+        float TexCoord[2];
+    } PhongVertex;
+
+    PhongVertex vertices[] = {
+        // Front Face (Z = +0.7) -> Normal (0, 0, 1), Color: Red
+        {{-0.7f, -0.7f,  0.7f}, {0.0f, 0.0f, 1.0f}, {0.9f, 0.2f, 0.2f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.7f, -0.7f,  0.7f}, {0.0f, 0.0f, 1.0f}, {0.9f, 0.2f, 0.2f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.7f,  0.7f,  0.7f}, {0.0f, 0.0f, 1.0f}, {0.9f, 0.2f, 0.2f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.7f,  0.7f,  0.7f}, {0.0f, 0.0f, 1.0f}, {0.9f, 0.2f, 0.2f, 1.0f}, {0.0f, 1.0f}},
+
+        // Back Face (Z = -0.7) -> Normal (0, 0, -1), Color: Green
+        {{ 0.7f, -0.7f, -0.7f}, {0.0f, 0.0f, -1.0f}, {0.2f, 0.8f, 0.3f, 1.0f}, {0.0f, 0.0f}},
+        {{-0.7f, -0.7f, -0.7f}, {0.0f, 0.0f, -1.0f}, {0.2f, 0.8f, 0.3f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.7f,  0.7f, -0.7f}, {0.0f, 0.0f, -1.0f}, {0.2f, 0.8f, 0.3f, 1.0f}, {1.0f, 1.0f}},
+        {{ 0.7f,  0.7f, -0.7f}, {0.0f, 0.0f, -1.0f}, {0.2f, 0.8f, 0.3f, 1.0f}, {0.0f, 1.0f}},
+
+        // Left Face (X = -0.7) -> Normal (-1, 0, 0), Color: Blue
+        {{-0.7f, -0.7f, -0.7f}, {-1.0f, 0.0f, 0.0f}, {0.2f, 0.4f, 0.9f, 1.0f}, {0.0f, 0.0f}},
+        {{-0.7f, -0.7f,  0.7f}, {-1.0f, 0.0f, 0.0f}, {0.2f, 0.4f, 0.9f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.7f,  0.7f,  0.7f}, {-1.0f, 0.0f, 0.0f}, {0.2f, 0.4f, 0.9f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.7f,  0.7f, -0.7f}, {-1.0f, 0.0f, 0.0f}, {0.2f, 0.4f, 0.9f, 1.0f}, {0.0f, 1.0f}},
+
+        // Right Face (X = +0.7) -> Normal (1, 0, 0), Color: Yellow
+        {{ 0.7f, -0.7f,  0.7f}, {1.0f, 0.0f, 0.0f}, {0.9f, 0.8f, 0.1f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.7f, -0.7f, -0.7f}, {1.0f, 0.0f, 0.0f}, {0.9f, 0.8f, 0.1f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.7f,  0.7f, -0.7f}, {1.0f, 0.0f, 0.0f}, {0.9f, 0.8f, 0.1f, 1.0f}, {1.0f, 1.0f}},
+        {{ 0.7f,  0.7f,  0.7f}, {1.0f, 0.0f, 0.0f}, {0.9f, 0.8f, 0.1f, 1.0f}, {0.0f, 1.0f}},
+
+        // Top Face (Y = +0.7) -> Normal (0, 1, 0), Color: Magenta
+        {{-0.7f,  0.7f,  0.7f}, {0.0f, 1.0f, 0.0f}, {0.9f, 0.3f, 0.9f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.7f,  0.7f,  0.7f}, {0.0f, 1.0f, 0.0f}, {0.9f, 0.3f, 0.9f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.7f,  0.7f, -0.7f}, {0.0f, 1.0f, 0.0f}, {0.9f, 0.3f, 0.9f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.7f,  0.7f, -0.7f}, {0.0f, 1.0f, 0.0f}, {0.9f, 0.3f, 0.9f, 1.0f}, {0.0f, 1.0f}},
+
+        // Bottom Face (Y = -0.7) -> Normal (0, -1, 0), Color: Cyan
+        {{-0.7f, -0.7f, -0.7f}, {0.0f, -1.0f, 0.0f}, {0.2f, 0.9f, 0.9f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.7f, -0.7f, -0.7f}, {0.0f, -1.0f, 0.0f}, {0.2f, 0.9f, 0.9f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.7f, -0.7f,  0.7f}, {0.0f, -1.0f, 0.0f}, {0.2f, 0.9f, 0.9f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.7f, -0.7f,  0.7f}, {0.0f, -1.0f, 0.0f}, {0.2f, 0.9f, 0.9f, 1.0f}, {0.0f, 1.0f}}
+    };
+
+    Triangle indices[] = {
+        {0, 1, 2}, {0, 2, 3},
+        {4, 5, 6}, {4, 6, 7},
+        {8, 9, 10}, {8, 10, 11},
+        {12, 13, 14}, {12, 14, 15},
+        {16, 17, 18}, {16, 18, 19},
+        {20, 21, 22}, {20, 22, 23}
+    };
+    UINT32 IndexCount = (sizeof(indices) / sizeof(Triangle)) * 2;
+
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR, hVS = GPU_NULL_ADDR, hFS = GPU_NULL_ADDR, hMVP = GPU_NULL_ADDR;
+
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex, indices, sizeof(indices), &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_phong_vs, sizeof(bin_phong_vs), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_phong_fs, sizeof(bin_phong_fs), &hFS);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
+
+    Print(L"Rendering Blinn-Phong Lit 3D Cube with Normals... Press Key to Exit.\n");
+
+    FpsCounterStart();
+    mTimerInit = FALSE;
+
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        float time;
+        GetTimeSeconds(&time);
+
+        float rotation_period = 3.0f;
+        float angle = (2.0f * PI * time) / rotation_period;
+
+        Mat4 ry, rx, trans, proj;
+        Mat4 model, mvp;
+
+        Mat4_RotateY(angle, &ry);
+        Mat4_RotateX(angle * 0.7f, &rx);
+        Mat4_Translate(0.0f, 0.0f, 4.0f, &trans);
+        Mat4_Perspective(PI / 3.0f, 640.0f / 480.0f, 1.0f, 10.0f, &proj);
+
+        Mat4_Mul(&ry, &rx, &model);
+        Mat4_Mul(&trans, &model, &model);
+        Mat4_Mul(&proj, &model, &mvp);
+
+        SimtMat4UBO simt_mvp;
+        Mat4_ToSimtUBO(&mvp, &simt_mvp);
+
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if (hMVP == GPU_NULL_ADDR) {
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp, sizeof(SimtMat4UBO), &hMVP);
+        } else {
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &simt_mvp, sizeof(SimtMat4UBO), &hMVP);
+        }
+
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF121218);
+
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_phong_vs));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_phong_fs));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 24);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, 12);
+
+        // Attribute 0: Position (3 floats)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(PhongVertex), (UINT32)OFFSET_OF(PhongVertex, Position));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+
+        // Attribute 1: Normal (3 floats)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 1, 3, Gop3dAttribFloat, FALSE, sizeof(PhongVertex), (UINT32)OFFSET_OF(PhongVertex, Normal));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 1);
+
+        // Attribute 2: Color (4 floats)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 2, 4, Gop3dAttribFloat, FALSE, sizeof(PhongVertex), (UINT32)OFFSET_OF(PhongVertex, Color));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 2);
+
+        // Attribute 3: TexCoord (2 floats)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 3, 2, Gop3dAttribFloat, FALSE, sizeof(PhongVertex), (UINT32)OFFSET_OF(PhongVertex, TexCoord));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 3);
+
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP, sizeof(SimtMat4UBO));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);
+
+        FpsCounterTick();
+    }
+
+    FpsCounterStop();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP);
+
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+
+    FpsCounterShowStats();
+}
+
+
+#define TORUS_RINGS  32
+#define TORUS_SIDES  16
+#define TORUS_NUM_VERTICES ((TORUS_RINGS + 1) * (TORUS_SIDES + 1))
+#define TORUS_NUM_TRIS     (TORUS_RINGS * TORUS_SIDES * 2)
+
+// Combined UBO: MVP + Model + LightPos + ViewPos
+// In SIMT layout, each scalar float is broadcast to 16 lanes
+typedef struct {
+    float data[(16 + 16 + 4 + 4) * 16];  // 40 floats * 16 lanes = 640 floats = 2560 bytes
+} TorusUBO;
+
+STATIC void TorusUBO_Pack(
+    Mat4   *mvp,
+    Mat4   *model,
+    float   lightX, float lightY, float lightZ,
+    float   viewX,  float viewY,  float viewZ,
+    TorusUBO *ubo
+)
+{
+    int idx = 0;
+
+    // Pack MVP matrix (mat4 = 4 columns x 4 rows, each broadcast to 16 lanes)
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+            float value = mvp->m[row][col];
+            for (int lane = 0; lane < 16; lane++) {
+                ubo->data[idx++] = value;
+            }
+        }
+    }
+
+    // Pack Model matrix
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+            float value = model->m[row][col];
+            for (int lane = 0; lane < 16; lane++) {
+                ubo->data[idx++] = value;
+            }
+        }
+    }
+
+    // Pack lightPos (vec4, w = 0)
+    float lightVec[4] = { lightX, lightY, lightZ, 0.0f };
+    for (int c = 0; c < 4; c++) {
+        for (int lane = 0; lane < 16; lane++) {
+            ubo->data[idx++] = lightVec[c];
+        }
+    }
+
+    // Pack viewPos (vec4, w = 0)
+    float viewVec[4] = { viewX, viewY, viewZ, 0.0f };
+    for (int c = 0; c < 4; c++) {
+        for (int lane = 0; lane < 16; lane++) {
+            ubo->data[idx++] = viewVec[c];
+        }
+    }
+}
+
+VOID TestTorusPhongSimt(VOID)
+{
+    EFI_INPUT_KEY Key;
+
+    #include "torus_vs.h"
+    #include "torus_fs.h"
+
+    // Torus vertex: Position (3 floats), Normal (3 floats), Color (3 floats)
+    typedef struct {
+        float Position[3];
+        float Normal[3];
+        float Color[3];
+    } TorusVertex;
+
+    // Generate torus mesh
+    TorusVertex torusVerts[TORUS_NUM_VERTICES];
+    Triangle    torusIndices[TORUS_NUM_TRIS];
+
+    float R = 1.0f;  // Major radius
+    float r = 0.4f;  // Minor radius
+
+    int vIdx = 0;
+    for (int ring = 0; ring <= TORUS_RINGS; ring++) {
+        float u = (float)ring / TORUS_RINGS * 2.0f * PI;
+        float cu, su;
+        Cos(u, &cu);
+        Sin(u, &su);
+
+        for (int side = 0; side <= TORUS_SIDES; side++) {
+            float v = (float)side / TORUS_SIDES * 2.0f * PI;
+            float cv, sv;
+            Cos(v, &cv);
+            Sin(v, &sv);
+
+            // Position
+            torusVerts[vIdx].Position[0] = (R + r * cv) * cu;
+            torusVerts[vIdx].Position[1] = r * sv;
+            torusVerts[vIdx].Position[2] = (R + r * cv) * su;
+
+            // Normal
+            torusVerts[vIdx].Normal[0] = cv * cu;
+            torusVerts[vIdx].Normal[1] = sv;
+            torusVerts[vIdx].Normal[2] = cv * su;
+
+            // Color — vivid rainbow based on ring angle, modulated by tube angle
+            // HSV-to-RGB approximation: hue = u, saturation = 1, value = 0.7 + 0.3*cv
+            float hue = (float)ring / TORUS_RINGS * 6.0f;  // 0..6 for full rainbow
+            int hi = (int)hue % 6;
+            float frac = hue - (int)hue;
+            float r2 = 0.0f, g2 = 0.0f, b2 = 0.0f;
+            switch (hi) {
+                case 0: r2 = 1.0f;   g2 = frac;  b2 = 0.0f;   break;
+                case 1: r2 = 1.0f-frac; g2 = 1.0f; b2 = 0.0f; break;
+                case 2: r2 = 0.0f;   g2 = 1.0f;  b2 = frac;   break;
+                case 3: r2 = 0.0f;   g2 = 1.0f-frac; b2 = 1.0f; break;
+                case 4: r2 = frac;   g2 = 0.0f;  b2 = 1.0f;   break;
+                case 5: r2 = 1.0f;   g2 = 0.0f;  b2 = 1.0f-frac; break;
+            }
+            torusVerts[vIdx].Color[0] = r2;
+            torusVerts[vIdx].Color[1] = g2;
+            torusVerts[vIdx].Color[2] = b2;
+
+            vIdx++;
+        }
+    }
+
+    int iIdx = 0;
+    for (int ring = 0; ring < TORUS_RINGS; ring++) {
+        for (int side = 0; side < TORUS_SIDES; side++) {
+            int current = ring * (TORUS_SIDES + 1) + side;
+            int next = current + TORUS_SIDES + 1;
+
+            torusIndices[iIdx].a = current;
+            torusIndices[iIdx].b = next;
+            torusIndices[iIdx].c = current + 1;
+            iIdx++;
+
+            torusIndices[iIdx].a = current + 1;
+            torusIndices[iIdx].b = next;
+            torusIndices[iIdx].c = next + 1;
+            iIdx++;
+        }
+    }
+
+    UINT32 IndexCount = TORUS_NUM_TRIS * 2;  // Triangle count * 2 for the draw API
+
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
+    VRAMADDR hVBO = GPU_NULL_ADDR, hIBO = GPU_NULL_ADDR;
+    VRAMADDR hVS  = GPU_NULL_ADDR, hFS  = GPU_NULL_ADDR;
+    VRAMADDR hUBO = GPU_NULL_ADDR;
+
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, torusVerts, sizeof(torusVerts), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,  torusIndices, sizeof(torusIndices), &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_torus_vs, sizeof(bin_torus_vs), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_torus_fs, sizeof(bin_torus_fs), &hFS);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
+
+    Print(L"Rendering Blinn-Phong Lit 3D Torus... Press Key to Exit.\n");
+
+    FpsCounterStart();
+    mTimerInit = FALSE;
+
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        float time;
+        GetTimeSeconds(&time);
+
+        float rotation_period = 3.0f;
+        float angle = (2.0f * PI * time) / rotation_period;
+
+        Mat4 ry, rx, trans, proj;
+        Mat4 model, view_model, mvp;
+
+        Mat4_RotateY(angle, &ry);
+        Mat4_RotateX(angle * 0.8f, &rx);
+        Mat4_Translate(0.0f, 0.0f, 4.0f, &trans);
+        Mat4_Perspective(PI / 4.0f, 640.0f / 480.0f, 0.1f, 100.0f, &proj);
+
+        // model = RotY * RotX
+        Mat4_Mul(&ry, &rx, &model);
+        // view_model = translate * model
+        Mat4_Mul(&trans, &model, &view_model);
+        // mvp = proj * view_model
+        Mat4_Mul(&proj, &view_model, &mvp);
+
+        // Dynamic light orbiting the torus
+        float lightSin, lightCos;
+        Sin(time, &lightSin);
+        Cos(time, &lightCos);
+
+        TorusUBO ubo;
+        TorusUBO_Pack(
+            &mvp, &model,
+            3.0f * lightCos, 3.0f, 3.0f * lightSin,  // lightPos
+            0.0f, 0.0f, 8.5f,                         // viewPos (camera)
+            &ubo
+        );
+
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if (hUBO == GPU_NULL_ADDR) {
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &ubo, sizeof(TorusUBO), &hUBO);
+        } else {
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, &ubo, sizeof(TorusUBO), &hUBO);
+        }
+
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF14141E);
+
+        mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_torus_vs));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_torus_fs));
+        mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, TORUS_NUM_VERTICES);
+        mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, TORUS_NUM_TRIS);
+
+        // Attribute 0: Position (3 floats)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(TorusVertex), (UINT32)OFFSET_OF(TorusVertex, Position));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+
+        // Attribute 1: Normal (3 floats)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 1, 3, Gop3dAttribFloat, FALSE, sizeof(TorusVertex), (UINT32)OFFSET_OF(TorusVertex, Normal));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 1);
+
+        // Attribute 2: Color (3 floats)
+        mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 2, 3, Gop3dAttribFloat, FALSE, sizeof(TorusVertex), (UINT32)OFFSET_OF(TorusVertex, Color));
+        mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 2);
+
+        // Disable unused attributes
+        mGOP3D->GpuCmdDisableVertexAttribArray(mGOP3D, 3);
+
+        mGOP3D->GpuCmdBindUBO(mGOP3D, hUBO, sizeof(TorusUBO));
+        mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, IndexCount);
+
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);
+
+        FpsCounterTick();
+    }
+
+    FpsCounterStop();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hUBO);
+
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+
+    FpsCounterShowStats();
+}
+
 EFI_STATUS EFIAPI Test() {
     EFI_STATUS Status;
     EFI_INPUT_KEY Key;
@@ -1250,6 +1710,7 @@ EFI_STATUS EFIAPI Test() {
           mGraphicsOutput->Mode->Info->HorizontalResolution,
           mGraphicsOutput->Mode->Info->VerticalResolution);
     Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
+    
     WAIT_FOR_KEYPRESS()
 
     Print(L"Press key for SPIR-V Compute Shader Test (Vector Add)...\n");
@@ -1290,6 +1751,18 @@ EFI_STATUS EFIAPI Test() {
     WAIT_FOR_KEYPRESS()
 
     TestSmokeVolume3D();
+
+    WAIT_FOR_KEYPRESS()
+
+    Print(L"Press key for SPIR-V Blinn-Phong Lighting & Vertex Normals Demo...\n");
+
+    TestPhongLightingSimt();
+
+    WAIT_FOR_KEYPRESS()
+
+    Print(L"Press key for SPIR-V Blinn-Phong Torus Lighting Demo...\n");
+
+    TestTorusPhongSimt();
 
     WAIT_FOR_KEYPRESS()
 

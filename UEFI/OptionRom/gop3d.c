@@ -375,6 +375,10 @@ EFI_STATUS EFIAPI GpuCmdClearFrame(
     Command cmd;
     cmd.opcode = CMD_CLEAR_FRAMEBUFFER;
     cmd.payload.clear.options = 0b11; // Clear Color + Depth
+    cmd.payload.clear.reserved[0] = 0;
+    cmd.payload.clear.reserved[1] = 0;
+    cmd.payload.clear.reserved[2] = 0;
+    cmd.payload.clear.color = Color;
 
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
@@ -469,6 +473,79 @@ EFI_STATUS EFIAPI GpuPresent(
 
     return EFI_SUCCESS;
 }
+EFI_STATUS EFIAPI GpuCmdVertexAttribPointer(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location,
+  IN UINT32          NumComponents,
+  IN UINT32          Type,
+  IN BOOLEAN         Normalized,
+  IN UINT32          Stride,
+  IN UINT32          Offset
+  )
+{
+  if (Location >= MAX_ATTRIBUTES_PER_SHADER) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
+  GpuVertexAttribDesc *desc = &Private->VertexAttribs.attribs[Location];
+
+  desc->location   = Location;
+  desc->size       = NumComponents;
+  desc->type       = Type;
+  desc->normalized = Normalized ? 1 : 0;
+  desc->stride     = Stride;
+  desc->offset     = Offset;
+
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_VERTEX_ATTRIB_CONFIG;
+  cmd.payload.state.value.attrib_config = Private->VertexAttribs;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdEnableVertexAttribArray(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location
+  )
+{
+  if (Location >= MAX_ATTRIBUTES_PER_SHADER) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
+  Private->VertexAttribs.enabled_mask |= (1u << Location);
+  Private->VertexAttribs.attribs[Location].enabled = 1;
+
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_VERTEX_ATTRIB_CONFIG;
+  cmd.payload.state.value.attrib_config = Private->VertexAttribs;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdDisableVertexAttribArray(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location
+  )
+{
+  if (Location >= MAX_ATTRIBUTES_PER_SHADER) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
+  Private->VertexAttribs.enabled_mask &= ~(1u << Location);
+  Private->VertexAttribs.attribs[Location].enabled = 0;
+
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_VERTEX_ATTRIB_CONFIG;
+  cmd.payload.state.value.attrib_config = Private->VertexAttribs;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
 
 /* -------------------------------------------------------------------------
  * Protocol Setup
@@ -516,6 +593,10 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
 
   Private->Gop3dProtocol.GpuSubmitCmd                  = GpuSubmitCmd;
   Private->Gop3dProtocol.GpuPresent                    = GpuPresent;
+
+  Private->Gop3dProtocol.GpuCmdVertexAttribPointer       = GpuCmdVertexAttribPointer;
+  Private->Gop3dProtocol.GpuCmdEnableVertexAttribArray  = GpuCmdEnableVertexAttribArray;
+  Private->Gop3dProtocol.GpuCmdDisableVertexAttribArray = GpuCmdDisableVertexAttribArray;
 
   return EFI_SUCCESS;
 }
