@@ -1,75 +1,51 @@
 #!/bin/bash
-set -e  # Exit immediately if any command fails
+# scripts/build_edk2.sh - Build UEFI Option ROM driver and applications
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
+set -e
+source "$(dirname "$0")/common.sh"
 
-if [ -z "$1" ]; then
-    BUILD_TYPE="DEBUG"
-else
-    BUILD_TYPE="$1"
-    shift
+BUILD_TYPE="$(parse_build_type "$1")"
+
+cd "$EDK2_DIR"
+
+# Ensure BaseTools binaries exist
+if [ ! -x "./BaseTools/Source/C/bin/EfiRom" ]; then
+    log_warn "BaseTools binaries missing. Building BaseTools..."
+    make -C BaseTools
 fi
 
-cd "$CWD/edk2"
+log_step "Setting up EDK2 build environment..."
+source ./edksetup.sh BaseTools
 
-echo "=== Setting up EDK2 environment ==="
-source ./edksetup.sh
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to setup EDK2 environment"
+# List of components to build
+EDK2_MODULES=(
+    "OptionRom/Rom.inf:OptionRom"
+    "DemoApp/DemoApp.inf:DemoApp"
+    "LegacyAsmApp/LegacyAsmApp.inf:LegacyAsmApp"
+    "SpirvApp/SpirvApp.inf:SpirvApp"
+    "FrameBenchmark/FrameBenchmark.inf:FrameBenchmark"
+)
+
+for entry in "${EDK2_MODULES[@]}"; do
+    inf="${entry%%:*}"
+    name="${entry##*:}"
+    log_step "Building EDK2 component: $name [$BUILD_TYPE]..."
+    build -p OvmfPkg/OvmfPkgX64.dsc -m "$inf" -b "$BUILD_TYPE"
+done
+
+log_step "Packaging Option ROM image..."
+ROM_OUTPUT="./Build/OptionRom.rom"
+EFI_INPUT="./Build/OvmfX64/${BUILD_TYPE}_GCC/X64/OptionRom.efi"
+
+if [ ! -f "$EFI_INPUT" ]; then
+    log_error "Expected driver binary not found: $EFI_INPUT"
     exit 1
 fi
 
-echo ""
-echo "=== Building OptionRom ==="
-build -p OvmfPkg/OvmfPkgX64.dsc -m OptionRom/Rom.inf -b "$BUILD_TYPE"
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to build OptionRom"
-    exit 1
-fi
+./BaseTools/Source/C/bin/EfiRom \
+    -f 0x6969 -i 0x2137 \
+    -o "$ROM_OUTPUT" \
+    -e "$EFI_INPUT"
 
-echo ""
-echo "=== Building DemoApp ==="
-build -p OvmfPkg/OvmfPkgX64.dsc -m DemoApp/DemoApp.inf -b "$BUILD_TYPE"
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to build DemoApp"
-    exit 1
-fi
-
-echo ""
-echo "=== Building LegacyAsmApp ==="
-build -p OvmfPkg/OvmfPkgX64.dsc -m LegacyAsmApp/LegacyAsmApp.inf -b "$BUILD_TYPE"
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to build LegacyAsmApp"
-    exit 1
-fi
-
-echo ""
-echo "=== Building SpirvApp ==="
-build -p OvmfPkg/OvmfPkgX64.dsc -m SpirvApp/SpirvApp.inf -b "$BUILD_TYPE"
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to build SpirvApp"
-    exit 1
-fi
-
-echo ""
-echo "=== Building FrameBenchmark ==="
-build -p OvmfPkg/OvmfPkgX64.dsc -m FrameBenchmark/FrameBenchmark.inf -b "$BUILD_TYPE"
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to build FrameBenchmark"
-    exit 1
-fi
-
-echo ""
-echo "=== Creating Option ROM image ==="
-
-# FIX: Use ${BUILD_TYPE}_GCC5 to correctly expand the directory name
-./BaseTools/Source/C/bin/EfiRom -f 0x6969 -i 0x2137 -o ./Build/OptionRom.rom -e "./Build/OvmfX64/${BUILD_TYPE}_GCC/X64/OptionRom.efi"
-
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to create Option ROM image"
-    exit 1
-fi
-
-echo ""
-echo "=== Build completed successfully! ==="
+set_build_type "$BUILD_TYPE"
+log_success "EDK2 build and Option ROM generation completed successfully [$BUILD_TYPE]"
