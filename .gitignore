@@ -1,6 +1,7 @@
 *.log
 .vscode
 tools/compiler
+compiler/compiler
 
 # Ignore symlinked include files
 UEFI/OptionRom/isa.h
