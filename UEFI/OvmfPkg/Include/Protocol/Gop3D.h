@@ -16,7 +16,45 @@
 
 typedef struct GOP_3D_PROTOCOL GOP_3D_PROTOCOL;
 
-/* ---------------------------- Data structures --------------------------- */
+#ifndef MAX_ATTRIBUTES_PER_SHADER
+#define MAX_ATTRIBUTES_PER_SHADER 8
+#endif
+
+#ifndef _GPU_ATTRIB_TYPE_DEFINED
+#define _GPU_ATTRIB_TYPE_DEFINED
+typedef enum {
+    GPU_ATTRIB_FLOAT       = 1, 
+    GPU_ATTRIB_UBYTE_NORM  = 2,  
+    GPU_ATTRIB_INT32       = 3,  
+    GPU_ATTRIB_UINT32      = 4   
+} GpuAttribType;
+#endif
+
+#ifndef _GPU_VERTEX_ATTRIB_DESC_DEFINED
+#define _GPU_VERTEX_ATTRIB_DESC_DEFINED
+typedef struct __attribute__((packed)) {
+    UINT32 location;      /* Shader input location (0 .. 7) */
+    UINT32 size;          /* Component count: 1, 2, 3, or 4 */
+    UINT32 type;          /* GpuAttribType */
+    UINT8  normalized;    /* 1 = normalize integer types to float; 0 = direct */
+    UINT8  enabled;       /* 1 = active; 0 = disabled */
+    UINT16 reserved;      /* Padding for 4-byte alignment */
+    UINT32 stride;        /* Byte offset between consecutive vertices (0 = tightly packed) */
+    UINT32 offset;        /* Byte offset of attribute from VBO base address */
+} GpuVertexAttribDesc;
+
+typedef struct __attribute__((packed)) {
+    UINT32 enabled_mask;  /* Bitmask: bit i indicates if location i is enabled */
+    GpuVertexAttribDesc attribs[MAX_ATTRIBUTES_PER_SHADER];
+} SetVertexAttribConfigPayload;
+#endif
+
+typedef enum {
+  Gop3dAttribFloat     = GPU_ATTRIB_FLOAT,
+  Gop3dAttribUbyteNorm = GPU_ATTRIB_UBYTE_NORM,
+  Gop3dAttribInt32     = GPU_ATTRIB_INT32,
+  Gop3dAttribUint32    = GPU_ATTRIB_UINT32
+} GOP_3D_ATTRIB_TYPE;
 
 typedef UINT32 VRAMADDR;
 
@@ -333,6 +371,31 @@ EFI_STATUS
   IN VRAMADDR             IndirectOffset
   );
 
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_VERTEX_ATTRIB_POINTER)(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location,
+  IN UINT32          NumComponents,   /* 1, 2, 3, or 4 */
+  IN UINT32          Type,            /* GPU_ATTRIB_FLOAT, etc. */
+  IN BOOLEAN         Normalized,      /* TRUE / FALSE */
+  IN UINT32          Stride,          /* Distance to next vertex in bytes */
+  IN UINT32          Offset           /* Byte offset in vertex buffer */
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_ENABLE_VERTEX_ATTRIB_ARRAY)(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_DISABLE_VERTEX_ATTRIB_ARRAY)(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location
+  );
 /* -------------------------- Protocol structure -------------------------- */
 
 struct GOP_3D_PROTOCOL {
@@ -373,6 +436,11 @@ struct GOP_3D_PROTOCOL {
 
   GOP_3D_SUBMIT_CMD            GpuSubmitCmd;
   GOP_3D_PRESENT               GpuPresent;
+
+  GOP_3D_CMD_VERTEX_ATTRIB_POINTER       GpuCmdVertexAttribPointer;       
+  GOP_3D_CMD_ENABLE_VERTEX_ATTRIB_ARRAY  GpuCmdEnableVertexAttribArray;   
+  GOP_3D_CMD_DISABLE_VERTEX_ATTRIB_ARRAY GpuCmdDisableVertexAttribArray;  
+
 };
 
 /* ----------------------------------------------------------------------- */
