@@ -137,8 +137,6 @@ apply_submodule_patch "$EDK2_DIR" "$UEFI_DIR/OvmfPkg.patch" "--ignore-space-chan
 
 EDK2_MAPPINGS=(
     "UEFI/OptionRom:edk2/OptionRom"
-    "UEFI/DemoApp:edk2/DemoApp"
-    "UEFI/LegacyAsmApp:edk2/LegacyAsmApp"
     "UEFI/SpirvApp:edk2/SpirvApp"
     "UEFI/FrameBenchmark:edk2/FrameBenchmark"
     "UEFI/OvmfPkg/Include/Protocol/Gop3D.h:edk2/OvmfPkg/Include/Protocol/Gop3D.h"

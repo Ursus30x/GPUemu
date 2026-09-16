@@ -38,12 +38,10 @@ diff --git a/OvmfPkg/OvmfPkgX64.dsc b/OvmfPkg/OvmfPkgX64.dsc
 index 9180e88645..7ab59eae9e 100644
 --- a/OvmfPkg/OvmfPkgX64.dsc
 +++ b/OvmfPkg/OvmfPkgX64.dsc
-@@ -775,4 +775,9 @@
+@@ -775,4 +775,7 @@
  [Components]
    OvmfPkg/ResetVector/ResetVector.inf
 +  OptionRom/Rom.inf
-+  DemoApp/DemoApp.inf
-+  LegacyAsmApp/LegacyAsmApp.inf
 +  SpirvApp/SpirvApp.inf
 +  FrameBenchmark/FrameBenchmark.inf
  
