@@ -76,8 +76,18 @@ typedef enum {
     STATE_ID_DEPTH_CONFIG,
     STATE_ID_COMPUTE_SHADER_PTR,
     STATE_ID_SSBO_CONFIG,
-    STATE_ID_VERTEX_ATTRIB_CONFIG
+    STATE_ID_VERTEX_ATTRIB_CONFIG,
+    STATE_ID_GEOMETRY_SHADER_PTR
 } StateID;
+
+typedef struct __attribute__((packed)) {
+    uint32_t shader_type;          // 0: VS, 1: FS, 2: CS, 3: GS
+    uint32_t num_instructions;
+    uint32_t input_primitive;      // 0: Points, 1: Lines, 2: Triangles
+    uint32_t output_primitive;     // 0: Points, 1: LineStrip, 2: TriangleStrip
+    uint32_t max_output_vertices;  // Max vertices declared by GS
+    uint32_t invocations;          // GS Instancing count (default = 1)
+} GsShaderHeader;
 #define MAX_MIP_LEVELS 14
 typedef struct __attribute__((packed)) {
     uint32_t group_count_x;
@@ -187,6 +197,7 @@ typedef struct __attribute__((packed)) {
             uint32_t vs_addr;
             uint32_t fs_addr;
             uint32_t cs_addr;
+            uint32_t gs_addr;
         } shader_ptrs;
         SetTexturePayload texture_config;
         SetDepthPayload depth_config;

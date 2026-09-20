@@ -32,6 +32,7 @@
 #define REG_DMA_SIZE_ADDR               0x40
 #define REG_DMA_CMD_ADDR                0x44
 #define REG_COMPUTE_SHADER_ADDR         0x48
+#define REG_GEOMETRY_SHADER_ADDR        0x4C
 
 /* Interrupt Bits */
 #define GPU_INT_CMD_DONE                (1 << 0)

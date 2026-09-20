@@ -139,6 +139,8 @@ static void gpu_print_mmio(GpuState *s)
     DEBUG_PRINT("0x08 [RING_TAIL]:        0x%08x\n", s->ring_buffer_tail);
     DEBUG_PRINT("0x10 [VS_CODE_PTR]:      0x%08x\n", s->vs_code_addr);
     DEBUG_PRINT("0x14 [FS_CODE_PTR]:      0x%08x\n", s->fs_code_addr);
+    DEBUG_PRINT("0x48 [CS_CODE_PTR]:      0x%08x\n", s->cs_code_addr);
+    DEBUG_PRINT("0x4C [GS_CODE_PTR]:      0x%08x\n", s->gs_code_addr);
     DEBUG_PRINT("0x18 [WIDTH]:            %u\n", s->width);
     DEBUG_PRINT("0x1C [HEIGHT]:           %u\n", s->height);
     DEBUG_PRINT("0x20 [FB_ADDR]:          0x%08x\n", s->framebuffer_vram_offset);
@@ -398,6 +400,34 @@ static void execute_command(GpuState *gpu, Command *cmd)
             }
             break;
         }
+        case STATE_ID_GEOMETRY_SHADER_PTR:
+        {
+            DEBUG_PRINT("[CMD] Geometry shader config\n");
+            gpu->gs_code_addr = cmd->payload.state.value.shader_ptrs.gs_addr;
+            if (gpu->gs_code_addr + sizeof(uint32_t) <= GPU_VRAM_SIZE)
+            {
+                void* shader = gpu->vram_ptr + gpu->gs_code_addr;
+                uint32_t size = *((uint32_t *)shader);
+                if (size > 0 && (size % sizeof(uint32_t)) == 0 &&
+                    size <= GPU_VRAM_SIZE - gpu->gs_code_addr - sizeof(uint32_t))
+                {
+                    uint32_t* shader_code = ((uint32_t *)(shader + sizeof(uint32_t)));
+                    uint32_t hash = compute_shader_hash(shader_code, size / 4);
+                    if (gpu->gs_shader_func == NULL || gpu->gs_hash != hash)
+                    {
+                        free_jit(&gpu->jit_ctx_gs);
+                        init_jit(&gpu->jit_ctx_gs, GEOMETRY_SHADER);
+                        gpu->gs_shader_func = jit_compile_spirv(&gpu->jit_ctx_gs, shader_code, size / 4);
+                        gpu->gs_hash = hash;
+                        gpu->gs_input_primitive = gpu->jit_ctx_gs.shader_info.gs_input_primitive;
+                        gpu->gs_output_primitive = gpu->jit_ctx_gs.shader_info.gs_output_primitive;
+                        gpu->gs_max_output_vertices = gpu->jit_ctx_gs.shader_info.gs_max_output_vertices;
+                        gpu->gs_invocations = gpu->jit_ctx_gs.shader_info.gs_invocations;
+                    }
+                }
+            }
+            break;
+        }
         case STATE_ID_SSBO_CONFIG:
         {
             SsboConfigPayload ssbo = cmd->payload.state.value.ssbo_config;
@@ -619,6 +649,9 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case REG_COMPUTE_SHADER_ADDR:
         target_reg = &s->cs_code_addr;
         break;
+    case REG_GEOMETRY_SHADER_ADDR:
+        target_reg = &s->gs_code_addr;
+        break;
     case REG_FB_WIDTH_ADDR:
         target_reg = &s->width;
         break;
@@ -722,6 +755,9 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case REG_COMPUTE_SHADER_ADDR:
         reg_val = s->cs_code_addr;
+        break;
+    case REG_GEOMETRY_SHADER_ADDR:
+        reg_val = s->gs_code_addr;
         break;
     case REG_FB_WIDTH_ADDR:
         reg_val = s->width;

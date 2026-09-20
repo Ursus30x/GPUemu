@@ -30,7 +30,8 @@
 typedef enum {
     FRAGMENT_SHADER,
     VERTEX_SHADER,
-    COMPUTE_SHADER
+    COMPUTE_SHADER,
+    GEOMETRY_SHADER
 } shader_t;
 
 typedef enum {
@@ -206,6 +207,10 @@ typedef struct ShaderInfo {
     uint32_t local_size_y;
     uint32_t local_size_z;
     uint32_t barrier_count;
+    uint32_t gs_input_primitive;
+    uint32_t gs_output_primitive;
+    uint32_t gs_max_output_vertices;
+    uint32_t gs_invocations;
 } ShaderInfo;
 
 
