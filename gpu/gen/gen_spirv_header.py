@@ -40,6 +40,8 @@ def generate_header(json_path, output_path):
         write_enum_from_kind("Decoration", "SpvDecoration")
         write_enum_from_kind("StorageClass", "SpvStorageClass")
         write_enum_from_kind("BuiltIn", "SpvBuiltIn") 
+        write_enum_from_kind("ExecutionMode", "SpvExecutionMode")
+        write_enum_from_kind("ExecutionModel", "SpvExecutionModel")
 
         # ================================
         # SpvOpMeta struct

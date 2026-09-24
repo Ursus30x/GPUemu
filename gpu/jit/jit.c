@@ -5,6 +5,7 @@
 #include "jit_mem.h"
 #include "jit_smpl.h"
 #include "jit_atomic.h"
+#include "jit_gs.h"
 #include <llvm-c/Transforms/PassBuilder.h>
 #include "debug_gpu.h"
 
@@ -421,11 +422,13 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_entry_point(ctx, operands, operand_count);
             break;
         case SpvOpExecutionMode:
-            if (operand_count >= 5 && operands[1] == 17 /* SpvExecutionModeLocalSize */) {
-                ctx->shader_info.local_size_x = operands[2];
-                ctx->shader_info.local_size_y = operands[3];
-                ctx->shader_info.local_size_z = operands[4];
-            }
+            handle_op_execution_mode_gs(ctx, operands, operand_count);
+            break;
+        case SpvOpEmitVertex:
+            handle_op_emit_vertex(ctx, operands, operand_count);
+            break;
+        case SpvOpEndPrimitive:
+            handle_op_end_primitive(ctx, operands, operand_count);
             break;
         case SpvOpControlBarrier:
         case SpvOpMemoryBarrier:
@@ -887,6 +890,8 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     ctx->vs_data_param = NULL;
     ctx->fs_data_param = NULL;
     ctx->cs_data_param = NULL;
+    ctx->gs_in_data_param = NULL;
+    ctx->gs_out_data_param = NULL;
 
     ctx->float_type = LLVMFloatTypeInContext(ctx->context);
     ctx->int_type = LLVMInt32TypeInContext(ctx->context);
@@ -976,6 +981,30 @@ void init_jit(JitContext* ctx,shader_t shader_type)
         simt_vec4_type  // gl_SubgroupLtMask (Index 14)
     };
     ctx->cs_data_type = LLVMStructTypeInContext(ctx->context, cs_data_fields, 15, 0);
+
+    /* BuiltinGeometryInput:
+     *   SimtVec4  gl_PositionIn[3]       -> [3 x [4 x <16 x float>]]
+     *   SimtVec4  gl_VaryingsIn[8][3]    -> [8 x [3 x [4 x <16 x float>]]]
+     *   SimtFloat gl_PrimitiveIDIn       -> <16 x float>
+     *   SimtFloat gl_InvocationID        -> <16 x float>
+     */
+    LLVMTypeRef gs_in_data_fields[] = {
+        LLVMArrayType(simt_vec4_type, 3),                          /* gl_PositionIn[3] */
+        LLVMArrayType(LLVMArrayType(simt_vec4_type, 3), 8),       /* gl_VaryingsIn[8][3] */
+        simt_float,                                                /* gl_PrimitiveIDIn */
+        simt_float                                                 /* gl_InvocationID */
+    };
+    ctx->gs_in_data_type = LLVMStructTypeInContext(ctx->context, gs_in_data_fields, 4, 0);
+
+    /* BuiltinGeometryOutput:
+     *   void*    warp_scratch            -> ptr (i8*)
+     *   uint32_t max_out_vertices        -> i32
+     */
+    LLVMTypeRef gs_out_data_fields[] = {
+        ptr_type,                                                  /* warp_scratch */
+        ctx->int_type                                              /* max_out_vertices */
+    };
+    ctx->gs_out_data_type = LLVMStructTypeInContext(ctx->context, gs_out_data_fields, 2, 0);
 
     if (LLVMCreateExecutionEngineForModule(&ctx->engine, ctx->module, &error) != 0) 
     {

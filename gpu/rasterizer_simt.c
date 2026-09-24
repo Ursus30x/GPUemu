@@ -193,7 +193,7 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
             jit_ctx.location_out_buffers[i] = &vs_out_varyings[i];
         }
 
-        gpu->vs_shader_func(&jit_ctx, &vs_out, NULL, NULL);
+        gpu->vs_shader_func(&jit_ctx, &vs_out, NULL, NULL, NULL, NULL);
         args->transformed_simt = vs_out.gl_Position;
 
         for (uint32_t i = 0; i < SIMT_WIDTH; i++)
@@ -498,7 +498,7 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
     jit_ctx.location_in_buffers[1] = fs_in_uv;
     jit_ctx.location_in_buffers[2] = fs_in_normal;
     jit_ctx.location_out_buffers[0] = &out_color;
-    gpu->fs_shader_func(&jit_ctx, NULL, fs_input, NULL);
+    gpu->fs_shader_func(&jit_ctx, NULL, fs_input, NULL, NULL, NULL);
 
     for (int lane = 0; lane < 16; lane++) 
     {
@@ -927,7 +927,7 @@ void worker_compute_simt_impl(RenderThreadArgs *args)
                 }
 
                 if (gpu->cs_shader_func) {
-                    gpu->cs_shader_func(&ectx, NULL, NULL, &cs_in);
+                    gpu->cs_shader_func(&ectx, NULL, NULL, &cs_in, NULL, NULL);
                 }
             }
         }

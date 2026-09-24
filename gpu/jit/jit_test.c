@@ -861,6 +861,21 @@ void test_3d_volume_and_anisotropic(void)
     printf("[Anisotropic Test] MaxAniso 16.0 -> Sample executed successfully R: %.3f, G: %.3f, B: %.3f\n", out_r[0], out_g[0], out_b[0]);
 }
 
+TEST(gs_pass_through, "out/pass_through.spv", GEOMETRY_SHADER, {
+    CREATE_SIMT_VEC4(inColor, SPLAT(1.0f), SPLAT(0.0f), SPLAT(0.0f), SPLAT(1.0f));
+    BIND_IN_LOCATION(0, inColor);
+
+    CREATE_SIMT_VEC4(outColor, SPLAT(0.0f), SPLAT(0.0f), SPLAT(0.0f), SPLAT(0.0f));
+    BIND_OUT_LOCATION(0, outColor);
+    printf("pre\n");
+    RUN_JIT_GS();
+        printf("pre\n");
+
+    ASSERT_EQ(ctx.shader_info.gs_max_output_vertices, 3u);
+    ASSERT_EQ(ctx.shader_info.gs_input_primitive, 2u);   // Triangles
+    ASSERT_EQ(ctx.shader_info.gs_output_primitive, 2u);  // TriangleStrip
+})
+
 void run_test_suite(void) 
 {
     printf("--- Starting Test Runner ---\n");

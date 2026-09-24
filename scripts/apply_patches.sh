@@ -111,6 +111,8 @@ QEMU_FILES=(
     "gpu/jit/jit_smpl.c"
     "gpu/jit/jit_atomic.h"
     "gpu/jit/jit_atomic.c"
+    "gpu/jit/jit_gs.h"
+    "gpu/jit/jit_gs.c"
     "include/gpu_isa.h"
     "include/gpu_hw.h"
     "include/vram.h"

@@ -116,6 +116,18 @@ typedef struct
 } BuiltinComputeInput;
 
 typedef struct {
+    SimtVec4  gl_PositionIn[3];
+    SimtVec4  gl_VaryingsIn[8][3];
+    SimtFloat gl_PrimitiveIDIn;
+    SimtFloat gl_InvocationID;
+} BuiltinGeometryInput;
+
+typedef struct {
+    void* warp_scratch;
+    uint32_t max_out_vertices;
+} BuiltinGeometryOutput;
+
+typedef struct {
     void* binding_buffers[MAX_BINDINGS]; 
     void* location_in_buffers[MAX_ATTRIBUTES];
     void* location_out_buffers[MAX_ATTRIBUTES];
@@ -241,6 +253,8 @@ struct JitContext{
     LLVMTypeRef  vs_data_type;   
     LLVMTypeRef  fs_data_type;   
     LLVMTypeRef  cs_data_type;
+    LLVMTypeRef  gs_in_data_type;
+    LLVMTypeRef  gs_out_data_type;
 
     LLVMExecutionEngineRef engine;
     LLVMBasicBlockRef current_block;
@@ -263,6 +277,8 @@ struct JitContext{
     LLVMValueRef vs_data_param;   /* BuiltinVertexOutput* parameter */
     LLVMValueRef fs_data_param; 
     LLVMValueRef cs_data_param;   /* BuiltinComputeInput* parameter */
+    LLVMValueRef gs_in_data_param;  /* BuiltinGeometryInput* parameter */
+    LLVMValueRef gs_out_data_param; /* BuiltinGeometryOutput* parameter */
 
     LLVMOrcThreadSafeContextRef ts_ctx;
 
@@ -284,7 +300,7 @@ struct JitContext{
 };
 
 /* Jitted function now takes pointers to per-invocation state to be thread-safe */
-typedef void (*jitted_func_t)(ExecutionContext*, BuiltinVertexOutput*, BuiltinFragmentInput*, BuiltinComputeInput*);
+typedef void (*jitted_func_t)(ExecutionContext*, BuiltinVertexOutput*, BuiltinFragmentInput*, BuiltinComputeInput*, BuiltinGeometryInput*, BuiltinGeometryOutput*);
 
 void jit_call_printf(JitContext* ctx, const char* fmt, LLVMValueRef* args, unsigned num_args);
 void jit_call_printf_simt(JitContext* ctx, const char* fmt, LLVMValueRef vec_val);

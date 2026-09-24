@@ -26,6 +26,8 @@
 
 #define SET_FRAGMENT_SHADER ctx.shader_type = FRAGMENT_SHADER;
 #define SET_VERTEX_SHADER ctx.shader_type = VERTEX_SHADER;
+#define SET_GEOMETRY_SHADER ctx.shader_type = GEOMETRY_SHADER;
+#define ASSERT_EQ(val, expected) if ((val) != (expected)) { printf("ASSERT_EQ failed: %u != %u\n", (uint32_t)(val), (uint32_t)(expected)); return 1; }
 
 #define RAND_SIMT()  (SimtFloat){ 2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f,  2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f}
 
@@ -34,7 +36,8 @@
 #define CREATE_BINDING(attribute, value) jit_ctx->binding_buffers[attribute] = &value;
 #define SET_GL_FRAGCORD(c) fs_in.gl_FragCoord = c;
 #define GET_GL_POS() SimtVec4 glPos = vs_out.gl_Position;
-#define RUN_JIT() func(jit_ctx, &vs_out, &fs_in, &cs_in);
+#define RUN_JIT() if (func) func(jit_ctx, &vs_out, &fs_in, &cs_in, &gs_in, &gs_out);
+#define RUN_JIT_GS() if (func) func(jit_ctx, &vs_out, &fs_in, &cs_in, &gs_in, &gs_out);
 
 #define PRINT_VEC3(caption, name)  \
     printf("%s", caption); \
@@ -147,6 +150,8 @@ void register_test(const char* name, TestFunc func)
         BuiltinVertexOutput vs_out = {0}; \
         BuiltinFragmentInput fs_in = {0}; \
         BuiltinComputeInput cs_in = {0}; \
+        BuiltinGeometryInput gs_in = {0}; \
+        BuiltinGeometryOutput gs_out = {0}; \
         __VA_ARGS__ ; \
         free_jit(&ctx); \
         printf("Test passed! Output matches expected results.\n"); \
