@@ -76,7 +76,8 @@ typedef enum {
     STATE_ID_DEPTH_CONFIG,
     STATE_ID_COMPUTE_SHADER_PTR,
     STATE_ID_SSBO_CONFIG,
-    STATE_ID_VERTEX_ATTRIB_CONFIG
+    STATE_ID_VERTEX_ATTRIB_CONFIG,
+    STATE_ID_BLEND_OP
 } StateID;
 #define MAX_MIP_LEVELS 14
 typedef struct __attribute__((packed)) {
@@ -120,11 +121,19 @@ typedef struct __attribute__((packed)) {
 } SetTexturePayload;
 
 
+typedef enum {
+    GPU_BLEND_OP_ADD              = 0,
+    GPU_BLEND_OP_SUBTRACT         = 1,
+    GPU_BLEND_OP_REVERSE_SUBTRACT = 2,
+    GPU_BLEND_OP_MIN              = 3,
+    GPU_BLEND_OP_MAX              = 4
+} GpuBlendOp;
+
 typedef struct __attribute__((packed)) {
     uint8_t  enable;
     uint8_t  src_factor;
     uint8_t  dst_factor;
-    uint8_t  reserved;
+    uint8_t  blend_op;
 } SetBlendPayload;
 
 typedef struct __attribute__((packed)) {
@@ -193,6 +202,7 @@ typedef struct __attribute__((packed)) {
         SetBlendPayload blend_config;
         SsboConfigPayload ssbo_config;
         SetVertexAttribConfigPayload attrib_config;
+        uint8_t blend_op;
     } value;
 } SetStatePayload;
 

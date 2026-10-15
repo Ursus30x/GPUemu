@@ -133,13 +133,33 @@ typedef enum {
 } GOP_3D_TOPOLOGY;
 
 typedef enum {
-  Gop3dBlendFactorZero,
-  Gop3dBlendFactorOne,
-  Gop3dBlendFactorSrcAlpha,
-  Gop3dBlendFactorOneMinusSrcAlpha,
-  Gop3dBlendFactorDstAlpha,
-  Gop3dBlendFactorOneMinusDstAlpha
+  Gop3dBlendFactorZero = 0,
+  Gop3dBlendFactorOne = 1,
+  Gop3dBlendFactorSrcAlpha = 2,
+  Gop3dBlendFactorOneMinusSrcAlpha = 3,
+  Gop3dBlendFactorDstAlpha = 4,
+  Gop3dBlendFactorOneMinusDstAlpha = 5,
+  Gop3dBlendFactorSrcColor = 6,
+  Gop3dBlendFactorOneMinusSrcColor = 7,
+  Gop3dBlendFactorDstColor = 8,
+  Gop3dBlendFactorOneMinusDstColor = 9
 } GOP_3D_BLEND_FACTOR;
+
+typedef enum {
+  Gop3dBlendOpAdd = 0,
+  Gop3dBlendOpSubtract = 1,
+  Gop3dBlendOpReverseSubtract = 2,
+  Gop3dBlendOpMin = 3,
+  Gop3dBlendOpMax = 4
+} GOP_3D_BLEND_OP;
+
+typedef GOP_3D_BLEND_OP GOP_3D_BLEND_EQUATION;
+
+#define Gop3dBlendOpRevSubtract           Gop3dBlendOpReverseSubtract
+#define Gop3dBlendEquationAdd             Gop3dBlendOpAdd
+#define Gop3dBlendEquationSubtract        Gop3dBlendOpSubtract
+#define Gop3dBlendEquationReverseSubtract Gop3dBlendOpReverseSubtract
+#define Gop3dBlendEquationRevSubtract     Gop3dBlendOpReverseSubtract
 
 /* ------------------------- Function declarations ------------------------ */
 
@@ -341,6 +361,30 @@ EFI_STATUS
 
 typedef
 EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_BLEND_OP)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN GOP_3D_BLEND_OP      BlendOp
+);
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_BLEND_EQUATION)(
+  IN GOP_3D_PROTOCOL        *This,
+  IN GOP_3D_BLEND_EQUATION  BlendEquation
+);
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_BLEND_STATE_EX)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableBlend,
+  IN GOP_3D_BLEND_FACTOR  SrcFactor,
+  IN GOP_3D_BLEND_FACTOR  DstFactor,
+  IN GOP_3D_BLEND_OP      BlendOp
+);
+
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_CMD_SET_DEPTH_WRITE)(
   IN GOP_3D_PROTOCOL      *This,
   IN BOOLEAN              EnableDepthWrite
@@ -440,6 +484,10 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_CMD_VERTEX_ATTRIB_POINTER       GpuCmdVertexAttribPointer;       
   GOP_3D_CMD_ENABLE_VERTEX_ATTRIB_ARRAY  GpuCmdEnableVertexAttribArray;   
   GOP_3D_CMD_DISABLE_VERTEX_ATTRIB_ARRAY GpuCmdDisableVertexAttribArray;  
+
+  GOP_3D_CMD_SET_BLEND_OP                GpuCmdSetBlendOp;
+  GOP_3D_CMD_SET_BLEND_EQUATION          GpuCmdSetBlendEquation;
+  GOP_3D_CMD_SET_BLEND_STATE_EX          GpuCmdSetBlendStateEx;
 
 };
 

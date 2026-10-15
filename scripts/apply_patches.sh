@@ -138,6 +138,7 @@ apply_submodule_patch "$EDK2_DIR" "$UEFI_DIR/OvmfPkg.patch" "--ignore-space-chan
 EDK2_MAPPINGS=(
     "UEFI/OptionRom:edk2/OptionRom"
     "UEFI/SpirvApp:edk2/SpirvApp"
+    "UEFI/BlendingTest:edk2/BlendingTest"
     "UEFI/FrameBenchmark:edk2/FrameBenchmark"
     "UEFI/OvmfPkg/Include/Protocol/Gop3D.h:edk2/OvmfPkg/Include/Protocol/Gop3D.h"
     "include/gpu_isa.h:edk2/OptionRom/gpu_isa.h"

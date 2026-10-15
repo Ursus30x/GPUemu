@@ -20,10 +20,9 @@ source ./edksetup.sh BaseTools
 # List of components to build
 EDK2_MODULES=(
     "OptionRom/Rom.inf:OptionRom"
-    "DemoApp/DemoApp.inf:DemoApp"
-    "LegacyAsmApp/LegacyAsmApp.inf:LegacyAsmApp"
     "SpirvApp/SpirvApp.inf:SpirvApp"
     "FrameBenchmark/FrameBenchmark.inf:FrameBenchmark"
+    "BlendingTest/BlendingTest.inf:BlendingTest"
 )
 
 for entry in "${EDK2_MODULES[@]}"; do

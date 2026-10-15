@@ -128,6 +128,7 @@ typedef struct GpuState {
     uint8_t         blend_enable;          
     GpuBlendFactor  blend_src_factor;     
     GpuBlendFactor  blend_dst_factor;     
+    GpuBlendOp      blend_op;
     uint8_t         depth_write_enable; 
 
     uint32_t        primitive_type; /* GpuPrimitiveType */
