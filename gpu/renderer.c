@@ -82,10 +82,48 @@ void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
     float f_dst_g = get_blend_factor(gpu->blend_dst_factor, src_a, dst_a, src_g, dst_g);
     float f_dst_b = get_blend_factor(gpu->blend_dst_factor, src_a, dst_a, src_b, dst_b);
 
-    float out_r = src_r * f_src_r + dst_r * f_dst_r;
-    float out_g = src_g * f_src_g + dst_g * f_dst_g;
-    float out_b = src_b * f_src_b + dst_b * f_dst_b;
-    float out_a = src_a + dst_a * (1.0f - src_a);
+    float term_s_r = src_r * f_src_r;
+    float term_d_r = dst_r * f_dst_r;
+    float term_s_g = src_g * f_src_g;
+    float term_d_g = dst_g * f_dst_g;
+    float term_s_b = src_b * f_src_b;
+    float term_d_b = dst_b * f_dst_b;
+
+    float out_r, out_g, out_b, out_a;
+    switch (gpu->blend_op) 
+    {
+        case GPU_BLEND_OP_SUBTRACT:
+            out_r = term_s_r - term_d_r;
+            out_g = term_s_g - term_d_g;
+            out_b = term_s_b - term_d_b;
+            out_a = src_a - dst_a;
+            break;
+        case GPU_BLEND_OP_REVERSE_SUBTRACT:
+            out_r = term_d_r - term_s_r;
+            out_g = term_d_g - term_s_g;
+            out_b = term_d_b - term_s_b;
+            out_a = dst_a - src_a;
+            break;
+        case GPU_BLEND_OP_MIN:
+            out_r = fminf(src_r, dst_r);
+            out_g = fminf(src_g, dst_g);
+            out_b = fminf(src_b, dst_b);
+            out_a = fminf(src_a, dst_a);
+            break;
+        case GPU_BLEND_OP_MAX:
+            out_r = fmaxf(src_r, dst_r);
+            out_g = fmaxf(src_g, dst_g);
+            out_b = fmaxf(src_b, dst_b);
+            out_a = fmaxf(src_a, dst_a);
+            break;
+        case GPU_BLEND_OP_ADD:
+        default:
+            out_r = term_s_r + term_d_r;
+            out_g = term_s_g + term_d_g;
+            out_b = term_s_b + term_d_b;
+            out_a = src_a + dst_a * (1.0f - src_a);
+            break;
+    }
 
     uint8_t r = color_to_u8(out_r);
     uint8_t g = color_to_u8(out_g);

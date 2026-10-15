@@ -354,11 +354,19 @@ static void execute_command(GpuState *gpu, Command *cmd)
             uint8_t enable = blend_config.enable;
             GpuBlendFactor src = blend_config.src_factor;
             GpuBlendFactor dst = blend_config.dst_factor;
-            DEBUG_PRINT("[CMD] Blend config: enable %u, src %u, dst %u\n", enable, src, dst);
+            GpuBlendOp op = (GpuBlendOp)blend_config.blend_op;
+            DEBUG_PRINT("[CMD] Blend config: enable %u, src %u, dst %u, op %u\n", enable, src, dst, op);
             
             gpu->blend_enable = enable;
             gpu->blend_src_factor = src;
             gpu->blend_dst_factor = dst;
+            gpu->blend_op = op;
+            break;
+        }
+        case STATE_ID_BLEND_OP:
+        {
+            gpu->blend_op = (GpuBlendOp)cmd->payload.state.value.blend_op;
+            DEBUG_PRINT("[CMD] Blend op: %u\n", gpu->blend_op);
             break;
         }
         case STATE_ID_DEPTH_CONFIG:
@@ -591,6 +599,7 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
             s->blend_enable = 0;
             s->blend_src_factor = 0;
             s->blend_dst_factor = 0;
+            s->blend_op = GPU_BLEND_OP_ADD;
             s->depth_write_enable = 1;
             s->primitive_type = GPU_PRIM_TRIANGLES;
             s->point_size = 1.0f;

@@ -17,6 +17,8 @@
 
 #define RING_BUFFER_SIZE (1 << 16) // 64KB
 
+STATIC GOP_3D_BLEND_OP mCurrentBlendOp = Gop3dBlendOpAdd;
+
 /* -------------------------------------------------------------------------
  * Initialization & Teardown
  * ------------------------------------------------------------------------- */
@@ -30,6 +32,8 @@ EFI_STATUS EFIAPI GpuInit(
 
     // Enable GPU interrupts
     GpuRingBufferEnableInterrupts(TRUE);
+
+    mCurrentBlendOp = Gop3dBlendOpAdd;
 
     DEBUG((EFI_D_INFO, "GOP3D: Initialized.\n"));
     return EFI_SUCCESS;
@@ -219,6 +223,49 @@ EFI_STATUS EFIAPI GpuCmdSetBlendState(
   cmd.payload.state.value.blend_config.enable = EnableBlend;
   cmd.payload.state.value.blend_config.dst_factor = DstFactor;
   cmd.payload.state.value.blend_config.src_factor = SrcFactor;
+  cmd.payload.state.value.blend_config.blend_op = (UINT8)mCurrentBlendOp;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdSetBlendOp(
+  IN GOP_3D_PROTOCOL  *This,
+  IN GOP_3D_BLEND_OP  BlendOp
+)
+{
+  Command cmd;
+  mCurrentBlendOp = BlendOp;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_BLEND_OP;
+  cmd.payload.state.value.blend_op = (UINT8)BlendOp;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdSetBlendEquation(
+  IN GOP_3D_PROTOCOL        *This,
+  IN GOP_3D_BLEND_EQUATION  BlendEquation
+)
+{
+  return GpuCmdSetBlendOp(This, BlendEquation);
+}
+
+EFI_STATUS EFIAPI GpuCmdSetBlendStateEx(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableBlend,
+  IN GOP_3D_BLEND_FACTOR  SrcFactor,
+  IN GOP_3D_BLEND_FACTOR  DstFactor,
+  IN GOP_3D_BLEND_OP      BlendOp
+)
+{
+  Command cmd;
+  mCurrentBlendOp = BlendOp;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_BLEND_CONFIG;
+  cmd.payload.state.value.blend_config.enable = EnableBlend;
+  cmd.payload.state.value.blend_config.dst_factor = DstFactor;
+  cmd.payload.state.value.blend_config.src_factor = SrcFactor;
+  cmd.payload.state.value.blend_config.blend_op = (UINT8)BlendOp;
 
   return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
@@ -597,6 +644,10 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuCmdVertexAttribPointer       = GpuCmdVertexAttribPointer;
   Private->Gop3dProtocol.GpuCmdEnableVertexAttribArray  = GpuCmdEnableVertexAttribArray;
   Private->Gop3dProtocol.GpuCmdDisableVertexAttribArray = GpuCmdDisableVertexAttribArray;
+
+  Private->Gop3dProtocol.GpuCmdSetBlendOp                = GpuCmdSetBlendOp;
+  Private->Gop3dProtocol.GpuCmdSetBlendEquation          = GpuCmdSetBlendEquation;
+  Private->Gop3dProtocol.GpuCmdSetBlendStateEx          = GpuCmdSetBlendStateEx;
 
   return EFI_SUCCESS;
 }
