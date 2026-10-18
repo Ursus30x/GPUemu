@@ -15,14 +15,14 @@
 //     vec4 viewPos;
 // } ubo;
 // 
-// layout(location = 0) out vec3 outNormal;
+// layout(location = 0) out vec3 outColor;
 // layout(location = 1) out vec3 outFragPos;
-// layout(location = 2) out vec3 outColor;
+// layout(location = 2) out vec3 outNormal;
 // 
 // void main() {
 //     outFragPos = vec3(ubo.model * vec4(inPosition, 1.0));
-//     outNormal  = mat3(ubo.model) * inNormal;
-//     outColor   = inColor;
+//     outNormal = mat3(ubo.model) * inNormal;
+//     outColor = inColor;
 //     gl_Position = ubo.mvp * vec4(inPosition, 1.0);
 // }
 // =============================================================================
@@ -64,8 +64,8 @@ UINT32 bin_torus_vs[555] = {
     0x00000003, 0x00000023, 0x00000090, 0x00040047, 0x0000000E, 0x00000021, 
     0x00000000, 0x00040047, 0x0000000E, 0x00000022, 0x00000000, 0x00040047, 
     0x00000015, 0x0000001E, 0x00000000, 0x00040047, 0x00000021, 0x0000001E, 
-    0x00000000, 0x00040047, 0x0000002C, 0x0000001E, 0x00000001, 0x00040047, 
-    0x0000002F, 0x0000001E, 0x00000002, 0x00040047, 0x00000030, 0x0000001E, 
+    0x00000002, 0x00040047, 0x0000002C, 0x0000001E, 0x00000001, 0x00040047, 
+    0x0000002F, 0x0000001E, 0x00000000, 0x00040047, 0x00000030, 0x0000001E, 
     0x00000002, 0x00030047, 0x00000035, 0x00000002, 0x00050048, 0x00000035, 
     0x00000000, 0x0000000B, 0x00000000, 0x00050048, 0x00000035, 0x00000001, 
     0x0000000B, 0x00000001, 0x00050048, 0x00000035, 0x00000002, 0x0000000B, 

@@ -33,7 +33,7 @@ ResetGop3dDisplayState(
     )
 {
     if (mGOP3D != NULL) {
-                mGOP3D->GpuSetMode(mGOP3D, 1);
+    mGOP3D->GpuSetMode(mGOP3D, 1);
         mGOP3D->GpuCmdBegin(mGOP3D);
         mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF000000);
         mGOP3D->GpuCmdEnd(mGOP3D);
@@ -228,8 +228,141 @@ VOID TestSampling(GOP_3D_FILTER_MODE filter, GOP_3D_WRAP_MODE wrap) {
 
 }
 
+VOID TestVolume3D(GOP_3D_FILTER_MODE filter, GOP_3D_WRAP_MODE wrap) {
+    EFI_INPUT_KEY Key;
 
+    #include "volume3d_vs.h"
+    #include "volume3d_fs.h"
 
+    typedef struct {
+        float x, y, z;
+        float u, v, w;
+    } VOLUME_VERTEX;
+
+    #define VOLUME_SIZE 16
+    UINT8 volume[VOLUME_SIZE * VOLUME_SIZE * VOLUME_SIZE * 4];
+    for (UINT32 z = 0; z < VOLUME_SIZE; z++) {
+        for (UINT32 y = 0; y < VOLUME_SIZE; y++) {
+            for (UINT32 x = 0; x < VOLUME_SIZE; x++) {
+                UINT32 index = ((z * VOLUME_SIZE + y) * VOLUME_SIZE + x) * 4;
+                volume[index + 0] = (UINT8)(x * 255 / (VOLUME_SIZE - 1));
+                volume[index + 1] = (UINT8)(y * 255 / (VOLUME_SIZE - 1));
+                volume[index + 2] = (UINT8)(z * 255 / (VOLUME_SIZE - 1));
+                volume[index + 3] = 255;
+            }
+        }
+    }
+
+    static CONST INT8 corner[8][3] = {
+        {-1, -1, -1}, { 1, -1, -1}, { 1,  1, -1}, {-1,  1, -1},
+        {-1, -1,  1}, { 1, -1,  1}, { 1,  1,  1}, {-1,  1,  1}
+    };
+    VOLUME_VERTEX vertices[8];
+    for (UINT32 i = 0; i < 8; i++) {
+        float x = (float)corner[i][0] * 0.58f;
+        float y = (float)corner[i][1] * 0.58f;
+        float z = (float)corner[i][2] * 0.58f;
+        float rotatedX = (x + z) * 0.70710678f;
+        float rotatedZ = (z - x) * 0.70710678f;
+        float rotatedY = y * 0.81915204f - rotatedZ * 0.57357644f;
+        float depth = y * 0.57357644f + rotatedZ * 0.81915204f;
+
+        vertices[i].x = rotatedX * 0.68f;
+        vertices[i].y = rotatedY * 0.68f;
+        vertices[i].z = 0.5f + depth * 0.25f;
+        vertices[i].u = (float)(corner[i][0] + 1) * 2.0f - 1.0f;
+        vertices[i].v = (float)(corner[i][1] + 1) * 2.0f - 1.0f;
+        vertices[i].w = (float)(corner[i][2] + 1) * 2.0f - 1.0f;
+    }
+
+    Triangle indices[] = {
+        {4, 5, 6}, {4, 6, 7},
+        {0, 2, 1}, {0, 3, 2},
+        {0, 4, 7}, {0, 7, 3},
+        {1, 2, 6}, {1, 6, 5},
+        {3, 7, 6}, {3, 6, 2},
+        {0, 1, 5}, {0, 5, 4}
+    };
+    UINT32 triangleCount = sizeof(indices) / sizeof(indices[0]);
+
+    GOP_3D_TEXTURE_DESC textureDesc;
+    SetMem(&textureDesc, sizeof(textureDesc), 0);
+    textureDesc.DataAddr = GPU_NULL_ADDR;
+    textureDesc.Width = VOLUME_SIZE;
+    textureDesc.Height = VOLUME_SIZE;
+    textureDesc.Depth = VOLUME_SIZE;
+    textureDesc.Channels = 4;
+    textureDesc.Dimention = Gop3dTexture3D;
+    textureDesc.Filter = filter;
+    textureDesc.Wrap = wrap;
+    textureDesc.WrapU = wrap;
+    textureDesc.WrapV = wrap;
+    textureDesc.WrapW = wrap;
+    textureDesc.NumMipLevels = 1;
+    textureDesc.MaxAnisotropy = 1.0f;
+    Gop3dCalculateMipMapOffsets(&textureDesc);
+
+    Mat4 mvp;
+    SimtMat4UBO simtMvp;
+    Mat4_Identity(&mvp);
+    Mat4_ToSimtUBO(&mvp, &simtMvp);
+
+    VRAMADDR hVBO = GPU_NULL_ADDR;
+    VRAMADDR hIBO = GPU_NULL_ADDR;
+    VRAMADDR hVS = GPU_NULL_ADDR;
+    VRAMADDR hFS = GPU_NULL_ADDR;
+    VRAMADDR hMVP = GPU_NULL_ADDR;
+    VRAMADDR hTextureData = GPU_NULL_ADDR;
+    VRAMADDR hTextureDesc = GPU_NULL_ADDR;
+
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, vertices, sizeof(vertices), &hVBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeIndex, indices, sizeof(indices), &hIBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_vertex_shader, sizeof(bin_vertex_shader), &hVS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_fragment_shader, sizeof(bin_fragment_shader), &hFS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, &simtMvp, sizeof(simtMvp), &hMVP);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeTexture, volume, sizeof(volume), &hTextureData);
+    textureDesc.DataAddr = hTextureData;
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeTextureDesc, &textureDesc, sizeof(textureDesc), &hTextureDesc);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
+
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF101820);
+    mGOP3D->GpuCmdBindVertShader(mGOP3D, hVS, sizeof(bin_vertex_shader));
+    mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_fragment_shader));
+    mGOP3D->GpuCmdBindVBO(mGOP3D, hVBO, 8);
+    mGOP3D->GpuCmdBindIBO(mGOP3D, hIBO, triangleCount);
+    mGOP3D->GpuCmdBindTexture(mGOP3D, 1, hTextureDesc);
+    mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 0, 3, Gop3dAttribFloat, FALSE, sizeof(VOLUME_VERTEX), OFFSET_OF(VOLUME_VERTEX, x));
+    mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 0);
+    mGOP3D->GpuCmdVertexAttribPointer(mGOP3D, 1, 3, Gop3dAttribFloat, FALSE, sizeof(VOLUME_VERTEX), OFFSET_OF(VOLUME_VERTEX, u));
+    mGOP3D->GpuCmdEnableVertexAttribArray(mGOP3D, 1);
+    mGOP3D->GpuCmdBindUBO(mGOP3D, hMVP, sizeof(simtMvp));
+    mGOP3D->GpuCmdDraw(mGOP3D, Gop3dTopologyTriangles, triangleCount);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuPresent(mGOP3D);
+
+        CONST CHAR16 *filterName = filter == Gop3dFilterNearest ? L"Nearest" : L"Linear";
+        CONST CHAR16 *wrapName = wrap == Gop3dWrapRepeat ? L"Repeat" :
+                         wrap == Gop3dWrapClamp ? L"Clamp" : L"Mirror";
+        Print(L"3D volume sampler: %s / %s. RGB shows U, V and W. Press a key to continue.\n",
+            filterName, wrapName);
+    while (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_NOT_READY) {
+        gBS->Stall(10000);
+    }
+
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hIBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMVP);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTextureData);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTextureDesc);
+}
+#undef VOLUME_SIZE
 
 EFI_STATUS EFIAPI Test() {
     EFI_STATUS Status;
@@ -254,7 +387,7 @@ EFI_STATUS EFIAPI Test() {
         return Status;
     }
     Print(L"====================================================\n");
-    Print(L"   GPUemu UEFI BLENDING TEST Application   \n");
+    Print(L"   GPUemu UEFI SAMPLING TEST Application   \n");
     Print(L"====================================================\n");
     // Print GOP information
     Print(L"GOP Located Successfully!\n");
@@ -293,6 +426,36 @@ EFI_STATUS EFIAPI Test() {
     WAIT_FOR_KEYPRESS()
     ResetGop3dDisplayState();
     TestSampling(Gop3dFilterLinear, Gop3dWrapMirror);
+
+    Print(L"7. 3D Nearest Repeat\n");
+    WAIT_FOR_KEYPRESS()
+    ResetGop3dDisplayState();
+    TestVolume3D(Gop3dFilterNearest, Gop3dWrapRepeat);
+
+    Print(L"8. 3D Nearest Clamp\n");
+    WAIT_FOR_KEYPRESS()
+    ResetGop3dDisplayState();
+    TestVolume3D(Gop3dFilterNearest, Gop3dWrapClamp);
+
+    Print(L"9. 3D Nearest Mirror\n");
+    WAIT_FOR_KEYPRESS()
+    ResetGop3dDisplayState();
+    TestVolume3D(Gop3dFilterNearest, Gop3dWrapMirror);
+
+    Print(L"10. 3D Linear Repeat\n");
+    WAIT_FOR_KEYPRESS()
+    ResetGop3dDisplayState();
+    TestVolume3D(Gop3dFilterLinear, Gop3dWrapRepeat);
+
+    Print(L"11. 3D Linear Clamp\n");
+    WAIT_FOR_KEYPRESS()
+    ResetGop3dDisplayState();
+    TestVolume3D(Gop3dFilterLinear, Gop3dWrapClamp);
+
+    Print(L"12. 3D Linear Mirror\n");
+    WAIT_FOR_KEYPRESS()
+    ResetGop3dDisplayState();
+    TestVolume3D(Gop3dFilterLinear, Gop3dWrapMirror);
 
     ResetGop3dDisplayState();
 

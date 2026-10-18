@@ -121,6 +121,7 @@ typedef struct GpuState {
     GenericBufferConfig ssbo_config[MAX_BINDINGS];
     SetVertexAttribConfigPayload vertex_attribs;
     bool has_custom_vertex_layout;
+    uint32_t vs_output_location_mask;
 
     uint32_t texture_desc_addr[MAX_BINDINGS];
     TextureSamplerDescriptor textures[MAX_BINDINGS];

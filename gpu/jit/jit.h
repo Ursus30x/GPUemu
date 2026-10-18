@@ -212,6 +212,7 @@ typedef struct ShaderInfo {
 
 struct JitContext{
     shader_t shader_type;
+    uint32_t output_location_mask;
     uint32_t bound;
     uint8_t* type_kind_map;
     
