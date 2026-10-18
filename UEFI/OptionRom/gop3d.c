@@ -59,6 +59,22 @@ EFI_STATUS EFIAPI GpuSetMode(
   IN UINT32 Mode
   )
 {
+  if (Mode == GPU_MODE_GOP) {
+    EFI_STATUS Status = GpuCmdSync();
+    if (EFI_ERROR(Status)) {
+      return Status;
+    }
+
+    Status = GpuRingBufferFlush();
+    if (EFI_ERROR(Status)) {
+      return Status;
+    }
+
+    while (!GpuRingBufferIsIdle()) {
+      gBS->Stall(10);
+    }
+  }
+
     GpuMmioWrite32(REG_GPU_MODE_ADDR, Mode);
     DEBUG((EFI_D_INFO, "GOP3D: SetMode(%d) (Stub)\n", Mode));
     return EFI_SUCCESS;
