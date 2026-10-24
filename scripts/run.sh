@@ -4,7 +4,19 @@
 set -e
 source "$(dirname "$0")/common.sh"
 
-LAST_TYPE="$(get_last_build_type)"
+CMD_TO_RUN=""
+if [ -n "$1" ]; then
+    if [ "$1" = "DEBUG" ] || [ "$1" = "RELEASE" ]; then
+        LAST_TYPE="$1"
+        shift
+        CMD_TO_RUN="$*"
+    else
+        LAST_TYPE="$(get_last_build_type)"
+        CMD_TO_RUN="$*"
+    fi
+else
+    LAST_TYPE="$(get_last_build_type)"
+fi
 
 QEMU_BIN="$QEMU_DIR/build/qemu-system-x86_64"
 ROM_FILE="$EDK2_DIR/Build/OptionRom.rom"
@@ -45,6 +57,39 @@ fi
 
 log_step "Launching QEMU (GPUemu $LAST_TYPE)..."
 log_info "UEFI Shell drive mapped to: $DISK_DIR"
+
+# Ensure EFI bootloader exists to boot directly into UEFI Shell without BDS boot menu
+mkdir -p "$DISK_DIR/EFI/BOOT"
+if [ -f "$DISK_DIR/Shell.efi" ]; then
+    cp -f "$DISK_DIR/Shell.efi" "$DISK_DIR/EFI/BOOT/BOOTX64.EFI"
+elif [ -f "$EDK2_DIR/Build/OvmfX64/DEBUG_GCC/X64/Shell.efi" ]; then
+    cp -f "$EDK2_DIR/Build/OvmfX64/DEBUG_GCC/X64/Shell.efi" "$DISK_DIR/EFI/BOOT/BOOTX64.EFI"
+elif [ -f "$EDK2_DIR/Build/OvmfX64/RELEASE_GCC/X64/Shell.efi" ]; then
+    cp -f "$EDK2_DIR/Build/OvmfX64/RELEASE_GCC/X64/Shell.efi" "$DISK_DIR/EFI/BOOT/BOOTX64.EFI"
+fi
+
+# Ensure startup.nsh switches to FS0: and optionally runs the requested command
+write_startup_nsh() {
+    local target="$1"
+    if [ -n "$CMD_TO_RUN" ]; then
+        cat << EOF > "$target"
+@echo -off
+FS0:
+$CMD_TO_RUN
+EOF
+    else
+        cat << 'EOF' > "$target"
+@echo -off
+FS0:
+EOF
+    fi
+}
+
+if [ -n "$CMD_TO_RUN" ]; then
+    log_info "Configured startup.nsh to auto-run: $CMD_TO_RUN"
+fi
+write_startup_nsh "$DISK_DIR/startup.nsh"
+write_startup_nsh "$DISK_DIR/EFI/BOOT/startup.nsh"
 
 "$QEMU_BIN" \
     -m 4G \
