@@ -24,7 +24,7 @@ if [ "$NEED_CONFIGURE" -eq 1 ]; then
 --disable-vnc --disable-spice --disable-slirp --disable-xen --disable-curl --audio-drv-list=\"\""
 
     if [ "$BUILD_TYPE" == "RELEASE" ]; then
-        RELEASE_CFLAGS="-O3 -march=native -mtune=native -fno-plt -fno-math-errno -fno-trapping-math"
+        RELEASE_CFLAGS="-O3 -march=native -mtune=native -fno-plt -fno-math-errno -fno-trapping-math -fipa-pta -fdevirtualize-at-ltrans"
         CONFIG_FLAGS="$COMMON_FLAGS --disable-debug-info --enable-malloc=jemalloc --enable-lto --extra-cflags='$RELEASE_CFLAGS' --extra-ldflags='-flto=auto'"
     else
         CONFIG_FLAGS="$COMMON_FLAGS --enable-debug"
