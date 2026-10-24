@@ -27,3 +27,6 @@ gpu/jit/glsl_std_450.h
 gpu/jit/test/out
 gpu/jit/test/test_jit
 .last_build_type
+
+# Misc
+shader_output.s
