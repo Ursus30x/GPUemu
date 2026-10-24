@@ -41,12 +41,13 @@ for entry in "${EDK2_MODULES[@]}"; do
     if [ "$name" = "Shell" ]; then
         EXTRA_FLAGS="--pcd gEfiShellPkgTokenSpaceGuid.PcdShellDefaultDelay=0"
     fi
-    build -p OvmfPkg/OvmfPkgX64.dsc -m "$inf" -b "$BUILD_TYPE" $EXTRA_FLAGS
+    build -p OvmfPkg/OvmfPkgX64.dsc -m "$inf" -b "$BUILD_TYPE" -n "$(nproc)" $EXTRA_FLAGS
 done
 
 log_step "Packaging Option ROM image..."
 ROM_OUTPUT="./Build/OptionRom.rom"
-EFI_INPUT="./Build/OvmfX64/${BUILD_TYPE}_GCC/X64/OptionRom.efi"
+TARGET_DIR="./Build/OvmfX64/${BUILD_TYPE}_GCC/X64"
+EFI_INPUT="$TARGET_DIR/OptionRom.efi"
 
 if [ ! -f "$EFI_INPUT" ]; then
     log_error "Expected driver binary not found: $EFI_INPUT"
@@ -58,7 +59,6 @@ fi
     -o "$ROM_OUTPUT" \
     -e "$EFI_INPUT"
 
-TARGET_DIR="./Build/OvmfX64/${BUILD_TYPE}_GCC/X64"
 mkdir -p "$TARGET_DIR/EFI/BOOT"
 
 # Ensure EFI bootloader (EFI/BOOT/BOOTX64.EFI) exists so OVMF directly boots to EFI Shell
