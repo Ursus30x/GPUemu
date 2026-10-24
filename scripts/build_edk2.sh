@@ -23,6 +23,7 @@ EDK2_MODULES=(
     "SpirvApp/SpirvApp.inf:SpirvApp"
     "FrameBenchmark/FrameBenchmark.inf:FrameBenchmark"
     "BlendingTest/BlendingTest.inf:BlendingTest"
+    "ShellPkg/Application/Shell/Shell.inf:Shell"
 )
 
 # Run the test harness autodiscovery
@@ -36,7 +37,11 @@ for entry in "${EDK2_MODULES[@]}"; do
     inf="${entry%%:*}"
     name="${entry##*:}"
     log_step "Building EDK2 component: $name [$BUILD_TYPE]..."
-    build -p OvmfPkg/OvmfPkgX64.dsc -m "$inf" -b "$BUILD_TYPE"
+    EXTRA_FLAGS=""
+    if [ "$name" = "Shell" ]; then
+        EXTRA_FLAGS="--pcd gEfiShellPkgTokenSpaceGuid.PcdShellDefaultDelay=0"
+    fi
+    build -p OvmfPkg/OvmfPkgX64.dsc -m "$inf" -b "$BUILD_TYPE" $EXTRA_FLAGS
 done
 
 log_step "Packaging Option ROM image..."
@@ -52,6 +57,21 @@ fi
     -f 0x6969 -i 0x2137 \
     -o "$ROM_OUTPUT" \
     -e "$EFI_INPUT"
+
+TARGET_DIR="./Build/OvmfX64/${BUILD_TYPE}_GCC/X64"
+mkdir -p "$TARGET_DIR/EFI/BOOT"
+
+# Ensure EFI bootloader (EFI/BOOT/BOOTX64.EFI) exists so OVMF directly boots to EFI Shell
+if [ -f "$TARGET_DIR/Shell.efi" ]; then
+    cp -f "$TARGET_DIR/Shell.efi" "$TARGET_DIR/EFI/BOOT/BOOTX64.EFI"
+fi
+
+# Ensure startup.nsh exists in the build output directory to automatically switch to FS0:
+cat << 'EOF' > "$TARGET_DIR/startup.nsh"
+@echo -off
+FS0:
+EOF
+cp -f "$TARGET_DIR/startup.nsh" "$TARGET_DIR/EFI/BOOT/startup.nsh"
 
 set_build_type "$BUILD_TYPE"
 log_success "EDK2 build and Option ROM generation completed successfully [$BUILD_TYPE]"
