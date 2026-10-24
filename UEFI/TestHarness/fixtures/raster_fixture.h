@@ -61,15 +61,15 @@ STATIC inline VOID RasterMat4ToSimtUBO(CONST RASTER_MAT4 *ScalarMat, RASTER_SIMT
 // ============================================================================
 
 STATIC CONST RASTER_VERTEX gDefaultQuadVertices[4] = {
-    { -0.8f, -0.8f, 0.0f, 0xFF00FF00, 0.0f, 0.0f }, // Bottom-Left: Green
-    {  0.8f, -0.8f, 0.0f, 0xFF00FF00, 1.0f, 0.0f }, // Bottom-Right: Green
-    {  0.8f,  0.8f, 0.0f, 0xFF00FF00, 1.0f, 1.0f }, // Top-Right: Green
-    { -0.8f,  0.8f, 0.0f, 0xFF00FF00, 0.0f, 1.0f }  // Top-Left: Green
+    { -0.8f, -0.8f, 0.0f, 0xFF00FF00, 0.0f, 0.0f }, // 0: Bottom-Left: Green
+    {  0.8f, -0.8f, 0.0f, 0xFF00FF00, 1.0f, 0.0f }, // 1: Bottom-Right: Green
+    { -0.8f,  0.8f, 0.0f, 0xFF00FF00, 0.0f, 1.0f }, // 2: Top-Left: Green
+    {  0.8f,  0.8f, 0.0f, 0xFF00FF00, 1.0f, 1.0f }  // 3: Top-Right: Green
 };
 
 STATIC CONST RASTER_INDEX_TRIANGLE gDefaultQuadIndices[2] = {
     { 0, 1, 2 },
-    { 2, 3, 0 }
+    { 1, 3, 2 }
 };
 
 // ============================================================================
@@ -134,8 +134,8 @@ STATIC inline VOID RasterFixtureDraw(RASTER_FIXTURE *Fix, GOP_3D_TOPOLOGY Topolo
     // Bind Default Shaders & Buffers
     Gop3D->GpuCmdBindVertShader(Gop3D, Fix->hVS, sizeof(gDefaultRasterVsCode));
     Gop3D->GpuCmdBindFragShader(Gop3D, Fix->hFS, sizeof(gDefaultRasterFsCode));
-    Gop3D->GpuCmdBindVBO(Gop3D, Fix->hVBO, 8);
-    Gop3D->GpuCmdBindIBO(Gop3D, Fix->hIBO, 12);
+    Gop3D->GpuCmdBindVBO(Gop3D, Fix->hVBO, 4);
+    Gop3D->GpuCmdBindIBO(Gop3D, Fix->hIBO, 2);
     Gop3D->GpuCmdBindUBO(Gop3D, Fix->hUBO, sizeof(RASTER_SIMT_MAT4_UBO));
 
     // Attributes: Location 0 = Pos (float3), Location 2 = Color (ubyte4 norm)
@@ -195,7 +195,7 @@ STATIC inline BOOLEAN HarnessInitRasterFixture(IN GOP_3D_PROTOCOL *Gop3D, OUT RA
     // Switch GPU to 3D mode
     Gop3D->GpuSetMode(Gop3D, 1);
 
-    // Upload geometry & shaders (Analogous to SpirvApp static asset transfer)
+    // Upload geometry & shaders
     Gop3D->GpuCmdBegin(Gop3D);
     Gop3D->GpuCmdTransferBuffer(Gop3D, Gop3dBufferTypeVertex, (VOID*)gDefaultQuadVertices, sizeof(gDefaultQuadVertices), &Fix->hVBO);
     Gop3D->GpuCmdTransferBuffer(Gop3D, Gop3dBufferTypeIndex,  (VOID*)gDefaultQuadIndices,  sizeof(gDefaultQuadIndices),  &Fix->hIBO);

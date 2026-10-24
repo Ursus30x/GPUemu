@@ -13,16 +13,16 @@ GPU_COMPUTE_TEST(Test_Compute_VecAdd, "test-compute.ssbo.vec_add", "Compute shad
         OutputC[i] = 0.0f;
     }
 
-    // Slot 0: Output C, Slot 1: Input A, Slot 2: Input B
-    Fix->SetBuffer(Fix, 0, OutputC, sizeof(OutputC));
-    Fix->SetBuffer(Fix, 1, InputA, sizeof(InputA));
-    Fix->SetBuffer(Fix, 2, InputB, sizeof(InputB));
+    // Slot 0: Input A, Slot 1: Input B, Slot 2: Output C (per vec_add.comp bindings)
+    Fix->SetBuffer(Fix, 0, InputA, sizeof(InputA));
+    Fix->SetBuffer(Fix, 1, InputB, sizeof(InputB));
+    Fix->SetBuffer(Fix, 2, OutputC, sizeof(OutputC));
 
     // Dispatch 1 workgroup (16 invocations)
     Fix->Dispatch(Fix, 1, 1, 1);
 
-    // Read back Output C
-    Fix->ReadBuffer(Fix, 0, OutputC, sizeof(OutputC));
+    // Read back Output C from Slot 2
+    Fix->ReadBuffer(Fix, 2, OutputC, sizeof(OutputC));
 
     // Assert c[i] == a[i] + b[i]
     for (i = 0; i < 16; i++) {

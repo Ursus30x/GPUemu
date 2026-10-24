@@ -9,7 +9,7 @@
 // Fixture Test Declaration Macros
 // ============================================================================
 
-// 1. Raster Fixture Test: Injects RASTER_FIXTURE *Fix and guarantees VRAM cleanup
+// Raster Fixture Test: Injects RASTER_FIXTURE *Fix and guarantees VRAM cleanup
 #define GPU_RASTER_TEST(FuncName, PathStr, DescStr) \
     STATIC TEST_STATUS FuncName##_Body(RASTER_FIXTURE *Fix); \
     TEST_STATUS FuncName(IN GOP_3D_PROTOCOL *Gop3D) { \
@@ -24,7 +24,7 @@
     } \
     STATIC TEST_STATUS FuncName##_Body(RASTER_FIXTURE *Fix)
 
-// 2. Compute Fixture Test: Injects COMPUTE_FIXTURE *Fix and guarantees VRAM cleanup
+// Compute Fixture Test: Injects COMPUTE_FIXTURE *Fix and guarantees VRAM cleanup
 #define GPU_COMPUTE_TEST(FuncName, PathStr, DescStr) \
     STATIC TEST_STATUS FuncName##_Body(COMPUTE_FIXTURE *Fix); \
     TEST_STATUS FuncName(IN GOP_3D_PROTOCOL *Gop3D) { \

@@ -5,6 +5,7 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/PrintLib.h>
+#include <Library/TimerLib.h>
 #include <Protocol/LoadedImage.h>
 #include "test_registry.h"
 
@@ -289,6 +290,55 @@ PatternMatch(
 }
 
 // ============================================================================
+// Console & Timing Utilities
+// ============================================================================
+
+STATIC
+VOID
+SetConsoleColor(
+    IN UINTN Attribute
+    )
+{
+    if (gST != NULL && gST->ConOut != NULL) {
+        gST->ConOut->SetAttribute(gST->ConOut, Attribute);
+    }
+}
+
+STATIC
+VOID
+ResetConsoleColor(
+    VOID
+    )
+{
+    if (gST != NULL && gST->ConOut != NULL) {
+        gST->ConOut->SetAttribute(gST->ConOut, EFI_TEXT_ATTR(EFI_LIGHTGRAY, EFI_BLACK));
+    }
+}
+
+STATIC
+UINT64
+GetDurationMilliseconds(
+    IN UINT64 StartTick,
+    IN UINT64 EndTick,
+    IN UINT64 Freq
+    )
+{
+    UINT64 Delta;
+
+    if (Freq == 0) {
+        return 0;
+    }
+
+    if (StartTick > EndTick) {
+        Delta = StartTick - EndTick;
+    } else {
+        Delta = EndTick - StartTick;
+    }
+
+    return DivU64x64Remainder(MultU64x64(Delta, 1000), Freq, NULL);
+}
+
+// ============================================================================
 // Entry Point
 // ============================================================================
 
@@ -336,22 +386,144 @@ TestHarnessEntry(
             MatchedCount++;
             if (Config.ListOnly) {
                 Print(L"  [%d] %a\n       %a\n", MatchedCount, Node->Path, Node->Description);
-            } else {
-                Print(L"  - %a\n", Node->Path);
             }
         }
     }
 
-    Print(L"------------------------------------------------------------\n");
-    Print(L"Matched %d of %d available test cases.\n\n", MatchedCount, gTestRegistryCount);
+    if (Config.ListOnly) {
+        Print(L"------------------------------------------------------------\n");
+        Print(L"Matched %d of %d available test cases.\n\n", MatchedCount, gTestRegistryCount);
+        return EFI_SUCCESS;
+    }
 
-    if (!Config.ListOnly) {
-        if (Config.DryRun) {
-            Print(L"[DRY-RUN] Test execution simulated for %d cases. (GPU workload skipped)\n", MatchedCount);
-        } else {
-            Print(L"[EXECUTION] Execution pipeline ready for %d cases.\n", MatchedCount);
+    if (MatchedCount == 0) {
+        Print(L"No test cases matched filter '%s'. Exiting.\n", Config.CaseFilter);
+        return EFI_SUCCESS;
+    }
+
+    Print(L"Matched %d of %d available test cases for execution.\n\n", MatchedCount, gTestRegistryCount);
+
+    // If dry run, simulate and exit without GPU submission
+    if (Config.DryRun) {
+        Print(L"------------------------------------------------------------\n");
+        Print(L"[DRY-RUN] Simulating execution of %d test cases:\n", MatchedCount);
+        for (Index = 0; Index < gTestRegistryCount; Index++) {
+            CONST GPU_TEST_NODE *Node = &gTestRegistry[Index];
+            if (PatternMatch(Config.CaseFilter, Node->Path)) {
+                SetConsoleColor(EFI_TEXT_ATTR(EFI_LIGHTCYAN, EFI_BLACK));
+                Print(L"  [SIMULATED] ");
+                ResetConsoleColor();
+                Print(L"%a\n", Node->Path);
+            }
+        }
+        Print(L"------------------------------------------------------------\n");
+        Print(L"[DRY-RUN] Simulation completed successfully.\n\n");
+        return EFI_SUCCESS;
+    }
+
+    // Locate GOP_3D_PROTOCOL
+    GOP_3D_PROTOCOL *Gop3D = NULL;
+    Status = gBS->LocateProtocol(&gGop3dProtocolGuid, NULL, (VOID **)&Gop3D);
+    if (EFI_ERROR(Status) || Gop3D == NULL) {
+        SetConsoleColor(EFI_TEXT_ATTR(EFI_LIGHTRED, EFI_BLACK));
+        Print(L"[ERROR] Failed to locate GOP_3D_PROTOCOL (%r)\n", Status);
+        ResetConsoleColor();
+        Print(L"Ensure the AREK GPU Option ROM driver is installed and connected.\n");
+        return Status;
+    }
+
+    // Initialize GPU hardware / command ring buffer
+    Status = Gop3D->GpuInit(Gop3D);
+    if (EFI_ERROR(Status)) {
+        SetConsoleColor(EFI_TEXT_ATTR(EFI_LIGHTRED, EFI_BLACK));
+        Print(L"[ERROR] Failed to initialize GPU via GpuInit (%r)\n", Status);
+        ResetConsoleColor();
+        return Status;
+    }
+
+    UINT64 TimerFreq = GetPerformanceCounterProperties(NULL, NULL);
+    UINTN PassedCount = 0;
+    UINTN FailedCount = 0;
+    UINTN SkippedCount = 0;
+
+    Print(L"------------------------------------------------------------\n");
+    Print(L"Running %d test cases...\n", MatchedCount);
+    Print(L"------------------------------------------------------------\n");
+
+    // Test Execution Loop
+    for (Index = 0; Index < gTestRegistryCount; Index++) {
+        CONST GPU_TEST_NODE *Node = &gTestRegistry[Index];
+
+        if (!PatternMatch(Config.CaseFilter, Node->Path)) {
+            continue;
+        }
+
+        SetConsoleColor(EFI_TEXT_ATTR(EFI_YELLOW, EFI_BLACK));
+        Print(L"[ RUN      ] ");
+        ResetConsoleColor();
+        Print(L"%a\n", Node->Path);
+
+        UINT64 StartTick = GetPerformanceCounter();
+        TEST_STATUS TestStatus = Node->Run(Gop3D);
+        UINT64 EndTick = GetPerformanceCounter();
+        UINT64 ElapsedMs = GetDurationMilliseconds(StartTick, EndTick, TimerFreq);
+
+        switch (TestStatus.Verdict) {
+            case TEST_VERDICT_PASS:
+                SetConsoleColor(EFI_TEXT_ATTR(EFI_LIGHTGREEN, EFI_BLACK));
+                Print(L"[       OK ] ");
+                ResetConsoleColor();
+                Print(L"%a (%lu ms)\n", Node->Path, ElapsedMs);
+                PassedCount++;
+                break;
+
+            case TEST_VERDICT_FAIL:
+                SetConsoleColor(EFI_TEXT_ATTR(EFI_LIGHTRED, EFI_BLACK));
+                Print(L"[  FAILED  ] ");
+                ResetConsoleColor();
+                Print(L"%a (%lu ms)\n", Node->Path, ElapsedMs);
+                if (TestStatus.Message[0] != '\0') {
+                    Print(L"             Failure: %a\n", TestStatus.Message);
+                }
+                FailedCount++;
+                break;
+
+            case TEST_VERDICT_SKIPPED:
+            case TEST_VERDICT_NOT_SUPPORTED:
+            default:
+                SetConsoleColor(EFI_TEXT_ATTR(EFI_LIGHTCYAN, EFI_BLACK));
+                Print(L"[  SKIPPED ] ");
+                ResetConsoleColor();
+                Print(L"%a\n", Node->Path);
+                if (TestStatus.Message[0] != '\0') {
+                    Print(L"             Reason: %a\n", TestStatus.Message);
+                }
+                SkippedCount++;
+                break;
         }
     }
 
-    return EFI_SUCCESS;
+    // Teardown GPU
+    Gop3D->GpuDestroy(Gop3D);
+
+    // Summary Banner
+    Print(L"============================================================\n");
+    Print(L"Test Run Summary:\n");
+    Print(L"  Total Tests : %d\n", MatchedCount);
+    Print(L"  Passed      : %d\n", PassedCount);
+    Print(L"  Failed      : %d\n", FailedCount);
+    Print(L"  Skipped     : %d\n", SkippedCount);
+    Print(L"============================================================\n");
+
+    if (FailedCount > 0) {
+        SetConsoleColor(EFI_TEXT_ATTR(EFI_LIGHTRED, EFI_BLACK));
+        Print(L"OVERALL RESULT: FAILED\n\n");
+        ResetConsoleColor();
+        return EFI_ABORTED;
+    } else {
+        SetConsoleColor(EFI_TEXT_ATTR(EFI_LIGHTGREEN, EFI_BLACK));
+        Print(L"OVERALL RESULT: PASSED\n\n");
+        ResetConsoleColor();
+        return EFI_SUCCESS;
+    }
 }
