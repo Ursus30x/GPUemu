@@ -20,20 +20,24 @@ elif [ "$BUILD_TYPE" != "$LAST_TYPE" ]; then
 fi
 
 if [ "$NEED_CONFIGURE" -eq 1 ]; then
+    COMMON_FLAGS="--target-list=x86_64-softmmu --disable-werror --enable-gtk --disable-docs --disable-tools \
+--disable-vnc --disable-spice --disable-slirp --disable-xen --disable-curl --audio-drv-list=\"\""
+
     if [ "$BUILD_TYPE" == "RELEASE" ]; then
-        CONFIG_FLAGS="--extra-cflags='-Wno-error=redundant-decls -O3 -march=native -fno-plt' --enable-lto --enable-gtk -Wno-error=discarded-qualifiers"
+        RELEASE_CFLAGS="-O3 -march=native -mtune=native -fno-plt -fno-math-errno -fno-trapping-math"
+        CONFIG_FLAGS="$COMMON_FLAGS --disable-debug-info --enable-malloc=jemalloc --enable-lto --extra-cflags='$RELEASE_CFLAGS' --extra-ldflags='-flto=auto'"
     else
-        CONFIG_FLAGS="--enable-debug --extra-cflags='-Wno-error=redundant-decls' --enable-gtk -Wno-error=discarded-qualifiers"
+        CONFIG_FLAGS="$COMMON_FLAGS --enable-debug"
     fi
 
-    eval ./configure --target-list="x86_64-softmmu" $CONFIG_FLAGS
+    eval ./configure $CONFIG_FLAGS
     set_build_type "$BUILD_TYPE"
 else
     log_info "QEMU configuration ($BUILD_TYPE) is up to date."
 fi
 
 log_step "Building QEMU [$BUILD_TYPE] using $(nproc) parallel jobs..."
-make -j"$(nproc)"
+make -j"$(nproc)" qemu-system-x86_64
 
 set_build_type "$BUILD_TYPE"
 log_success "QEMU built successfully [$BUILD_TYPE]"
