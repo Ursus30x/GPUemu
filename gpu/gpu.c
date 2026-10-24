@@ -12,7 +12,7 @@ static void gpu_instance_init(Object *obj);
 static void gpu_class_init(ObjectClass *class, const void *data);
 static void pci_gpu_realize(PCIDevice *pdev, Error **errp);
 static void pci_gpu_uninit(PCIDevice *pdev);
-static void vga_update_display(void *opaque);
+static bool vga_update_display(void *opaque);
 static void handle_dma(GpuState *s);
 static void process_ring_buffer(GpuState *s);
 
@@ -58,7 +58,7 @@ static void *gpu_refresh_thread_worker(void *opaque)
 
         // Signal QEMU Main Loop to update the screen
         bql_lock();
-        dpy_gfx_update(s->con, 0, 0, s->width, s->height);
+        qemu_console_update(s->con, 0, 0, s->width, s->height);
         bql_unlock();
     }
     return NULL;
@@ -808,12 +808,8 @@ static void vga_invalidate_display(void *opaque)
 {
     DEBUG_PRINT("invalidated display\n");
 }
-static void vga_update_text(void *opaque, console_ch_t *chardata)
-{
-    DEBUG_PRINT("updated text\n");
-}
 
-static void vga_update_display(void *opaque)
+static bool vga_update_display(void *opaque)
 {
     GpuState *gpu = opaque;
 
@@ -823,14 +819,16 @@ static void vga_update_display(void *opaque)
 
     // No lock needed here as we read from the internal shadow buffer
     // which was populated by the refresh thread.
-    for (uint32_t i = 0; i < width * height; i++)
-        ((uint32_t *)surface_data(surface))[i] = gpu->internal_fb[i];
+    if (surface) {
+        for (uint32_t i = 0; i < width * height; i++)
+            ((uint32_t *)surface_data(surface))[i] = gpu->internal_fb[i];
+    }
+    return true;
 }
 
 static const GraphicHwOps ghwops = {
     .invalidate = vga_invalidate_display,
     .gfx_update = vga_update_display,
-    .text_update = vga_update_text,
 };
 
 #include "hw/core/qdev-properties.h"
@@ -875,7 +873,7 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
 
     gpu->vram_ptr = memory_region_get_ram_ptr(&gpu->vrammem);
 
-    gpu->con = graphic_console_init(DEVICE(pdev), 0, &ghwops, gpu);
+    gpu->con = qemu_graphic_console_create(DEVICE(pdev), 0, &ghwops, gpu);
     gpu->vs_hash = 0;
     gpu->fs_hash = 0;
     gpu->cs_hash = 0;
