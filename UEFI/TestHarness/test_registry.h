@@ -12,7 +12,6 @@
 TEST_STATUS Test_Compute_VecAdd(IN GOP_3D_PROTOCOL *Gop3D);
 TEST_STATUS Test_Raster_BlendAlpha(IN GOP_3D_PROTOCOL *Gop3D);
 TEST_STATUS Test_Raster_Triangles(IN GOP_3D_PROTOCOL *Gop3D);
-TEST_STATUS Test_Raster_Stub(IN GOP_3D_PROTOCOL *Gop3D);
 TEST_STATUS Test_Sampler_2DNearest(IN GOP_3D_PROTOCOL *Gop3D);
 
 // Test registry export

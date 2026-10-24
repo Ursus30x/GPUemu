@@ -76,11 +76,8 @@ typedef struct {
 } GPU_TEST_NODE;
 
 // ============================================================================
-// Test Declaration & Assertion Macros
+// Assertion Macros
 // ============================================================================
-
-#define GPU_TEST(FuncName, PathStr, DescStr) \
-    TEST_STATUS FuncName(IN GOP_3D_PROTOCOL *Gop3D)
 
 #define GPU_ASSERT(Condition, Msg) \
     do { \
@@ -95,5 +92,19 @@ typedef struct {
             return GPU_TEST_FAIL("Assertion failed: " #Actual " == " #Expected); \
         } \
     } while (0)
+
+// ============================================================================
+// Domain Fixtures
+// ============================================================================
+
+#include "fixtures/fixtures.h"
+
+// ============================================================================
+// Base Test Declaration Macro
+// ============================================================================
+
+// Raw Test: Receives GOP_3D_PROTOCOL *Gop3D directly
+#define GPU_TEST(FuncName, PathStr, DescStr) \
+    TEST_STATUS FuncName(IN GOP_3D_PROTOCOL *Gop3D)
 
 #endif // __HARNESS_H__

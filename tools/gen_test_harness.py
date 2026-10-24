@@ -2,7 +2,8 @@
 """
 tools/gen_test_harness.py
 
-Scans UEFI/TestHarness/cases/ for GPU_TEST declarations, then generates:
+Scans UEFI/TestHarness/fixtures/fixtures.h and harness.h for test declaration macros,
+then scans UEFI/TestHarness/cases/ for test declarations and generates:
   1. UEFI/TestHarness/test_registry.h (Forward declarations & externs)
   2. UEFI/TestHarness/test_registry.c (Static dispatch table)
   3. Updates [Sources] section in UEFI/TestHarness/TestHarness.inf
@@ -13,18 +14,48 @@ import os
 import re
 import sys
 
-RE_GPU_TEST = re.compile(
-    r'GPU_TEST\s*\(\s*([A-Za-z0-9_]+)\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)',
-    re.MULTILINE
-)
-
 def find_repo_root():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.abspath(os.path.join(script_dir, ".."))
 
-def scan_test_cases(cases_dir, base_dir):
+def discover_test_macros(harness_dir):
     """
-    Recursively scans cases_dir for .c files and extracts GPU_TEST macros.
+    Extracts all test declaration macros from harness.h, fixtures/fixtures.h,
+    and any fixture headers. Any macro defined with signature:
+      #define <MACRO>(FuncName, PathStr, DescStr)
+    is dynamically registered for test discovery.
+    """
+    macro_def_regex = re.compile(
+        r'^\s*#\s*define\s+([A-Za-z0-9_]+)\s*\(\s*FuncName\s*,\s*PathStr\s*,\s*DescStr\s*\)',
+        re.MULTILINE
+    )
+    macros = set()
+    files_to_check = [
+        os.path.join(harness_dir, "harness.h"),
+        os.path.join(harness_dir, "fixtures", "fixtures.h")
+    ]
+
+    fixtures_dir = os.path.join(harness_dir, "fixtures")
+    if os.path.isdir(fixtures_dir):
+        for f in os.listdir(fixtures_dir):
+            if f.endswith(".h"):
+                files_to_check.append(os.path.join(fixtures_dir, f))
+
+    for path in set(files_to_check):
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as fp:
+                found = macro_def_regex.findall(fp.read())
+                macros.update(found)
+
+    if "GPU_TEST" not in macros:
+        macros.add("GPU_TEST")
+
+    return sorted(list(macros))
+
+def scan_test_cases(cases_dir, base_dir, test_macros):
+    """
+    Recursively scans cases_dir for .c files and extracts test declarations
+    using the dynamically discovered test_macros.
     Returns:
       tests: list of dicts: {'func': str, 'path': str, 'desc': str, 'source': str}
       sources: set of relative paths to .c files containing tests
@@ -36,16 +67,23 @@ def scan_test_cases(cases_dir, base_dir):
         print(f"[WARN] Cases directory does not exist: {cases_dir}")
         return tests, list(sources)
 
+    # Build regex specifically for discovered macros with (FuncName, PathStr, DescStr)
+    pattern = (
+        r'\b(?:' + '|'.join(re.escape(m) for m in test_macros) + r')'
+        r'\s*\(\s*([A-Za-z0-9_]+)\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)'
+    )
+    re_test_call = re.compile(pattern, re.MULTILINE)
+
     for root, _, files in os.walk(cases_dir):
         for f in sorted(files):
             if f.endswith(".c"):
                 abs_path = os.path.join(root, f)
                 rel_path = os.path.relpath(abs_path, base_dir)
-                
+
                 with open(abs_path, "r", encoding="utf-8") as fp:
                     content = fp.read()
 
-                matches = RE_GPU_TEST.findall(content)
+                matches = re_test_call.findall(content)
                 if matches:
                     sources.add(rel_path)
                     for func_name, test_path, test_desc in matches:
@@ -168,8 +206,13 @@ def main():
     header_path = os.path.join(harness_dir, "test_registry.h")
     source_path = os.path.join(harness_dir, "test_registry.c")
 
+    # 1. Discover all test declaration macros from fixtures.h and harness.h
+    test_macros = discover_test_macros(harness_dir)
+    print(f"[GEN] Registered test macros from fixtures: {', '.join(test_macros)}")
+
+    # 2. Scan cases using discovered macros
     print(f"[GEN] Scanning test cases in: {cases_dir}")
-    tests, sources = scan_test_cases(cases_dir, harness_dir)
+    tests, sources = scan_test_cases(cases_dir, harness_dir, test_macros)
 
     print(f"[GEN] Discovered {len(tests)} tests across {len(sources)} files:")
     for t in tests:
