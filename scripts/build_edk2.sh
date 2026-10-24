@@ -24,8 +24,10 @@ EDK2_MODULES=(
     "FrameBenchmark/FrameBenchmark.inf:FrameBenchmark"
 )
 
-# If TestHarness directory exists on this branch, build it
+# Run the test harness autodiscovery
 if [ -d "$UEFI_DIR/TestHarness" ]; then
+    log_step "Generating test harness registry..."
+    python3 "$TOOLS_DIR/gen_test_harness.py"
     EDK2_MODULES+=("TestHarness/TestHarness.inf:TestHarness")
 fi
 
