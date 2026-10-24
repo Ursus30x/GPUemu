@@ -14,18 +14,13 @@ CONST GPU_TEST_NODE gTestRegistry[] = {
     },
     {
         "test-raster.blend.alpha",
-        "Verifies source and destination alpha blending modes",
+        "Verifies alpha blending with background clear color",
         Test_Raster_BlendAlpha
     },
     {
         "test-raster.primitive.triangles",
         "Rasterizes basic solid triangle",
         Test_Raster_Triangles
-    },
-    {
-        "test-raster.raster.stub",
-        "stub",
-        Test_Raster_Stub
     },
     {
         "test-sampler.2d.nearest",
