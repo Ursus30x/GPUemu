@@ -64,11 +64,12 @@ apply_submodule_patch() {
 generate_gpu_headers
 
 log_step "Updating git submodules..."
-(
-    cd "$REPO_ROOT"
-    git submodule init
-    git submodule update --recursive
-)
+if [ ! -f "$QEMU_DIR/configure" ] || [ ! -f "$EDK2_DIR/edksetup.sh" ]; then
+    (
+        cd "$REPO_ROOT"
+        git submodule update --init
+    )
+fi
 rm -f "$MARKER_FILE"
 
 # --- Setup QEMU ---
@@ -128,11 +129,13 @@ make -C "$GPU_DIR/jit"
 
 # --- Setup EDK2 ---
 log_step "Setting up EDK2 configuration & symlinks..."
-(
-    cd "$EDK2_DIR"
-    git submodule init
-    git submodule update --recursive
-)
+if [ ! -d "$EDK2_DIR/MdePkg/Library/MipiSysTLib/mipisyst/library/include" ] || \
+   [ ! -f "$EDK2_DIR/BaseTools/Source/C/BrotliCompress/brotli/c/include/brotli/encode.h" ]; then
+    (
+        cd "$EDK2_DIR"
+        git submodule update --init --depth 1 || git submodule update --init
+    )
+fi
 apply_submodule_patch "$EDK2_DIR" "$UEFI_DIR/OvmfPkg.patch" "--ignore-space-change --ignore-whitespace"
 
 EDK2_MAPPINGS=(
