@@ -25,6 +25,13 @@ EDK2_MODULES=(
     "BlendingTest/BlendingTest.inf:BlendingTest"
 )
 
+# Run the test harness autodiscovery
+if [ -d "$UEFI_DIR/TestHarness" ]; then
+    log_step "Generating test harness registry..."
+    python3 "$TOOLS_DIR/gen_test_harness.py"
+    EDK2_MODULES+=("TestHarness/TestHarness.inf:TestHarness")
+fi
+
 for entry in "${EDK2_MODULES[@]}"; do
     inf="${entry%%:*}"
     name="${entry##*:}"
