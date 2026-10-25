@@ -44,10 +44,13 @@ Build QEMU, EDK2, and the custom shader compiler. Default build type is `DEBUG`.
 ./scripts/build_compiler.sh
 ```
 
-### 3.3 Running & Debugging
+### 3.3 Running, Testing & Debugging
 ```bash
 # Launch the QEMU machine running UEFI shell with the GPU emulation card
 ./scripts/run.sh [DEBUG|RELEASE] [CommandToRun]
+
+# Run automated headless functional test suite and inspect serial results
+./scripts/test_functional.py [DEBUG|RELEASE] [TestHarnessArgs]
 
 # Run QEMU with GDB/Monitor attachments
 ./scripts/debug.sh [DEBUG|RELEASE] [CommandToRun]
