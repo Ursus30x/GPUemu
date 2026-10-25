@@ -1,21 +1,21 @@
 diff --git a/hw/misc/Kconfig b/hw/misc/Kconfig
-index f4d49248c0..00ce07ca38 100644
+index 7abd22869a..5cc809d87e 100644
 --- a/hw/misc/Kconfig
 +++ b/hw/misc/Kconfig
-@@ -29,7 +29,10 @@ config IOMMU_TESTDEV
-     bool
+@@ -30,6 +30,11 @@ config IOMMU_TESTDEV
      default y if TEST_DEVICES
      depends on PCI
--
+ 
 +config GPU
 +    bool
 +    default y if TEST_DEVICES
 +    depends on PCI && MSI_NONBROKEN
++
  config EDU
      bool
      default y if TEST_DEVICES
 diff --git a/hw/misc/meson.build b/hw/misc/meson.build
-index 092f70bde2..d6fae13120 100644
+index 90f3f89de7..352d9b1180 100644
 --- a/hw/misc/meson.build
 +++ b/hw/misc/meson.build
 @@ -1,4 +1,15 @@
@@ -31,6 +31,6 @@ index 092f70bde2..d6fae13120 100644
 +)
 +system_ss.add(when: 'CONFIG_GPU', if_true: [files('math3d.c', 'primitive_assembly.c', 'jit_atomic.c', 'rasterizer_simt.c', 'renderer.c', 'jit_decorators.c', 'jit_mem.c', 'jit_smpl.c', 'jit_flow.c', 'jit_alu.c', 'jit.c', 'asm.c', 'gpu.c'), llvm_dep])
 +
+ 
  system_ss.add(when: 'CONFIG_EDU', if_true: files('edu.c'))
  system_ss.add(when: 'CONFIG_FW_CFG_DMA', if_true: files('vmcoreinfo.c'))
- system_ss.add(when: 'CONFIG_ISA_DEBUG', if_true: files('debugexit.c'))
