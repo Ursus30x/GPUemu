@@ -1,4 +1,4 @@
-name: build
+name: CI
 
 on:
   push:
@@ -60,3 +60,17 @@ jobs:
 
       - name: Build All
         run: ./scripts/build_all.sh RELEASE
+
+  test:
+    name: test
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Run Tests
+        run: echo "stub"
