@@ -85,6 +85,8 @@ typedef struct GpuState {
     uint32_t vs_code_addr;              // 0x14
     uint32_t fs_code_addr;              // 0x18
     uint32_t cs_code_addr;              // 0x48
+    uint32_t ts_code_addr;              // 0x4C
+    uint32_t ms_code_addr;              // 0x50
     uint32_t width;                     // 0x1C
     uint32_t height;                    // 0x20
     uint32_t framebuffer_vram_offset;   // 0x24
@@ -146,6 +148,19 @@ typedef struct GpuState {
     uint32_t cs_barrier_count;
     uint32_t dispatch_total_workgroups;
 
+    // Task / Mesh shader state
+    uint32_t ts_local_size_x;
+    uint32_t ts_local_size_y;
+    uint32_t ts_local_size_z;
+    uint32_t ts_barrier_count;
+    uint32_t ms_local_size_x;
+    uint32_t ms_local_size_y;
+    uint32_t ms_local_size_z;
+    uint32_t ms_barrier_count;
+    uint32_t ms_max_vertices;
+    uint32_t ms_max_primitives;
+    uint32_t ms_output_topology;
+
     //LEGACY ASM
     Mat4 regs[REG_MAT_SIZE];
     Preg pRegs[REG_P_GEN_SIZE];
@@ -164,12 +179,18 @@ typedef struct GpuState {
     JitContext jit_ctx_vs; 
     JitContext jit_ctx_fs; 
     JitContext jit_ctx_cs; 
+    JitContext jit_ctx_ts;
+    JitContext jit_ctx_ms;
     jitted_func_t vs_shader_func; 
     jitted_func_t fs_shader_func; 
     jitted_func_t cs_shader_func; 
+    jitted_func_t ts_shader_func;
+    jitted_func_t ms_shader_func;
     uint32_t vs_hash;
     uint32_t fs_hash;
     uint32_t cs_hash;
+    uint32_t ts_hash;
+    uint32_t ms_hash;
 
 } GpuState;
 

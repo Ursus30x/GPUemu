@@ -1062,6 +1062,157 @@ __attribute__((constructor)) static void register_task_to_mesh_pipeline(void)
     register_test("task_to_mesh_pipeline", test_task_to_mesh_pipeline);
 }
 
+static int test_mesh_to_fragment_raster_pipeline(void)
+{
+    size_t task_words = 0, mesh_words = 0, fs_words = 0;
+    uint32_t *task_bin = read_spirv_binary("out/meshlet_cull.spv", &task_words);
+    uint32_t *mesh_bin = read_spirv_binary("out/meshlet_gen.spv", &mesh_words);
+    uint32_t *fs_bin = read_spirv_binary("out/simple_fs.spv", &fs_words);
+    if (!task_bin || !mesh_bin || !fs_bin) {
+        free(task_bin);
+        free(mesh_bin);
+        free(fs_bin);
+        return 1;
+    }
+
+    JitContext task_ctx = {0}, mesh_ctx = {0}, fs_ctx = {0};
+    init_jit(&task_ctx, TASK_SHADER);
+    init_jit(&mesh_ctx, MESH_SHADER);
+    init_jit(&fs_ctx, FRAGMENT_SHADER);
+
+    jitted_func_t task_fn = jit_compile_spirv(&task_ctx, task_bin, task_words);
+    jitted_func_t mesh_fn = jit_compile_spirv(&mesh_ctx, mesh_bin, mesh_words);
+    jitted_func_t fs_fn = jit_compile_spirv(&fs_ctx, fs_bin, fs_words);
+    free(task_bin);
+    free(mesh_bin);
+    free(fs_bin);
+
+    if (!task_fn || !mesh_fn || !fs_fn) {
+        free_jit(&task_ctx);
+        free_jit(&mesh_ctx);
+        free_jit(&fs_ctx);
+        return 1;
+    }
+
+    TestMeshlet meshlets[16];
+    memset(meshlets, 0, sizeof(meshlets));
+    for (uint32_t i = 0; i < 16; i++) {
+        bool vis = (i == 0 || i == 1);
+        meshlets[i].bounding_sphere[3] = vis ? 1.0f : -1.0f;
+        meshlets[i].cone[3] = 0.0f;
+        meshlets[i].vertex_offset = i * 3;
+        meshlets[i].vertex_count = 3;
+        meshlets[i].primitive_offset = i;
+        meshlets[i].primitive_count = 1;
+    }
+
+    float positions[6][4] = {
+        {-0.5f, -0.5f, 0.5f, 1.0f},
+        { 0.5f, -0.5f, 0.5f, 1.0f},
+        { 0.0f,  0.5f, 0.5f, 1.0f},
+        {-0.5f, -0.5f, 0.2f, 1.0f},
+        { 0.5f, -0.5f, 0.2f, 1.0f},
+        { 0.0f,  0.5f, 0.2f, 1.0f}
+    };
+
+    uint32_t packed_triangles[2] = {
+        0u | (1u << 8) | (2u << 16) | (0u << 24), /* Meshlet 0: visible primitive */
+        0u | (1u << 8) | (2u << 16) | (1u << 24)  /* Meshlet 1: culled primitive (gl_CullPrimitiveEXT = true) */
+    };
+
+    TestTaskPayload payload;
+    memset(&payload, 0xFF, sizeof(payload));
+
+    ExecutionContext ectx;
+    memset(&ectx, 0, sizeof(ectx));
+    ectx.active_mask = 0xFFFFu;
+    ectx.binding_buffers[0] = meshlets;
+    ectx.binding_buffers[1] = positions;
+    ectx.binding_buffers[2] = packed_triangles;
+    ectx.task_payload = &payload;
+
+    BuiltinVertexOutput vs_out = {0};
+    BuiltinFragmentInput fs_in = {0};
+    BuiltinComputeInput cs_in = {0};
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+    }
+
+    task_fn(&ectx, &vs_out, &fs_in, &cs_in);
+    if (ectx.task_group_count[0] != 2) {
+        free_jit(&task_ctx);
+        free_jit(&mesh_ctx);
+        free_jit(&fs_ctx);
+        return 1;
+    }
+
+    BuiltinMeshOutput mesh_outputs[2];
+    memset(mesh_outputs, 0, sizeof(mesh_outputs));
+    for (uint32_t wg = 0; wg < 2; wg++) {
+        ectx.mesh_output = &mesh_outputs[wg];
+        for (int i = 0; i < SIMT_WIDTH; i++) {
+            cs_in.gl_WorkGroupID.elem[0][i] = (float)wg;
+        }
+        mesh_fn(&ectx, &vs_out, &fs_in, &cs_in);
+    }
+
+    if (mesh_outputs[0].primitives[0].cull_primitive != 0 ||
+        mesh_outputs[1].primitives[0].cull_primitive == 0) {
+        printf("FAILED primitive cull check: m0=%u, m1=%u\n",
+               mesh_outputs[0].primitives[0].cull_primitive,
+               mesh_outputs[1].primitives[0].cull_primitive);
+        free_jit(&task_ctx);
+        free_jit(&mesh_ctx);
+        free_jit(&fs_ctx);
+        return 1;
+    }
+
+    /* Interpolate non-culled triangle from mesh_outputs[0] and shade via FS */
+    SimtVec4 fs_in_color = {0};
+    SimtVec4 fs_out_color = {0};
+    for (int lane = 0; lane < SIMT_WIDTH; lane++) {
+        /* Equal barycentric weights (1/3, 1/3, 1/3) at centroid */
+        for (int c = 0; c < 4; c++) {
+            uint32_t i0 = mesh_outputs[0].triangle_indices[0][0];
+            uint32_t i1 = mesh_outputs[0].triangle_indices[0][1];
+            uint32_t i2 = mesh_outputs[0].triangle_indices[0][2];
+            fs_in_color.elem[c][lane] = (mesh_outputs[0].per_vertex_out[0][i0][c] +
+                                         mesh_outputs[0].per_vertex_out[0][i1][c] +
+                                         mesh_outputs[0].per_vertex_out[0][i2][c]) / 3.0f;
+        }
+    }
+
+    ExecutionContext fs_ectx = {0};
+    fs_ectx.active_mask = 0xFFFFu;
+    fs_ectx.location_in_buffers[0] = &fs_in_color;
+    fs_ectx.location_out_buffers[0] = &fs_out_color;
+    fs_fn(&fs_ectx, NULL, &fs_in, NULL);
+
+    if (fabsf(fs_out_color.elem[1][0] - 1.0f) > 1e-4f ||
+        fabsf(fs_out_color.elem[3][0] - 1.0f) > 1e-4f) {
+        printf("FAILED FS output color: (%f, %f, %f, %f)\n",
+               fs_out_color.elem[0][0], fs_out_color.elem[1][0],
+               fs_out_color.elem[2][0], fs_out_color.elem[3][0]);
+        free_jit(&task_ctx);
+        free_jit(&mesh_ctx);
+        free_jit(&fs_ctx);
+        return 1;
+    }
+
+    printf("[Mesh->Raster->FS Test] Visible triangle shaded, culled triangle rejected... ");
+    free_jit(&task_ctx);
+    free_jit(&mesh_ctx);
+    free_jit(&fs_ctx);
+    return 0;
+}
+
+__attribute__((constructor)) static void register_mesh_to_fragment_raster_pipeline(void)
+{
+    register_test("mesh_to_fragment_raster_pipeline", test_mesh_to_fragment_raster_pipeline);
+}
+
 static int test_image_write_formats(void)
 {
     for (uint32_t channels = 1; channels <= 4; channels++) {

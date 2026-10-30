@@ -387,6 +387,8 @@ static void* worker_thread(void* arg)
             case TASK_WIREFRAME_VERTICES:      worker_wireframe_vertices_impl(my_args); break;
             case TASK_WIREFRAME_EDGES:         worker_wireframe_edges_impl(my_args); break;
             case TASK_COMPUTE_SIMT:            worker_compute_simt_impl(my_args); break;
+            case TASK_TASK_SHADER_SIMT:        worker_task_shader_simt_impl(my_args); break;
+            case TASK_MESH_SHADER_SIMT:        worker_mesh_shader_simt_impl(my_args); break;
             default: break;
         }
 
@@ -501,6 +503,8 @@ void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float 
             render.args[i].orig_gpu = gpu;
             render.args[i].transformed_vertices = transformed_vertices;
             render.args[i].transformed_varyings = transformed_varyings;
+            render.args[i].assembled_triangles = NULL;
+            render.args[i].assembled_triangle_count = vertex_size;
             render.args[i].primitive_type = prim_type;
             render.args[i].point_size = point_size;
             render.args[i].line_width = line_width;
@@ -598,6 +602,220 @@ void compute_mode(GpuState *gpu)
         if (render.args[i].end_block > total_wg) render.args[i].end_block = total_wg;
     }
     dispatch_task(TASK_COMPUTE_SIMT);
+    gpu->gpu_mode = GPU_MODE_3D;
+}
+
+void gpu_render_mesh_tasks_simt(void *opaque)
+{
+    GpuState *gpu = opaque;
+    if (gpu->gpu_mode == GPU_MODE_IDLE || gpu->ms_shader_func == NULL || gpu->fs_shader_func == NULL)
+    {
+        return;
+    }
+    gpu->gpu_mode = GPU_MODE_IDLE;
+
+    uint32_t total_dispatch_wg = gpu->dispatch_total_workgroups;
+    if (total_dispatch_wg == 0)
+    {
+        gpu->gpu_mode = GPU_MODE_3D;
+        return;
+    }
+
+    uint8_t *task_payloads = NULL;
+    uint32_t (*task_mesh_counts)[3] = NULL;
+    MeshWorkgroupTask *mesh_tasks = NULL;
+    uint32_t total_mesh_wg = 0;
+
+    if (gpu->ts_code_addr != 0 && gpu->ts_shader_func != NULL)
+    {
+        task_payloads = (uint8_t *)calloc(total_dispatch_wg, MAX_TASK_PAYLOAD_SIZE);
+        task_mesh_counts = (uint32_t (*)[3])calloc(total_dispatch_wg, sizeof(uint32_t[3]));
+        if (!task_payloads || !task_mesh_counts)
+        {
+            free(task_payloads);
+            free(task_mesh_counts);
+            gpu->gpu_mode = GPU_MODE_3D;
+            return;
+        }
+
+        uint32_t chunk_twg = (total_dispatch_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
+        for (int i = 0; i < NUM_RENDER_THREADS; i++)
+        {
+            render.args[i].orig_gpu = gpu;
+            render.args[i].task_payloads = task_payloads;
+            render.args[i].task_mesh_counts = task_mesh_counts;
+            render.args[i].start_block = i * chunk_twg;
+            render.args[i].end_block = (i == NUM_RENDER_THREADS - 1) ? total_dispatch_wg : (i + 1) * chunk_twg;
+            if (render.args[i].start_block > total_dispatch_wg) render.args[i].start_block = total_dispatch_wg;
+            if (render.args[i].end_block > total_dispatch_wg) render.args[i].end_block = total_dispatch_wg;
+        }
+        dispatch_task(TASK_TASK_SHADER_SIMT);
+
+        for (uint32_t twg = 0; twg < total_dispatch_wg; twg++)
+        {
+            uint32_t mgx = task_mesh_counts[twg][0];
+            uint32_t mgy = task_mesh_counts[twg][1];
+            uint32_t mgz = task_mesh_counts[twg][2];
+            uint64_t count = (uint64_t)mgx * mgy * mgz;
+            if (count > 0 && total_mesh_wg + count <= 65536)
+            {
+                total_mesh_wg += (uint32_t)count;
+            }
+        }
+
+        if (total_mesh_wg > 0)
+        {
+            mesh_tasks = (MeshWorkgroupTask *)calloc(total_mesh_wg, sizeof(MeshWorkgroupTask));
+            if (mesh_tasks)
+            {
+                uint32_t idx = 0;
+                for (uint32_t twg = 0; twg < total_dispatch_wg; twg++)
+                {
+                    uint32_t mgx = task_mesh_counts[twg][0];
+                    uint32_t mgy = task_mesh_counts[twg][1];
+                    uint32_t mgz = task_mesh_counts[twg][2];
+                    uint64_t count = (uint64_t)mgx * mgy * mgz;
+                    if (count == 0 || idx + count > total_mesh_wg) continue;
+
+                    void *payload_ptr = task_payloads + (size_t)twg * MAX_TASK_PAYLOAD_SIZE;
+                    for (uint32_t mz = 0; mz < mgz; mz++)
+                    {
+                        for (uint32_t my = 0; my < mgy; my++)
+                        {
+                            for (uint32_t mx = 0; mx < mgx; mx++)
+                            {
+                                mesh_tasks[idx].wg_x = mx;
+                                mesh_tasks[idx].wg_y = my;
+                                mesh_tasks[idx].wg_z = mz;
+                                mesh_tasks[idx].num_wg_x = mgx;
+                                mesh_tasks[idx].num_wg_y = mgy;
+                                mesh_tasks[idx].num_wg_z = mgz;
+                                mesh_tasks[idx].task_payload = payload_ptr;
+                                idx++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        total_mesh_wg = total_dispatch_wg;
+        mesh_tasks = (MeshWorkgroupTask *)calloc(total_mesh_wg, sizeof(MeshWorkgroupTask));
+        if (mesh_tasks)
+        {
+            uint32_t Gx = gpu->dispatch_group_count_x > 0 ? gpu->dispatch_group_count_x : 1;
+            uint32_t Gy = gpu->dispatch_group_count_y > 0 ? gpu->dispatch_group_count_y : 1;
+            uint32_t Gz = gpu->dispatch_group_count_z > 0 ? gpu->dispatch_group_count_z : 1;
+            for (uint32_t mwg = 0; mwg < total_mesh_wg; mwg++)
+            {
+                mesh_tasks[mwg].wg_x = mwg % Gx;
+                mesh_tasks[mwg].wg_y = (mwg / Gx) % Gy;
+                mesh_tasks[mwg].wg_z = mwg / (Gx * Gy);
+                mesh_tasks[mwg].num_wg_x = Gx;
+                mesh_tasks[mwg].num_wg_y = Gy;
+                mesh_tasks[mwg].num_wg_z = Gz;
+                mesh_tasks[mwg].task_payload = NULL;
+            }
+        }
+    }
+
+    if (total_mesh_wg == 0 || !mesh_tasks)
+    {
+        free(mesh_tasks);
+        free(task_mesh_counts);
+        free(task_payloads);
+        gpu->gpu_mode = GPU_MODE_3D;
+        return;
+    }
+
+    BuiltinMeshOutput *mesh_outputs = (BuiltinMeshOutput *)calloc(total_mesh_wg, sizeof(BuiltinMeshOutput));
+    if (!mesh_outputs)
+    {
+        free(mesh_tasks);
+        free(task_mesh_counts);
+        free(task_payloads);
+        gpu->gpu_mode = GPU_MODE_3D;
+        return;
+    }
+
+    uint32_t chunk_mwg = (total_mesh_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
+    for (int i = 0; i < NUM_RENDER_THREADS; i++)
+    {
+        render.args[i].orig_gpu = gpu;
+        render.args[i].mesh_tasks = mesh_tasks;
+        render.args[i].mesh_outputs = mesh_outputs;
+        render.args[i].start_block = i * chunk_mwg;
+        render.args[i].end_block = (i == NUM_RENDER_THREADS - 1) ? total_mesh_wg : (i + 1) * chunk_mwg;
+        if (render.args[i].start_block > total_mesh_wg) render.args[i].start_block = total_mesh_wg;
+        if (render.args[i].end_block > total_mesh_wg) render.args[i].end_block = total_mesh_wg;
+    }
+    dispatch_task(TASK_MESH_SHADER_SIMT);
+
+    TransformedVertex *transformed_vertices = NULL;
+    Triangle *assembled_triangles = NULL;
+    Edge *assembled_lines = NULL;
+    uint32_t prim_count = 0;
+    GpuPrimitiveType mesh_prim_type = GPU_PRIM_TRIANGLES;
+
+    assemble_mesh_primitives(
+        gpu,
+        mesh_outputs,
+        total_mesh_wg,
+        &transformed_vertices,
+        &assembled_triangles,
+        &assembled_lines,
+        &prim_count,
+        &mesh_prim_type);
+
+    free(mesh_outputs);
+    free(mesh_tasks);
+    free(task_mesh_counts);
+    free(task_payloads);
+
+    if (prim_count > 0 && transformed_vertices != NULL)
+    {
+        uint32_t height = gpu->height;
+        uint32_t chunk_y = height / NUM_RENDER_THREADS;
+        chunk_y = (chunk_y + 3) & ~3;
+
+        float point_size = gpu->point_size > 0.0f ? gpu->point_size : 1.0f;
+        float line_width = gpu->line_width > 0.0f ? gpu->line_width : 1.0f;
+
+        for (int i = 0; i < NUM_RENDER_THREADS; i++)
+        {
+            render.args[i].orig_gpu = gpu;
+            render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].assembled_triangles = (mesh_prim_type == GPU_PRIM_LINES) ? (Triangle *)assembled_lines : assembled_triangles;
+            render.args[i].assembled_triangle_count = prim_count;
+            render.args[i].primitive_type = mesh_prim_type;
+            render.args[i].point_size = point_size;
+            render.args[i].line_width = line_width;
+            render.args[i].start_y = i * chunk_y;
+            render.args[i].jit_ctx_fs = gpu->jit_ctx_fs;
+            uint32_t end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
+            if (end_y > height) end_y = height;
+            render.args[i].end_y = end_y;
+        }
+
+        if (mesh_prim_type == GPU_PRIM_POINTS)
+        {
+            dispatch_task(TASK_RASTERIZE_POINTS_SIMT);
+        }
+        else if (mesh_prim_type == GPU_PRIM_LINES)
+        {
+            dispatch_task(TASK_RASTERIZE_LINES_SIMT);
+        }
+        else
+        {
+            dispatch_task(TASK_RASTERIZE_BANDS_SIMT);
+        }
+    }
+
+    free(assembled_triangles);
+    free(assembled_lines);
+    free(transformed_vertices);
     gpu->gpu_mode = GPU_MODE_3D;
 }
 void gpu_render_triangles(void *opaque)

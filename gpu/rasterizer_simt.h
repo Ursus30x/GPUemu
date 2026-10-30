@@ -10,5 +10,7 @@ void worker_rasterize_bands_simt_impl(RenderThreadArgs *args);
 void worker_rasterize_points_simt_impl(RenderThreadArgs *args);
 void worker_rasterize_lines_simt_impl(RenderThreadArgs *args);
 void worker_compute_simt_impl(RenderThreadArgs *args);
+void worker_task_shader_simt_impl(RenderThreadArgs *args);
+void worker_mesh_shader_simt_impl(RenderThreadArgs *args);
 
 #endif
