@@ -13,6 +13,11 @@ CONST GPU_TEST_NODE gTestRegistry[] = {
         Test_Compute_VecAdd
     },
     {
+        "test-mesh.pipeline.task_cull_raster",
+        "Task shader meshlet culling and mesh shader triangle rasterization",
+        Test_Mesh_TaskCullAndRaster
+    },
+    {
         "test-raster.blend.alpha",
         "Verifies alpha blending with background clear color",
         Test_Raster_BlendAlpha
