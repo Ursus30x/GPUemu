@@ -1,0 +1,40 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
+
+struct TaskPayload {
+    uint meshlet_ids[16];
+};
+taskPayloadSharedEXT TaskPayload payload;
+
+struct Meshlet {
+    vec4 bounding_sphere;
+    vec4 cone;
+    uint vertex_offset;
+    uint vertex_count;
+    uint primitive_offset;
+    uint primitive_count;
+};
+
+layout(std430, binding = 0) readonly buffer MeshletBuf {
+    Meshlet meshlets[];
+};
+
+void main() {
+    uint g_id = gl_GlobalInvocationID.x;
+    Meshlet m = meshlets[g_id];
+
+    bool visible = (m.bounding_sphere.w > 0.0) && (m.cone.w < 0.5);
+
+    uvec4 vote = subgroupBallot(visible);
+    uint emit_count = subgroupBallotBitCount(vote);
+    uint out_index = subgroupBallotExclusiveBitCount(vote);
+
+    if (visible) {
+        payload.meshlet_ids[out_index] = g_id;
+    }
+
+    EmitMeshTasksEXT(emit_count, 1, 1);
+}
