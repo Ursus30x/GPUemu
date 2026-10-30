@@ -676,7 +676,7 @@ void worker_rasterize_points_simt_impl(RenderThreadArgs *args)
     GpuState *gpu = &local_gpu;
 
     TransformedVertex *vertices = args->transformed_vertices;
-    uint32_t vertex_count = gpu->vbo_config.size;
+    uint32_t vertex_count = (args->assembled_triangle_count > 0) ? args->assembled_triangle_count : gpu->vbo_config.size;
 
     int band_min_y = args->start_y;
     int band_max_y = args->end_y - 1;
@@ -1000,6 +1000,222 @@ void worker_compute_simt_impl(RenderThreadArgs *args)
                 }
             }
         }
+        if (warp_spill) {
+            free(warp_spill);
+        }
+    }
+}
+
+static void populate_compute_builtin_input(
+    BuiltinComputeInput *cs_in,
+    uint32_t base_lane,
+    uint32_t Sx, uint32_t Sy, uint32_t Sz,
+    uint32_t Wx, uint32_t Wy, uint32_t Wz,
+    uint32_t Gx, uint32_t Gy, uint32_t Gz,
+    uint32_t warps_per_wg,
+    uint32_t w)
+{
+    for (int i = 0; i < SIMT_WIDTH; i++)
+    {
+        uint32_t linear = base_lane + i;
+        uint32_t lx = linear % Sx;
+        uint32_t ly = (linear / Sx) % Sy;
+        uint32_t lz = linear / (Sx * Sy);
+
+        cs_in->gl_LocalInvocationID.elem[0][i] = (float)lx;
+        cs_in->gl_LocalInvocationID.elem[1][i] = (float)ly;
+        cs_in->gl_LocalInvocationID.elem[2][i] = (float)lz;
+
+        cs_in->gl_GlobalInvocationID.elem[0][i] = (float)(Wx * Sx + lx);
+        cs_in->gl_GlobalInvocationID.elem[1][i] = (float)(Wy * Sy + ly);
+        cs_in->gl_GlobalInvocationID.elem[2][i] = (float)(Wz * Sz + lz);
+
+        cs_in->gl_LocalInvocationIndex[i] = (float)linear;
+
+        cs_in->gl_WorkGroupID.elem[0][i] = (float)Wx;
+        cs_in->gl_WorkGroupID.elem[1][i] = (float)Wy;
+        cs_in->gl_WorkGroupID.elem[2][i] = (float)Wz;
+
+        cs_in->gl_NumWorkGroups.elem[0][i] = (float)Gx;
+        cs_in->gl_NumWorkGroups.elem[1][i] = (float)Gy;
+        cs_in->gl_NumWorkGroups.elem[2][i] = (float)Gz;
+
+        cs_in->gl_WorkGroupSize.elem[0][i] = (float)Sx;
+        cs_in->gl_WorkGroupSize.elem[1][i] = (float)Sy;
+        cs_in->gl_WorkGroupSize.elem[2][i] = (float)Sz;
+
+        cs_in->gl_SubgroupSize[i] = (float)SIMT_WIDTH;
+        cs_in->gl_SubgroupInvocationID[i] = (float)i;
+        cs_in->gl_NumSubgroups[i] = (float)warps_per_wg;
+        cs_in->gl_SubgroupID[i] = (float)w;
+        cs_in->gl_SubgroupEqMask.elem[0][i] = (float)(1u << i);
+        cs_in->gl_SubgroupGeMask.elem[0][i] = (float)((0xFFFFu << i) & 0xFFFFu);
+        cs_in->gl_SubgroupGtMask.elem[0][i] = (float)((0xFFFFu << (i + 1)) & 0xFFFFu);
+        cs_in->gl_SubgroupLeMask.elem[0][i] = (float)((1u << (i + 1)) - 1u);
+        cs_in->gl_SubgroupLtMask.elem[0][i] = (float)((1u << i) - 1u);
+    }
+}
+
+static void bind_task_mesh_resources(GpuState *gpu, ExecutionContext *ectx)
+{
+    bind_resources_to_context(gpu, ectx);
+    for (int slot = 0; slot < MAX_BINDINGS; slot++) {
+        if (gpu->ssbo_config[slot].addr != 0 && gpu->ssbo_config[slot].size > 0) {
+            ectx->binding_buffers[slot] = gpu->vram_ptr + gpu->ssbo_config[slot].addr;
+        }
+    }
+    if (gpu->ssbo_config[0].size == 0 && gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0) {
+        ectx->binding_buffers[0] = gpu->vram_ptr + gpu->uinform_config.addr;
+    }
+}
+
+void worker_task_shader_simt_impl(RenderThreadArgs *args)
+{
+    GpuState local_gpu = *(args->orig_gpu);
+    GpuState *gpu = &local_gpu;
+
+    if (!gpu->ts_shader_func || !args->task_payloads || !args->task_mesh_counts) {
+        return;
+    }
+
+    uint32_t wg_start = args->start_block;
+    uint32_t wg_end = args->end_block;
+
+    uint32_t Sx = gpu->ts_local_size_x > 0 ? gpu->ts_local_size_x : 1;
+    uint32_t Sy = gpu->ts_local_size_y > 0 ? gpu->ts_local_size_y : 1;
+    uint32_t Sz = gpu->ts_local_size_z > 0 ? gpu->ts_local_size_z : 1;
+    uint64_t local_count_wide = (uint64_t)Sx * Sy * Sz;
+    if (local_count_wide > UINT32_MAX) {
+        return;
+    }
+    uint32_t local_count = (uint32_t)local_count_wide;
+    uint32_t warps_per_wg = (local_count + SIMT_WIDTH - 1) / SIMT_WIDTH;
+
+    uint32_t Gx = gpu->dispatch_group_count_x > 0 ? gpu->dispatch_group_count_x : 1;
+    uint32_t Gy = gpu->dispatch_group_count_y > 0 ? gpu->dispatch_group_count_y : 1;
+    uint32_t Gz = gpu->dispatch_group_count_z > 0 ? gpu->dispatch_group_count_z : 1;
+
+    for (uint32_t wg_linear = wg_start; wg_linear < wg_end; wg_linear++)
+    {
+        uint32_t Wx = wg_linear % Gx;
+        uint32_t Wy = (wg_linear / Gx) % Gy;
+        uint32_t Wz = wg_linear / (Gx * Gy);
+
+        uint8_t shared_mem[MAX_SHARED_MEM_SIZE];
+        memset(shared_mem, 0, sizeof(shared_mem));
+
+        uint32_t num_warps = warps_per_wg > 0 ? warps_per_wg : 1;
+        uint8_t *warp_spill = (uint8_t *)calloc(num_warps, 2048);
+
+        void *task_payload = args->task_payloads + (size_t)wg_linear * MAX_TASK_PAYLOAD_SIZE;
+        uint32_t emitted_counts[3] = {0, 0, 0};
+
+        uint32_t num_phases = gpu->ts_barrier_count + 1;
+        for (uint32_t phase = 0; phase < num_phases; phase++)
+        {
+            for (uint32_t w = 0; w < warps_per_wg; w++)
+            {
+                uint32_t base_lane = w * SIMT_WIDTH;
+                uint32_t active_lanes = local_count > base_lane ? local_count - base_lane : 0;
+                if (active_lanes > SIMT_WIDTH) active_lanes = SIMT_WIDTH;
+
+                BuiltinComputeInput cs_in = {0};
+                populate_compute_builtin_input(&cs_in, base_lane, Sx, Sy, Sz, Wx, Wy, Wz, Gx, Gy, Gz, warps_per_wg, w);
+
+                ExecutionContext ectx = {0};
+                ectx.shared_memory = shared_mem;
+                ectx.spill_buffer = warp_spill ? (warp_spill + w * 2048) : NULL;
+                ectx.current_phase = phase;
+                ectx.active_mask = active_lanes == SIMT_WIDTH ? 0xFFFFu : ((1u << active_lanes) - 1u);
+                ectx.task_payload = task_payload;
+                ectx.task_group_count[0] = emitted_counts[0];
+                ectx.task_group_count[1] = emitted_counts[1];
+                ectx.task_group_count[2] = emitted_counts[2];
+
+                bind_task_mesh_resources(gpu, &ectx);
+                gpu->ts_shader_func(&ectx, NULL, NULL, &cs_in);
+
+                emitted_counts[0] = ectx.task_group_count[0];
+                emitted_counts[1] = ectx.task_group_count[1];
+                emitted_counts[2] = ectx.task_group_count[2];
+            }
+        }
+
+        args->task_mesh_counts[wg_linear][0] = emitted_counts[0];
+        args->task_mesh_counts[wg_linear][1] = emitted_counts[1];
+        args->task_mesh_counts[wg_linear][2] = emitted_counts[2];
+
+        if (warp_spill) {
+            free(warp_spill);
+        }
+    }
+}
+
+void worker_mesh_shader_simt_impl(RenderThreadArgs *args)
+{
+    GpuState local_gpu = *(args->orig_gpu);
+    GpuState *gpu = &local_gpu;
+
+    if (!gpu->ms_shader_func || !args->mesh_tasks || !args->mesh_outputs) {
+        return;
+    }
+
+    uint32_t wg_start = args->start_block;
+    uint32_t wg_end = args->end_block;
+
+    uint32_t Sx = gpu->ms_local_size_x > 0 ? gpu->ms_local_size_x : 1;
+    uint32_t Sy = gpu->ms_local_size_y > 0 ? gpu->ms_local_size_y : 1;
+    uint32_t Sz = gpu->ms_local_size_z > 0 ? gpu->ms_local_size_z : 1;
+    uint64_t local_count_wide = (uint64_t)Sx * Sy * Sz;
+    if (local_count_wide > UINT32_MAX) {
+        return;
+    }
+    uint32_t local_count = (uint32_t)local_count_wide;
+    uint32_t warps_per_wg = (local_count + SIMT_WIDTH - 1) / SIMT_WIDTH;
+
+    for (uint32_t mwg = wg_start; mwg < wg_end; mwg++)
+    {
+        const MeshWorkgroupTask *task = &args->mesh_tasks[mwg];
+        BuiltinMeshOutput *mesh_out = &args->mesh_outputs[mwg];
+
+        uint32_t Wx = task->wg_x;
+        uint32_t Wy = task->wg_y;
+        uint32_t Wz = task->wg_z;
+        uint32_t Gx = task->num_wg_x > 0 ? task->num_wg_x : 1;
+        uint32_t Gy = task->num_wg_y > 0 ? task->num_wg_y : 1;
+        uint32_t Gz = task->num_wg_z > 0 ? task->num_wg_z : 1;
+
+        uint8_t shared_mem[MAX_SHARED_MEM_SIZE];
+        memset(shared_mem, 0, sizeof(shared_mem));
+
+        uint32_t num_warps = warps_per_wg > 0 ? warps_per_wg : 1;
+        uint8_t *warp_spill = (uint8_t *)calloc(num_warps, 2048);
+
+        uint32_t num_phases = gpu->ms_barrier_count + 1;
+        for (uint32_t phase = 0; phase < num_phases; phase++)
+        {
+            for (uint32_t w = 0; w < warps_per_wg; w++)
+            {
+                uint32_t base_lane = w * SIMT_WIDTH;
+                uint32_t active_lanes = local_count > base_lane ? local_count - base_lane : 0;
+                if (active_lanes > SIMT_WIDTH) active_lanes = SIMT_WIDTH;
+
+                BuiltinComputeInput cs_in = {0};
+                populate_compute_builtin_input(&cs_in, base_lane, Sx, Sy, Sz, Wx, Wy, Wz, Gx, Gy, Gz, warps_per_wg, w);
+
+                ExecutionContext ectx = {0};
+                ectx.shared_memory = shared_mem;
+                ectx.spill_buffer = warp_spill ? (warp_spill + w * 2048) : NULL;
+                ectx.current_phase = phase;
+                ectx.active_mask = active_lanes == SIMT_WIDTH ? 0xFFFFu : ((1u << active_lanes) - 1u);
+                ectx.task_payload = task->task_payload;
+                ectx.mesh_output = mesh_out;
+
+                bind_task_mesh_resources(gpu, &ectx);
+                gpu->ms_shader_func(&ectx, NULL, NULL, &cs_in);
+            }
+        }
+
         if (warp_spill) {
             free(warp_spill);
         }
