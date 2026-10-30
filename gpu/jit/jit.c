@@ -5,6 +5,7 @@
 #include "jit_mem.h"
 #include "jit_smpl.h"
 #include "jit_atomic.h"
+#include <stddef.h>
 #include <llvm-c/Transforms/PassBuilder.h>
 #include "debug_gpu.h"
 
@@ -249,6 +250,22 @@ void jit_call_printf_simt(JitContext* ctx, const char* fmt, LLVMValueRef vec_val
     jit_call_printf(ctx, "]\n", NULL, 0);
 }
 
+static LLVMValueRef jit_extract_scalar_u32(JitContext* ctx, LLVMValueRef val)
+{
+    if (!val) return LLVMConstInt(ctx->int_type, 0, 0);
+    LLVMTypeRef t = LLVMTypeOf(val);
+    if (LLVMGetTypeKind(t) == LLVMVectorTypeKind) 
+    {
+        val = LLVMBuildExtractElement(ctx->builder, val, LLVMConstInt(ctx->int_type, 0, 0), "ext_l0");
+        t = LLVMTypeOf(val);
+    }
+    if (LLVMGetTypeKind(t) == LLVMFloatTypeKind || LLVMGetTypeKind(t) == LLVMDoubleTypeKind) 
+    {
+        return LLVMBuildFPToUI(ctx->builder, val, ctx->int_type, "f2u_s");
+    }
+    return val;
+}
+
 void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count) 
 {
     
@@ -278,6 +295,9 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpTypeArray:
             handle_op_type_array(ctx, res_id, operands);
             break;
+        case SpvOpTypeRuntimeArray:
+            handle_op_type_runtime_array(ctx, res_id, operands);
+            break;
         case SpvOpConstant:
             handle_op_constant(ctx, res_id, type_id, operands);
             break;
@@ -285,7 +305,7 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_decorate(ctx, operands, operand_count);
             break;
         case SpvOpMemberDecorate:
-            handle_op_member_decorate(ctx, operands);
+            handle_op_member_decorate(ctx, operands, operand_count);
             break;
         case SpvOpName:
             handle_op_name(ctx, operands);
@@ -421,12 +441,72 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_entry_point(ctx, operands, operand_count);
             break;
         case SpvOpExecutionMode:
-            if (operand_count >= 5 && operands[1] == 17 /* SpvExecutionModeLocalSize */) {
+            if (operand_count >= 5 && operands[1] == SpvExecutionModeLocalSize)
+            {
                 ctx->shader_info.local_size_x = operands[2];
                 ctx->shader_info.local_size_y = operands[3];
                 ctx->shader_info.local_size_z = operands[4];
+            } 
+            else if (operand_count >= 3 && operands[1] == SpvExecutionModeOutputVertices)
+            {
+                ctx->shader_info.max_output_vertices = operands[2];
+            } 
+            else if (operand_count >= 3 && operands[1] == SpvExecutionModeOutputPrimitivesEXT)
+            {
+                ctx->shader_info.max_output_primitives = operands[2];
+            } 
+            else if (operand_count >= 2 &&
+                       (operands[1] == SpvExecutionModeOutputPoints ||
+                        operands[1] == SpvExecutionModeOutputLinesEXT ||
+                        operands[1] == SpvExecutionModeOutputTrianglesEXT))
+            {
+                ctx->shader_info.output_topology = operands[1];
             }
             break;
+        case SpvOpExecutionModeId:
+            if (operand_count >= 5 && operands[1] == SpvExecutionModeLocalSizeId)
+            {
+                ctx->shader_info.local_size_id[0] = operands[2];
+                ctx->shader_info.local_size_id[1] = operands[3];
+                ctx->shader_info.local_size_id[2] = operands[4];
+            }
+            break;
+        case SpvOpSetMeshOutputsEXT:
+        {
+            LLVMValueRef v_cnt = jit_extract_scalar_u32(ctx, get_val(ctx, operands[0]));
+            LLVMValueRef p_cnt = jit_extract_scalar_u32(ctx, get_val(ctx, operands[1]));
+            LLVMValueRef indices[] = {
+                LLVMConstInt(ctx->int_type, 0, 0),
+                LLVMConstInt(ctx->int_type, 8, 0)
+            };
+            LLVMValueRef mesh_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 2, "mesh_slot");
+            LLVMValueRef mesh_base = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, mesh_slot, "mesh_base");
+            LLVMTypeRef i8_type = LLVMInt8TypeInContext(ctx->context);
+            LLVMTypeRef i64_type = LLVMInt64TypeInContext(ctx->context);
+            LLVMValueRef v_off = LLVMConstInt(i64_type, offsetof(BuiltinMeshOutput, vertex_count), 0);
+            LLVMValueRef p_off = LLVMConstInt(i64_type, offsetof(BuiltinMeshOutput, primitive_count), 0);
+            LLVMValueRef v_ptr = LLVMBuildGEP2(ctx->builder, i8_type, mesh_base, &v_off, 1, "v_cnt_ptr");
+            LLVMValueRef p_ptr = LLVMBuildGEP2(ctx->builder, i8_type, mesh_base, &p_off, 1, "p_cnt_ptr");
+            LLVMBuildStore(ctx->builder, v_cnt, v_ptr);
+            LLVMBuildStore(ctx->builder, p_cnt, p_ptr);
+            break;
+        }
+        case SpvOpEmitMeshTasksEXT:
+        {
+            for (int k = 0; k < 3; k++) 
+            {
+                LLVMValueRef g_cnt = jit_extract_scalar_u32(ctx, get_val(ctx, operands[k]));
+                LLVMValueRef indices[] = {
+                    LLVMConstInt(ctx->int_type, 0, 0),
+                    LLVMConstInt(ctx->int_type, 9, 0),
+                    LLVMConstInt(ctx->int_type, k, 0)
+                };
+                LLVMValueRef slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 3, "task_grp_slot");
+                LLVMBuildStore(ctx->builder, g_cnt, slot);
+            }
+            LLVMBuildRetVoid(ctx->builder);
+            break;
+        }
         case SpvOpControlBarrier:
         case SpvOpMemoryBarrier:
         {
@@ -515,6 +595,8 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_shift_right_arithmetic(ctx, res_id, operands);
             break;
         case SpvOpBitcast:
+        case SpvOpCopyObject:
+        case SpvOpCopyLogical:
             handle_op_bitcast(ctx, res_id, type_id, operands);
             break;
         case SpvOpConvertFToS:
@@ -711,9 +793,30 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
         case SpvOpTypePointer:
             return map_spv_to_llvm_type(ctx, info->base_type_id);
 
+        case SpvOpTypeArray:
+        {
+            LLVMTypeRef elem_type = map_spv_to_llvm_type(ctx, info->base_type_id);
+            uint32_t len = 1;
+            if (info->array_length_id > 0 && info->array_length_id < ctx->bound &&
+                ctx->constant_uint_map[info->array_length_id] > 0) 
+            {
+                len = ctx->constant_uint_map[info->array_length_id];
+            }
+            return LLVMArrayType(elem_type, len);
+        }
+
         case SpvOpTypeStruct: 
-            //TO-DO
-            return LLVMStructTypeInContext(ctx->context, NULL, 0, 0);
+        {
+            if (info->member_count == 0)
+                return LLVMStructTypeInContext(ctx->context, NULL, 0, 0);
+            LLVMTypeRef member_llvm_types[32];
+            uint32_t count = info->member_count < 32 ? info->member_count : 32;
+            for (uint32_t i = 0; i < count; i++)
+            {
+                member_llvm_types[i] = map_spv_to_llvm_type(ctx, info->member_types[i]);
+            }
+            return LLVMStructTypeInContext(ctx->context, member_llvm_types, count, 0);
+        }
         case SpvOpTypeSampler:
         case SpvOpTypeSampledImage:
         case SpvOpTypeImage:
@@ -739,7 +842,9 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         
 
     ctx->bound = binary[3];
-    ctx->type_kind_map = (uint8_t*)calloc(ctx->bound, sizeof(uint8_t));
+    ctx->type_kind_map = (uint32_t*)calloc(ctx->bound, sizeof(uint32_t));
+    ctx->var_type_map = (uint32_t*)calloc(ctx->bound, sizeof(uint32_t));
+    ctx->constant_uint_map = (uint32_t*)calloc(ctx->bound, sizeof(uint32_t));
     create_glsl_std_450_map(ctx);
 
     ctx->id_val_map = (LLVMValueRef*)calloc(ctx->bound, sizeof(LLVMValueRef));
@@ -754,6 +859,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         ctx->decorations[i].location = -1;
         ctx->decorations[i].builtin = -1;
         ctx->decorations[i].array_stride = -1;
+        ctx->decorations[i].per_primitive = 0;
     }
  
 
@@ -766,6 +872,13 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     ctx->spill_mem_offset = 0;
     ctx->barrier_count = 0;
     ctx->shader_info.barrier_count = 0;
+    ctx->shader_info.local_size_x = 1;
+    ctx->shader_info.local_size_y = 1;
+    ctx->shader_info.local_size_z = 1;
+    memset(ctx->shader_info.local_size_id, 0, sizeof(ctx->shader_info.local_size_id));
+    ctx->shader_info.max_output_vertices = 0;
+    ctx->shader_info.max_output_primitives = 0;
+    ctx->shader_info.output_topology = 0;
 
     DEBUG_PRINT("--- Starting JIT Compilation (LLVM ORC Backend) ---\n");
     LLVMValueRef values[SIMT_WIDTH];
@@ -783,7 +896,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
 
         if (opcode == SpvOpTypeFloat || opcode == SpvOpTypeInt) 
         {
-            ctx->type_kind_map[p[1]] = (uint8_t)opcode;
+            ctx->type_kind_map[p[1]] = opcode;
         }
 
         if (opcode == SpvOpSource || opcode == SpvOpMemberName || 
@@ -865,6 +978,8 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         if(ctx->type_info[i].opcode == SpvOpTypeStruct) free(ctx->type_info[i].member_types);
     }
     free(ctx->type_kind_map);
+    free(ctx->var_type_map);
+    free(ctx->constant_uint_map);
     free(ctx->id_val_map);
    
     return my_func;
@@ -896,6 +1011,7 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     ctx->vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx->context), SIMT_WIDTH);
     ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
     ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
+    ctx->vec_ptr_type = LLVMVectorType(ctx->ptr_type, SIMT_WIDTH);
 
     LLVMTypeRef float_type = LLVMFloatTypeInContext(ctx->context);
     // <16 x float>
@@ -915,21 +1031,6 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     LLVMTypeRef simt_vec3_type =
         LLVMArrayType(simt_float, 3);
 
-    // BuiltinVertexOutput
-    LLVMTypeRef builtin_fields[] = {
-        simt_vec4_type,                 // gl_Position
-        simt_float,                     // gl_PointSize
-        LLVMArrayType(simt_float, 1),   // gl_ClipDistance[1]
-        LLVMArrayType(simt_float, 1)    // gl_CullDistance[1]
-    };
-
-    LLVMTypeRef builtin_vertex_output_type =
-        LLVMStructTypeInContext(
-            ctx->context,
-            builtin_fields,
-            4,
-            0);
-
     // ExecutionContext
     LLVMTypeRef exec_ctx_fields[] = {
         LLVMArrayType(ptr_type, MAX_BINDINGS),     // binding_buffers (0)
@@ -939,10 +1040,12 @@ void init_jit(JitContext* ctx,shader_t shader_type)
         ptr_type,                                  // spill_buffer (4)
         ctx->int_type,                             // current_phase (5)
         ctx->int_type,                             // active_mask (6)
-        builtin_vertex_output_type                 // vertexOut (7)
+        ptr_type,                                  // task_payload (7)
+        ptr_type,                                  // mesh_output (8)
+        LLVMArrayType(ctx->int_type, 3)            // task_group_count (9)
     };
 
-    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 8, 0);
+    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 10, 0);
 
     LLVMTypeRef vs_data_fields[] = {
         simt_vec4_type,// gl_Position (Index 0)

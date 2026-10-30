@@ -9,7 +9,13 @@ subprocess.run(["mkdir", "-p", "out"], capture_output=True, text=True)
 test_directory = Path("glsl")
 
 # Find all GLSL files
-glsl_files = list(test_directory.glob("*.vert")) + list(test_directory.glob("*.frag")) + list(test_directory.glob("*.comp"))
+glsl_files = (
+    list(test_directory.glob("*.vert")) +
+    list(test_directory.glob("*.frag")) +
+    list(test_directory.glob("*.comp")) +
+    list(test_directory.glob("*.task")) +
+    list(test_directory.glob("*.mesh"))
+)
 
 if not glsl_files:
     print("No GLSL files found in glsl/ directory")
@@ -20,10 +26,10 @@ failed = 0
 
 for glsl_file in glsl_files:
     name = glsl_file.stem
-
+    target_env = "--target-env=vulkan1.3" if glsl_file.suffix in (".task", ".mesh") else "--target-env=vulkan1.1"
     
     result = subprocess.run(
-        ["glslc", "--target-env=vulkan1.1", str(glsl_file), "-o", f"out/{name}.spv"],
+        ["glslc", target_env, str(glsl_file), "-o", f"out/{name}.spv"],
         capture_output=True,
         text=True
     )

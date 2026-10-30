@@ -24,12 +24,13 @@ TEST(fs_smpl_nearest, "out/sampler.spv", FRAGMENT_SHADER, {
     SimtFloat v = {0};
     SimtVec4 expected = {0};
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++) 
+    {
         u[i] = 0.25f; v[i] = 0.25f; // (0,0) Red
         expected.elem[0][i] = 1.0f; expected.elem[1][i] = 0.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
     }
     for (int i = 4; i < 8; i++)
-     {
+    {
         u[i] = 0.75f; v[i] = 0.25f; // (1,0) Green
         expected.elem[0][i] = 0.0f; expected.elem[1][i] = 1.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
     }
@@ -39,7 +40,7 @@ TEST(fs_smpl_nearest, "out/sampler.spv", FRAGMENT_SHADER, {
         expected.elem[0][i] = 0.0f; expected.elem[1][i] = 0.0f; expected.elem[2][i] = 1.0f; expected.elem[3][i] = 1.0f;
     }
     for (int i = 12; i < 16; i++)
-     {
+    {
         u[i] = 0.75f; v[i] = 0.75f; // (1,1) Yellow
         expected.elem[0][i] = 1.0f; expected.elem[1][i] = 1.0f; expected.elem[2][i] = 0.0f; expected.elem[3][i] = 1.0f;
     }
@@ -692,6 +693,374 @@ TEST(compute_bitwise, "out/bitwise_test.spv", COMPUTE_SHADER, {
         }
     }
 })
+
+typedef struct {
+    float bounding_sphere[4];
+    float cone[4];
+    uint32_t vertex_offset;
+    uint32_t vertex_count;
+    uint32_t primitive_offset;
+    uint32_t primitive_count;
+} TestMeshlet;
+
+typedef struct {
+    uint32_t meshlet_ids[16];
+} TestTaskPayload;
+
+TEST(task_shader_meshlet_cull, "out/meshlet_cull.spv", TASK_SHADER, {
+    TestMeshlet meshlets[16];
+    memset(meshlets, 0, sizeof(meshlets));
+    for (int i = 0; i < 16; i++) 
+    {
+        if ((i % 2) == 0) 
+        {
+            meshlets[i].bounding_sphere[3] = 1.0f;
+            meshlets[i].cone[3] = 0.0f;
+        } else if ((i % 4) == 1) 
+        {
+            meshlets[i].bounding_sphere[3] = -1.0f;
+            meshlets[i].cone[3] = 0.0f;
+        } else {
+            meshlets[i].bounding_sphere[3] = 1.0f;
+            meshlets[i].cone[3] = 0.8f;
+        }
+    }
+
+    TestTaskPayload payload;
+    memset(&payload, 0xFF, sizeof(payload));
+
+    jit_ctx->binding_buffers[0] = meshlets;
+    jit_ctx->task_payload = &payload;
+    memset(jit_ctx->task_group_count, 0, sizeof(jit_ctx->task_group_count));
+
+    for (int i = 0; i < SIMT_WIDTH; i++) 
+    {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+        cs_in.gl_WorkGroupID.elem[0][i] = 0.0f;
+        cs_in.gl_NumWorkGroups.elem[0][i] = 1.0f;
+        cs_in.gl_WorkGroupSize.elem[0][i] = 16.0f;
+    }
+
+    RUN_JIT();
+
+    if (ctx.shader_info.execution_model != SpvExecutionModelTaskEXT ||
+        ctx.shader_info.local_size_x != 16) 
+    {
+        printf("FAILED task shader metadata: model=%u, local_size_x=%u\n",
+               ctx.shader_info.execution_model, ctx.shader_info.local_size_x);
+        return 1;
+    }
+
+    if (jit_ctx->task_group_count[0] != 8 ||
+        jit_ctx->task_group_count[1] != 1 ||
+        jit_ctx->task_group_count[2] != 1)
+    {
+        printf("FAILED EmitMeshTasksEXT counts: (%u, %u, %u) != (8, 1, 1)\n",
+               jit_ctx->task_group_count[0],
+               jit_ctx->task_group_count[1],
+               jit_ctx->task_group_count[2]);
+        return 1;
+    }
+
+    for (uint32_t i = 0; i < 8; i++) 
+    {
+        uint32_t expected_id = i * 2;
+        if (payload.meshlet_ids[i] != expected_id) 
+        {
+            printf("FAILED task payload.meshlet_ids[%u] = %u (expected %u)\n",
+                   i, payload.meshlet_ids[i], expected_id);
+            return 1;
+        }
+    }
+    printf("[Task Shader Test] Emitted %u mesh tasks, compacted IDs: [%u, %u, %u, %u, %u, %u, %u, %u]... ",
+           jit_ctx->task_group_count[0],
+           payload.meshlet_ids[0], payload.meshlet_ids[1], payload.meshlet_ids[2], payload.meshlet_ids[3],
+           payload.meshlet_ids[4], payload.meshlet_ids[5], payload.meshlet_ids[6], payload.meshlet_ids[7]);
+})
+
+TEST(mesh_shader_meshlet_gen, "out/meshlet_gen.spv", MESH_SHADER, {
+    TestMeshlet meshlets[4];
+    memset(meshlets, 0, sizeof(meshlets));
+    meshlets[2].vertex_offset = 4;
+    meshlets[2].vertex_count = 4;
+    meshlets[2].primitive_offset = 1;
+    meshlets[2].primitive_count = 2;
+
+    float positions[8][4];
+    for (int v = 0; v < 8; v++) 
+    {
+        positions[v][0] = (float)v * 10.0f;
+        positions[v][1] = (float)v * 20.0f;
+        positions[v][2] = 0.5f;
+        positions[v][3] = 1.0f;
+    }
+
+    uint32_t packed_triangles[4] = {
+        0,
+        0u | (1u << 8) | (2u << 16) | (0u << 24),
+        2u | (3u << 8) | (0u << 16) | (1u << 24),
+        0
+    };
+
+    TestTaskPayload payload;
+    memset(&payload, 0, sizeof(payload));
+    payload.meshlet_ids[0] = 2;
+
+    BuiltinMeshOutput mesh_out;
+    memset(&mesh_out, 0, sizeof(mesh_out));
+
+    jit_ctx->binding_buffers[0] = meshlets;
+    jit_ctx->binding_buffers[1] = positions;
+    jit_ctx->binding_buffers[2] = packed_triangles;
+    jit_ctx->task_payload = &payload;
+    jit_ctx->mesh_output = &mesh_out;
+
+    for (int i = 0; i < SIMT_WIDTH; i++) 
+    {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+        cs_in.gl_WorkGroupID.elem[0][i] = 0.0f;
+        cs_in.gl_NumWorkGroups.elem[0][i] = 1.0f;
+        cs_in.gl_WorkGroupSize.elem[0][i] = 16.0f;
+    }
+
+    RUN_JIT();
+
+    if (ctx.shader_info.execution_model != SpvExecutionModelMeshEXT ||
+        ctx.shader_info.local_size_x != 16 ||
+        ctx.shader_info.max_output_vertices != 64 ||
+        ctx.shader_info.max_output_primitives != 126 ||
+        ctx.shader_info.output_topology != SpvExecutionModeOutputTrianglesEXT) 
+    {
+        printf("FAILED mesh shader metadata: model=%u, local=%u, max_v=%u, max_p=%u, topo=%u\n",
+               ctx.shader_info.execution_model,
+               ctx.shader_info.local_size_x,
+               ctx.shader_info.max_output_vertices,
+               ctx.shader_info.max_output_primitives,
+               ctx.shader_info.output_topology);
+        return 1;
+    }
+
+    if (mesh_out.vertex_count != 4 || mesh_out.primitive_count != 2) 
+    {
+        printf("FAILED SetMeshOutputsEXT: vertex_count=%u, primitive_count=%u (expected 4, 2)\n",
+               mesh_out.vertex_count, mesh_out.primitive_count);
+        return 1;
+    }
+
+    for (uint32_t v = 0; v < 4; v++) 
+    {
+        float exp_x = (float)(4 + v) * 10.0f;
+        float exp_y = (float)(4 + v) * 20.0f;
+        if (mesh_out.vertices[v].position[0] != exp_x ||
+            mesh_out.vertices[v].position[1] != exp_y ||
+            mesh_out.vertices[v].position[2] != 0.5f ||
+            mesh_out.vertices[v].position[3] != 1.0f) 
+        {
+            printf("FAILED gl_MeshVerticesEXT[%u].gl_Position = (%f, %f, %f, %f)\n",
+                   v,
+                   mesh_out.vertices[v].position[0],
+                   mesh_out.vertices[v].position[1],
+                   mesh_out.vertices[v].position[2],
+                   mesh_out.vertices[v].position[3]);
+            return 1;
+        }
+        if (mesh_out.per_vertex_out[0][v][0] != 2.0f ||
+            mesh_out.per_vertex_out[0][v][1] != (float)v ||
+            mesh_out.per_vertex_out[0][v][2] != 1.0f ||
+            mesh_out.per_vertex_out[0][v][3] != 1.0f) {
+            printf("FAILED out_color[%u] = (%f, %f, %f, %f)\n",
+                   v,
+                   mesh_out.per_vertex_out[0][v][0],
+                   mesh_out.per_vertex_out[0][v][1],
+                   mesh_out.per_vertex_out[0][v][2],
+                   mesh_out.per_vertex_out[0][v][3]);
+            return 1;
+        }
+    }
+
+    if (mesh_out.triangle_indices[0][0] != 0 ||
+        mesh_out.triangle_indices[0][1] != 1 ||
+        mesh_out.triangle_indices[0][2] != 2 ||
+        mesh_out.primitives[0].primitive_id != 100 ||
+        mesh_out.primitives[0].cull_primitive != 0 ||
+        mesh_out.per_primitive_out[1][0][0] != 0.0f ||
+        mesh_out.per_primitive_out[1][0][1] != 1.0f ||
+        mesh_out.per_primitive_out[1][0][2] != 2.0f) {
+        printf("FAILED tri[0] = (%u, %u, %u) id=%d cull=%u\n",
+               mesh_out.triangle_indices[0][0],
+               mesh_out.triangle_indices[0][1],
+               mesh_out.triangle_indices[0][2],
+               mesh_out.primitives[0].primitive_id,
+               mesh_out.primitives[0].cull_primitive);
+        return 1;
+    }
+
+    if (mesh_out.triangle_indices[1][0] != 2 ||
+        mesh_out.triangle_indices[1][1] != 3 ||
+        mesh_out.triangle_indices[1][2] != 0 ||
+        mesh_out.primitives[1].primitive_id != 101 ||
+        mesh_out.primitives[1].cull_primitive != 1 ||
+        mesh_out.per_primitive_out[1][1][0] != 2.0f ||
+        mesh_out.per_primitive_out[1][1][1] != 3.0f ||
+        mesh_out.per_primitive_out[1][1][2] != 0.0f) {
+        printf("FAILED tri[1] = (%u, %u, %u) id=%d cull=%u\n",
+               mesh_out.triangle_indices[1][0],
+               mesh_out.triangle_indices[1][1],
+               mesh_out.triangle_indices[1][2],
+               mesh_out.primitives[1].primitive_id,
+               mesh_out.primitives[1].cull_primitive);
+        return 1;
+    }
+
+    printf("[Mesh Shader Test] verts=%u, prims=%u, tri0=(%u,%u,%u) cull=%u, tri1=(%u,%u,%u) cull=%u... ",
+           mesh_out.vertex_count, mesh_out.primitive_count,
+           mesh_out.triangle_indices[0][0], mesh_out.triangle_indices[0][1], mesh_out.triangle_indices[0][2],
+           mesh_out.primitives[0].cull_primitive,
+           mesh_out.triangle_indices[1][0], mesh_out.triangle_indices[1][1], mesh_out.triangle_indices[1][2],
+           mesh_out.primitives[1].cull_primitive);
+})
+
+static uint32_t* read_spirv_binary(const char* path, size_t* out_words)
+{
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    size_t sz = (size_t)ftell(f);
+    fseek(f, 0, SEEK_SET);
+    uint32_t* buf = malloc(sz);
+    if (!buf || fread(buf, 1, sz, f) != sz) {
+        free(buf);
+        fclose(f);
+        return NULL;
+    }
+    fclose(f);
+    *out_words = sz / 4;
+    return buf;
+}
+
+static int test_task_to_mesh_pipeline(void)
+{
+    size_t task_words = 0, mesh_words = 0;
+    uint32_t* task_bin = read_spirv_binary("out/meshlet_cull.spv", &task_words);
+    uint32_t* mesh_bin = read_spirv_binary("out/meshlet_gen.spv", &mesh_words);
+    if (!task_bin || !mesh_bin) {
+        free(task_bin);
+        free(mesh_bin);
+        return 1;
+    }
+
+    JitContext task_ctx = {0}, mesh_ctx = {0};
+    init_jit(&task_ctx, TASK_SHADER);
+    init_jit(&mesh_ctx, MESH_SHADER);
+
+    jitted_func_t task_fn = jit_compile_spirv(&task_ctx, task_bin, task_words);
+    jitted_func_t mesh_fn = jit_compile_spirv(&mesh_ctx, mesh_bin, mesh_words);
+    free(task_bin);
+    free(mesh_bin);
+
+    if (!task_fn || !mesh_fn) {
+        free_jit(&task_ctx);
+        free_jit(&mesh_ctx);
+        return 1;
+    }
+
+    TestMeshlet meshlets[16];
+    memset(meshlets, 0, sizeof(meshlets));
+    for (uint32_t i = 0; i < 16; i++) {
+        bool vis = (i == 1 || i == 5 || i == 9);
+        meshlets[i].bounding_sphere[3] = vis ? 1.0f : -1.0f;
+        meshlets[i].cone[3] = 0.0f;
+        meshlets[i].vertex_offset = i * 3;
+        meshlets[i].vertex_count = 3;
+        meshlets[i].primitive_offset = i;
+        meshlets[i].primitive_count = 1;
+    }
+
+    float positions[48][4];
+    for (int v = 0; v < 48; v++) {
+        positions[v][0] = (float)v;
+        positions[v][1] = (float)(v * 2);
+        positions[v][2] = 0.25f;
+        positions[v][3] = 1.0f;
+    }
+
+    uint32_t packed_triangles[16];
+    for (int p = 0; p < 16; p++) {
+        packed_triangles[p] = 0u | (1u << 8) | (2u << 16) | (0u << 24);
+    }
+
+    TestTaskPayload payload;
+    memset(&payload, 0xFF, sizeof(payload));
+
+    ExecutionContext ectx;
+    memset(&ectx, 0, sizeof(ectx));
+    ectx.active_mask = 0xFFFFu;
+    ectx.binding_buffers[0] = meshlets;
+    ectx.binding_buffers[1] = positions;
+    ectx.binding_buffers[2] = packed_triangles;
+    ectx.task_payload = &payload;
+
+    BuiltinVertexOutput vs_out = {0};
+    BuiltinFragmentInput fs_in = {0};
+    BuiltinComputeInput cs_in = {0};
+    for (int i = 0; i < SIMT_WIDTH; i++) {
+        cs_in.gl_GlobalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationID.elem[0][i] = (float)i;
+        cs_in.gl_LocalInvocationIndex[i] = (float)i;
+        cs_in.gl_WorkGroupID.elem[0][i] = 0.0f;
+        cs_in.gl_NumWorkGroups.elem[0][i] = 1.0f;
+        cs_in.gl_WorkGroupSize.elem[0][i] = 16.0f;
+    }
+
+    task_fn(&ectx, &vs_out, &fs_in, &cs_in);
+
+    if (ectx.task_group_count[0] != 3 ||
+        payload.meshlet_ids[0] != 1 ||
+        payload.meshlet_ids[1] != 5 ||
+        payload.meshlet_ids[2] != 9) {
+        printf("FAILED task->mesh task stage: count=%u, ids=(%u,%u,%u)\n",
+               ectx.task_group_count[0],
+               payload.meshlet_ids[0], payload.meshlet_ids[1], payload.meshlet_ids[2]);
+        free_jit(&task_ctx);
+        free_jit(&mesh_ctx);
+        return 1;
+    }
+
+    uint32_t expected_ids[3] = {1, 5, 9};
+    for (uint32_t wg = 0; wg < ectx.task_group_count[0]; wg++) {
+        BuiltinMeshOutput mesh_out;
+        memset(&mesh_out, 0, sizeof(mesh_out));
+        ectx.mesh_output = &mesh_out;
+        for (int i = 0; i < SIMT_WIDTH; i++) {
+            cs_in.gl_WorkGroupID.elem[0][i] = (float)wg;
+        }
+        mesh_fn(&ectx, &vs_out, &fs_in, &cs_in);
+
+        uint32_t m_id = expected_ids[wg];
+        if (mesh_out.vertex_count != 3 || mesh_out.primitive_count != 1 ||
+            mesh_out.vertices[0].position[0] != (float)(m_id * 3) ||
+            mesh_out.per_vertex_out[0][0][0] != (float)m_id) {
+            printf("FAILED task->mesh wg %u (meshlet %u)\n", wg, m_id);
+            free_jit(&task_ctx);
+            free_jit(&mesh_ctx);
+            return 1;
+        }
+    }
+
+    printf("[Task->Mesh Pipeline Test] 3 visible meshlets (1, 5, 9) dispatched and expanded... ");
+    free_jit(&task_ctx);
+    free_jit(&mesh_ctx);
+    return 0;
+}
+
+__attribute__((constructor)) static void register_task_to_mesh_pipeline(void)
+{
+    register_test("task_to_mesh_pipeline", test_task_to_mesh_pipeline);
+}
 
 static int test_image_write_formats(void)
 {

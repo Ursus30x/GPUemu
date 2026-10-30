@@ -28,7 +28,7 @@ static bool is_float_type(LLVMTypeRef type) {
 
 void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands) 
 {
-    uint8_t kind = ctx->type_kind_map[type_id];
+    uint32_t kind = ctx->type_kind_map[type_id];
     LLVMValueRef const_val;
 
     if (kind == SpvOpTypeFloat)
@@ -50,7 +50,17 @@ void handle_op_constant(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
 
     if (kind == SpvOpTypeInt)
     {
-        float val = (float)(*(int32_t*)&operands[0]);
+        if (res_id < ctx->bound) 
+        {
+            ctx->constant_uint_map[res_id] = operands[0];
+        }
+        if (ctx->shader_info.local_size_id[0] == res_id) ctx->shader_info.local_size_x = operands[0];
+        if (ctx->shader_info.local_size_id[1] == res_id) ctx->shader_info.local_size_y = operands[0];
+        if (ctx->shader_info.local_size_id[2] == res_id) ctx->shader_info.local_size_z = operands[0];
+
+        float val = (ctx->type_info[type_id].member_count == 1)
+            ? (float)(*(int32_t*)&operands[0])
+            : (float)operands[0];
         const_val = LLVMConstReal(ctx->float_type, val);
 
         LLVMValueRef* vals = malloc(sizeof(LLVMValueRef) * SIMT_WIDTH);
@@ -1211,59 +1221,77 @@ void handle_ext_refract(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 
 
 
+static LLVMValueRef alu_to_int_vec(JitContext* ctx, LLVMValueRef val)
+{
+    if (ctx->shader_type == TASK_SHADER || ctx->shader_type == MESH_SHADER)
+        return jit_to_numeric_int_vector(ctx, val);
+    return jit_to_int_vector(ctx, val);
+}
+
+static LLVMValueRef alu_from_int_vec(JitContext* ctx, LLVMValueRef val, bool is_unsigned)
+{
+    if (ctx->shader_type == TASK_SHADER || ctx->shader_type == MESH_SHADER) 
+    {
+        return is_unsigned
+            ? LLVMBuildUIToFP(ctx->builder, val, ctx->vec_float_type, "v_i2uf")
+            : LLVMBuildSIToFP(ctx->builder, val, ctx->vec_float_type, "v_i2sf");
+    }
+    return jit_to_float_vector(ctx, val);
+}
+
 void handle_op_bitwise_and(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef res = LLVMBuildAnd(ctx->builder, lhs, rhs, "v_band");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, true));
 }
 
 void handle_op_bitwise_or(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef res = LLVMBuildOr(ctx->builder, lhs, rhs, "v_bor");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, true));
 }
 
 void handle_op_bitwise_xor(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef res = LLVMBuildXor(ctx->builder, lhs, rhs, "v_bxor");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, true));
 }
 
 void handle_op_not(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef val = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef val = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
     LLVMValueRef res = LLVMBuildNot(ctx->builder, val, "v_not");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, false));
 }
 
 void handle_op_shift_left_logical(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
     LLVMValueRef rhs = jit_to_numeric_int_vector(ctx, get_val(ctx, operands[1]));
     LLVMValueRef res = LLVMBuildShl(ctx->builder, lhs, rhs, "v_shl");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, true));
 }
 
 void handle_op_shift_right_logical(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
     LLVMValueRef rhs = jit_to_numeric_int_vector(ctx, get_val(ctx, operands[1]));
     LLVMValueRef res = LLVMBuildLShr(ctx->builder, lhs, rhs, "v_lshr");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, true));
 }
 
 void handle_op_shift_right_arithmetic(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
     LLVMValueRef rhs = jit_to_numeric_int_vector(ctx, get_val(ctx, operands[1]));
     LLVMValueRef res = LLVMBuildAShr(ctx->builder, lhs, rhs, "v_ashr");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, false));
 }
 
 void handle_op_bitcast(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands)
@@ -1277,18 +1305,23 @@ void handle_op_convert_f_to_s(JitContext* ctx, uint32_t res_id, uint32_t* operan
 {
     LLVMValueRef op = get_val(ctx, operands[0]);
     LLVMValueRef res = LLVMBuildFPToSI(ctx->builder, op, LLVMVectorType(ctx->int_type, SIMT_WIDTH), "v_f2s");
-    set_val(ctx, res_id, LLVMBuildBitCast(ctx->builder, res, ctx->vec_float_type, "v_f2s_bc"));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, false));
 }
 
 void handle_op_convert_f_to_u(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     LLVMValueRef op = get_val(ctx, operands[0]);
     LLVMValueRef res = LLVMBuildFPToUI(ctx->builder, op, LLVMVectorType(ctx->int_type, SIMT_WIDTH), "v_f2u");
-    set_val(ctx, res_id, LLVMBuildBitCast(ctx->builder, res, ctx->vec_float_type, "v_f2u_bc"));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, true));
 }
 
 void handle_op_convert_u_to_f(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
+    if (ctx->shader_type == TASK_SHADER || ctx->shader_type == MESH_SHADER) 
+    {
+        set_val(ctx, res_id, get_val(ctx, operands[0]));
+        return;
+    }
     LLVMValueRef op = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
     LLVMValueRef res = LLVMBuildUIToFP(ctx->builder, op, ctx->vec_float_type, "v_u2f");
     set_val(ctx, res_id, res);
@@ -1296,65 +1329,65 @@ void handle_op_convert_u_to_f(JitContext* ctx, uint32_t res_id, uint32_t* operan
 
 void handle_op_inot_equal(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntNE, lhs, rhs, "v_ine");
     set_val(ctx, res_id, cmp);
 }
 
 void handle_op_sgreater_than(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntSGT, lhs, rhs, "v_sgt");
     set_val(ctx, res_id, cmp);
 }
 
 void handle_op_ugreater_than(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntUGT, lhs, rhs, "v_ugt");
     set_val(ctx, res_id, cmp);
 }
 
 void handle_op_sgreater_than_equal(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntSGE, lhs, rhs, "v_sge");
     set_val(ctx, res_id, cmp);
 }
 
 void handle_op_ugreater_than_equal(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntUGE, lhs, rhs, "v_uge");
     set_val(ctx, res_id, cmp);
 }
 
 void handle_op_sless_than_equal(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntSLE, lhs, rhs, "v_sle");
     set_val(ctx, res_id, cmp);
 }
 
 void handle_op_uless_than_equal(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntULE, lhs, rhs, "v_ule");
     set_val(ctx, res_id, cmp);
 }
 
 void handle_op_snegate(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef op = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef op = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
     LLVMValueRef res = LLVMBuildNeg(ctx->builder, op, "v_sneg");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, false));
 }
 
 void handle_op_umod(JitContext* ctx, uint32_t res_id, uint32_t* operands)
@@ -1367,20 +1400,20 @@ void handle_op_umod(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 
 void handle_op_srem(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef res = LLVMBuildSRem(ctx->builder, lhs, rhs, "v_srem");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, false));
 }
 
 void handle_op_smod(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    LLVMValueRef lhs = jit_to_int_vector(ctx, get_val(ctx, operands[0]));
-    LLVMValueRef rhs = jit_to_int_vector(ctx, get_val(ctx, operands[1]));
+    LLVMValueRef lhs = alu_to_int_vec(ctx, get_val(ctx, operands[0]));
+    LLVMValueRef rhs = alu_to_int_vec(ctx, get_val(ctx, operands[1]));
     LLVMValueRef srem = LLVMBuildSRem(ctx->builder, lhs, rhs, "v_smod_rem");
     LLVMValueRef srem_plus_rhs = LLVMBuildAdd(ctx->builder, srem, rhs, "v_smod_add");
     LLVMValueRef res = LLVMBuildSRem(ctx->builder, srem_plus_rhs, rhs, "v_smod");
-    set_val(ctx, res_id, jit_to_float_vector(ctx, res));
+    set_val(ctx, res_id, alu_from_int_vec(ctx, res, false));
 }
 
 void handle_op_logical_and(JitContext* ctx, uint32_t res_id, uint32_t* operands)
