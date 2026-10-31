@@ -68,7 +68,9 @@ Triangle *assemble_primitive_triangles(GpuState *gpu, GpuPrimitiveType prim_type
                             assembled[i].a = fetch_primitive_index(gpu, i);
                             assembled[i].b = fetch_primitive_index(gpu, i + 1);
                             assembled[i].c = fetch_primitive_index(gpu, i + 2);
-                        } else {
+                        } 
+                        else 
+                        {
                             assembled[i].a = fetch_primitive_index(gpu, i + 1);
                             assembled[i].b = fetch_primitive_index(gpu, i);
                             assembled[i].c = fetch_primitive_index(gpu, i + 2);
@@ -79,7 +81,8 @@ Triangle *assemble_primitive_triangles(GpuState *gpu, GpuPrimitiveType prim_type
             break;
         }
 
-        case GPU_PRIM_TRIANGLE_FAN: {
+        case GPU_PRIM_TRIANGLE_FAN: 
+        {
             if (num_indices >= 3) 
             {
                 tri_count = num_indices - 2;
@@ -98,7 +101,8 @@ Triangle *assemble_primitive_triangles(GpuState *gpu, GpuPrimitiveType prim_type
             break;
         }
 
-        case GPU_PRIM_QUADS: {
+        case GPU_PRIM_QUADS: 
+        {
             uint32_t quad_count = num_indices / 4;
             if (quad_count > 0) 
             {
@@ -223,29 +227,37 @@ static void populate_mesh_vertex(TransformedVertex *dst, const BuiltinMeshOutput
     const float *loc1 = mesh_vec4_is_nonzero(p_var1) ? p_var1 : v_var1;
     const float *loc2 = mesh_vec4_is_nonzero(p_var2) ? p_var2 : v_var2;
 
-    if (mesh_vec4_is_nonzero(loc0)) {
+    if (mesh_vec4_is_nonzero(loc0))
+    {
         uint8_t cr = mesh_color_to_u8(loc0[0]);
         uint8_t cg = mesh_color_to_u8(loc0[1]);
         uint8_t cb = mesh_color_to_u8(loc0[2]);
         uint8_t ca = (loc0[3] > 0.0f) ? mesh_color_to_u8(loc0[3]) : 255;
         dst->color = RGBA_TO_UINT(cr, cg, cb, ca);
-    } else {
+    } else 
+    {
         dst->color = 0xFFFFFFFFu;
     }
 
-    if (mesh_vec4_is_nonzero(loc1)) {
+    if (mesh_vec4_is_nonzero(loc1)) 
+    {
         dst->u = loc1[0];
         dst->v = loc1[1];
-    } else {
+    } 
+    else 
+    {
         dst->u = loc0[0];
         dst->v = loc0[1];
     }
 
-    if (mesh_vec4_is_nonzero(loc2)) {
+    if (mesh_vec4_is_nonzero(loc2)) 
+    {
         dst->normal.x = loc2[0];
         dst->normal.y = loc2[1];
         dst->normal.z = loc2[2];
-    } else {
+    } 
+    else 
+    {
         dst->normal.x = 0.0f;
         dst->normal.y = 0.0f;
         dst->normal.z = 1.0f;
@@ -268,19 +280,24 @@ void assemble_mesh_primitives(
     *out_prim_count = 0;
 
     GpuPrimitiveType prim_type = GPU_PRIM_TRIANGLES;
-    if (gpu->ms_output_topology == SpvExecutionModeOutputPoints) {
+    if (gpu->ms_output_topology == SpvExecutionModeOutputPoints) 
+    {
         prim_type = GPU_PRIM_POINTS;
-    } else if (gpu->ms_output_topology == SpvExecutionModeOutputLinesEXT) {
+    } 
+    else if (gpu->ms_output_topology == SpvExecutionModeOutputLinesEXT) 
+    {
         prim_type = GPU_PRIM_LINES;
     }
     *out_prim_type = prim_type;
 
-    if (!mesh_outputs || num_mesh_workgroups == 0) {
+    if (!mesh_outputs || num_mesh_workgroups == 0) 
+    {
         return;
     }
 
     uint32_t total_prims = 0;
-    for (uint32_t mwg = 0; mwg < num_mesh_workgroups; mwg++) {
+    for (uint32_t mwg = 0; mwg < num_mesh_workgroups; mwg++) 
+    {
         const BuiltinMeshOutput *mo = &mesh_outputs[mwg];
         uint32_t v_cnt = mo->vertex_count;
         if (v_cnt > MESH_MAX_VERTICES) v_cnt = MESH_MAX_VERTICES;
@@ -295,48 +312,62 @@ void assemble_mesh_primitives(
         for (uint32_t p = 0; p < p_cnt; p++) {
             if (mo->primitives[p].cull_primitive != 0) continue;
 
-            if (prim_type == GPU_PRIM_POINTS) {
+            if (prim_type == GPU_PRIM_POINTS) 
+            {
                 if (mo->point_indices[p] < v_cnt) total_prims++;
-            } else if (prim_type == GPU_PRIM_LINES) {
+            } 
+            else if (prim_type == GPU_PRIM_LINES)
+            {
                 if (mo->line_indices[p][0] < v_cnt && mo->line_indices[p][1] < v_cnt) total_prims++;
-            } else {
+            } 
+            else 
+            {
                 if (mo->triangle_indices[p][0] < v_cnt &&
                     mo->triangle_indices[p][1] < v_cnt &&
-                    mo->triangle_indices[p][2] < v_cnt) {
+                    mo->triangle_indices[p][2] < v_cnt) 
+                {
                     total_prims++;
                 }
             }
         }
     }
 
-    if (total_prims == 0) {
+    if (total_prims == 0) 
+    {
         return;
     }
 
     uint32_t verts_per_prim = (prim_type == GPU_PRIM_POINTS) ? 1 : ((prim_type == GPU_PRIM_LINES) ? 2 : 3);
     TransformedVertex *verts = (TransformedVertex *)malloc(sizeof(TransformedVertex) * total_prims * verts_per_prim);
-    if (!verts) {
+    if (!verts) 
+    {
         return;
     }
 
     Triangle *tris = NULL;
     Edge *lines = NULL;
-    if (prim_type == GPU_PRIM_TRIANGLES) {
+    if (prim_type == GPU_PRIM_TRIANGLES) 
+    {
         tris = (Triangle *)malloc(sizeof(Triangle) * total_prims);
-        if (!tris) {
+        if (!tris)
+        {
             free(verts);
             return;
         }
-    } else if (prim_type == GPU_PRIM_LINES) {
+    } 
+    else if (prim_type == GPU_PRIM_LINES) 
+    {
         lines = (Edge *)malloc(sizeof(Edge) * total_prims);
-        if (!lines) {
+        if (!lines) 
+        {
             free(verts);
             return;
         }
     }
 
     uint32_t prim_idx = 0;
-    for (uint32_t mwg = 0; mwg < num_mesh_workgroups; mwg++) {
+    for (uint32_t mwg = 0; mwg < num_mesh_workgroups; mwg++) 
+    {
         const BuiltinMeshOutput *mo = &mesh_outputs[mwg];
         uint32_t v_cnt = mo->vertex_count;
         if (v_cnt > MESH_MAX_VERTICES) v_cnt = MESH_MAX_VERTICES;
@@ -348,16 +379,21 @@ void assemble_mesh_primitives(
 
         if (v_cnt == 0 || p_cnt == 0) continue;
 
-        for (uint32_t p = 0; p < p_cnt; p++) {
+        for (uint32_t p = 0; p < p_cnt; p++) 
+        {
             if (mo->primitives[p].cull_primitive != 0) continue;
 
-            if (prim_type == GPU_PRIM_POINTS) {
+            if (prim_type == GPU_PRIM_POINTS) 
+            {
                 uint32_t i0 = mo->point_indices[p];
-                if (i0 < v_cnt) {
+                if (i0 < v_cnt) 
+                {
                     populate_mesh_vertex(&verts[prim_idx], mo, i0, p);
                     prim_idx++;
                 }
-            } else if (prim_type == GPU_PRIM_LINES) {
+            } 
+            else if (prim_type == GPU_PRIM_LINES) 
+            {
                 uint32_t i0 = mo->line_indices[p][0];
                 uint32_t i1 = mo->line_indices[p][1];
                 if (i0 < v_cnt && i1 < v_cnt) {
@@ -367,11 +403,14 @@ void assemble_mesh_primitives(
                     lines[prim_idx].b = 2 * prim_idx + 1;
                     prim_idx++;
                 }
-            } else {
+            } 
+            else 
+            {
                 uint32_t i0 = mo->triangle_indices[p][0];
                 uint32_t i1 = mo->triangle_indices[p][1];
                 uint32_t i2 = mo->triangle_indices[p][2];
-                if (i0 < v_cnt && i1 < v_cnt && i2 < v_cnt) {
+                if (i0 < v_cnt && i1 < v_cnt && i2 < v_cnt) 
+                {
                     populate_mesh_vertex(&verts[3 * prim_idx + 0], mo, i0, p);
                     populate_mesh_vertex(&verts[3 * prim_idx + 1], mo, i1, p);
                     populate_mesh_vertex(&verts[3 * prim_idx + 2], mo, i2, p);

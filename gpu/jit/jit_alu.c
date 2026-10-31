@@ -306,22 +306,13 @@ void handle_op_iequal(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     set_val(ctx, res_id, cmp);
 }
 
-void handle_op_fordlessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+
+void handle_op_fcmp(JitContext* ctx, uint32_t res_id, uint32_t* operands, const char* str, LLVMRealPredicate pred)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
 
-    LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOLT, lhs, rhs,"v_folt");
-    set_val(ctx, res_id, cmp);
-}
-
-void handle_op_fordgreaterthan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
-{
-    LLVMValueRef lhs = get_val(ctx, operands[0]);
-    LLVMValueRef rhs = get_val(ctx, operands[1]);
-
-    LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOGT, lhs, rhs, "v_fogt");
-
+    LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, pred, lhs, rhs, str);
     set_val(ctx, res_id, cmp);
 }
 

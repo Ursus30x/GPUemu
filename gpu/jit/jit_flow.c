@@ -395,7 +395,8 @@ void resolve_pending_globals(JitContext* ctx)
                     byte_offset = offsetof(BuiltinMeshOutput, per_primitive_out) +
                                   (size_t)d->location * sizeof(float) * MESH_MAX_PRIMITIVES * 4;
                 }
-                else {
+                else 
+                {
                     byte_offset = offsetof(BuiltinMeshOutput, per_vertex_out) +
                                   (size_t)d->location * sizeof(float) * MESH_MAX_VERTICES * 4;
                 }
@@ -612,4 +613,35 @@ void handle_op_label(JitContext* ctx, uint32_t res_id)
     LLVMPositionBuilderAtEnd(ctx->builder, bb);
     ctx->current_block = bb;
     set_val(ctx, res_id, (LLVMValueRef)bb);
+}
+
+
+void handle_op_barrier(JitContext* ctx, uint32_t res_id, uint32_t* operands, uint32_t opcode)
+{
+    LLVMBuildFence(ctx->builder, LLVMAtomicOrderingSequentiallyConsistent, 0, "");
+    if (opcode == SpvOpControlBarrier) 
+    {
+        uint32_t barrier_idx = ctx->barrier_count++;
+        ctx->shader_info.barrier_count = ctx->barrier_count;
+
+        LLVMValueRef indices[] = {
+            LLVMConstInt(ctx->int_type, 0, 0),
+            LLVMConstInt(ctx->int_type, 5, 0)
+        };
+        LLVMValueRef phase_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 2, "phase_slot");
+        LLVMValueRef phase_val = LLVMBuildLoad2(ctx->builder, ctx->int_type, phase_slot, "phase_val");
+
+        LLVMValueRef is_current = LLVMBuildICmp(ctx->builder, LLVMIntEQ, phase_val, LLVMConstInt(ctx->int_type, barrier_idx, 0), "is_phase_match");
+
+        LLVMBasicBlockRef next_phase_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "next_phase_bb");
+        LLVMBasicBlockRef exit_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "phase_exit_bb");
+
+        LLVMBuildCondBr(ctx->builder, is_current, exit_bb, next_phase_bb);
+
+        LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
+        LLVMBuildRetVoid(ctx->builder);
+
+        LLVMPositionBuilderAtEnd(ctx->builder, next_phase_bb);
+        ctx->current_block = next_phase_bb;
+    }      
 }

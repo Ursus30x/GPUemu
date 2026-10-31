@@ -294,3 +294,37 @@ void handle_op_entry_point(JitContext* ctx, uint32_t* operands, uint32_t operand
         DEBUG_PRINT("  Interface ID: %u\n", operands[i]);
     }
 }
+
+void handle_op_ex_mode(JitContext* ctx, uint32_t operand_count, uint32_t* operands)
+{
+    if (operand_count >= 5 && operands[1] == SpvExecutionModeLocalSize)
+    {
+        ctx->shader_info.local_size_x = operands[2];
+        ctx->shader_info.local_size_y = operands[3];
+        ctx->shader_info.local_size_z = operands[4];
+    } 
+    else if (operand_count >= 3 && operands[1] == SpvExecutionModeOutputVertices)
+    {
+        ctx->shader_info.max_output_vertices = operands[2];
+    } 
+    else if (operand_count >= 3 && operands[1] == SpvExecutionModeOutputPrimitivesEXT)
+    {
+        ctx->shader_info.max_output_primitives = operands[2];
+    } 
+    else if (operand_count >= 2 &&
+                (operands[1] == SpvExecutionModeOutputPoints ||
+                operands[1] == SpvExecutionModeOutputLinesEXT ||
+                operands[1] == SpvExecutionModeOutputTrianglesEXT))
+    {
+        ctx->shader_info.output_topology = operands[1];
+    }
+}   
+void handle_op_ex_mode_id(JitContext* ctx, uint32_t operand_count, uint32_t* operands)
+{
+    if (operand_count >= 5 && operands[1] == SpvExecutionModeLocalSizeId)
+    {
+        ctx->shader_info.local_size_id[0] = operands[2];
+        ctx->shader_info.local_size_id[1] = operands[3];
+        ctx->shader_info.local_size_id[2] = operands[4];
+    }
+}

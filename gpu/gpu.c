@@ -539,7 +539,7 @@ static void execute_command(GpuState *gpu, Command *cmd)
         uint32_t gz = cmd->payload.draw_mesh_tasks.group_count_z;
         DEBUG_PRINT("[CMD] Draw Mesh Tasks: groups (%u, %u, %u)\n", gx, gy, gz);
 
-        if (configure_compute_dispatch(gpu, gx, gy, gz)) {
+        if (gx > 0 && gy > 0 && gz > 0 && configure_compute_dispatch(gpu, gx, gy, gz)) {
             gpu_render_mesh_tasks_simt(gpu);
         }
         break;
@@ -548,7 +548,7 @@ static void execute_command(GpuState *gpu, Command *cmd)
     case CMD_DRAW_MESH_TASKS_INDIRECT:
     {
         uint32_t offset = cmd->payload.draw_mesh_tasks_indirect.indirect_offset;
-        uint32_t gx = 1, gy = 1, gz = 1;
+        uint32_t gx = 0, gy = 0, gz = 0;
         if (offset <= GPU_VRAM_SIZE - sizeof(DrawMeshTasksPayload))
         {
             DrawMeshTasksPayload *indirect_params = (DrawMeshTasksPayload *)(gpu->vram_ptr + offset);
@@ -558,7 +558,7 @@ static void execute_command(GpuState *gpu, Command *cmd)
         }
         DEBUG_PRINT("[CMD] Draw Mesh Tasks Indirect: offset 0x%x, groups (%u, %u, %u)\n", offset, gx, gy, gz);
 
-        if (configure_compute_dispatch(gpu, gx, gy, gz)) {
+        if (gx > 0 && gy > 0 && gz > 0 && configure_compute_dispatch(gpu, gx, gy, gz)) {
             gpu_render_mesh_tasks_simt(gpu);
         }
         break;
