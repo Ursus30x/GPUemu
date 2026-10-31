@@ -1,6 +1,7 @@
 #include "jit_flow.h"
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 
 static int jit_block_has_terminator(LLVMBasicBlockRef bb)
 {
@@ -207,16 +208,19 @@ static LLVMValueRef jit_to_simt_mask(JitContext* ctx, LLVMValueRef cond)
     LLVMTypeRef type = LLVMTypeOf(cond);
     if (LLVMGetTypeKind(type) == LLVMVectorTypeKind)
         return cond;
-    if (LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) != 1) {
+    if (LLVMGetTypeKind(type) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(type) != 1)
+    {
         cond = LLVMBuildICmp(ctx->builder, LLVMIntNE, cond, LLVMConstInt(type, 0, 0), "cond_i1");
     }
-    if (LLVMIsConstant(cond)) {
+    if (LLVMIsConstant(cond))
+    {
         LLVMValueRef vals[SIMT_WIDTH];
         for (int i = 0; i < SIMT_WIDTH; i++) vals[i] = cond;
         return LLVMConstVector(vals, SIMT_WIDTH);
     }
     LLVMValueRef vec = LLVMGetUndef(ctx->vec_i1_type);
-    for (int i = 0; i < SIMT_WIDTH; i++) {
+    for (int i = 0; i < SIMT_WIDTH; i++)
+    {
         vec = LLVMBuildInsertElement(ctx->builder, vec, cond, LLVMConstInt(ctx->int_type, i, 0), "mask_splat");
     }
     return vec;
@@ -246,12 +250,23 @@ void handle_op_branch_conditional(JitContext* ctx, uint32_t* operands)
             construct->cond = cond_mask;
             construct->parent_mask = jit_get_emask(ctx);
 
-            // Calculate active mask for 'then' branch: parent_mask & cond
-            LLVMValueRef true_mask = LLVMBuildAnd(ctx->builder, construct->parent_mask, cond_mask, "simt_mask_then");
-            ctx->emask = true_mask;
+            if (true_id == construct->merge_id && false_id != construct->merge_id)
+            {
+                construct->executed_true = true;
+                LLVMValueRef not_cond = LLVMBuildNot(ctx->builder, cond_mask, "cond_not");
+                ctx->emask = LLVMBuildAnd(ctx->builder, construct->parent_mask, not_cond, "simt_mask_else");
+                LLVMBasicBlockRef false_block = jit_get_or_create_label_block(ctx, false_id);
+                LLVMBuildBr(ctx->builder, false_block);
+            }
+            else
+            {
+                // Calculate active mask for 'then' branch: parent_mask & cond
+                LLVMValueRef true_mask = LLVMBuildAnd(ctx->builder, construct->parent_mask, cond_mask, "simt_mask_then");
+                ctx->emask = true_mask;
 
-            // Enter 'then' block unconditionally to process active lanes
-            LLVMBuildBr(ctx->builder, true_block);
+                // Enter 'then' block unconditionally to process active lanes
+                LLVMBuildBr(ctx->builder, true_block);
+            }
         }
         else
         {
@@ -267,6 +282,34 @@ void handle_op_phi(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t*
 {
     if (!ctx->func || !ctx->current_block || operand_count < 2)
         return;
+
+    if (operand_count == 4 &&
+        ctx->control_stack_depth < MAX_CONTROL_STACK &&
+        ctx->control_stack[ctx->control_stack_depth].kind == JIT_CFG_SELECTION &&
+        ctx->control_stack[ctx->control_stack_depth].cond != NULL)
+    {
+        JitControlConstruct* c = &ctx->control_stack[ctx->control_stack_depth];
+        LLVMValueRef val0 = get_val(ctx, operands[0]);
+        uint32_t blk0 = operands[1];
+        LLVMValueRef val1 = get_val(ctx, operands[2]);
+        uint32_t blk1 = operands[3];
+
+        LLVMValueRef true_val = val1;
+        LLVMValueRef false_val = val0;
+        if (blk0 == c->true_id && c->true_id != c->merge_id)
+        {
+            true_val = val0;
+            false_val = val1;
+        }
+        else if (blk1 == c->false_id && c->false_id != c->merge_id)
+        {
+            true_val = val0;
+            false_val = val1;
+        }
+        LLVMValueRef sel = LLVMBuildSelect(ctx->builder, c->cond, true_val, false_val, "simt_phi_sel");
+        set_val(ctx, res_id, sel);
+        return;
+    }
 
     LLVMTypeRef phi_type = map_spv_to_llvm_type(ctx, type_id);
     if (!phi_type)
@@ -311,6 +354,88 @@ void resolve_pending_globals(JitContext* ctx)
             set_val(ctx, g->res_id, var_ptr);
             continue;
         }
+        else if (g->storage_class == SpvStorageClassTaskPayloadWorkgroupEXT)
+        {
+            LLVMValueRef indices[] = {
+                LLVMConstInt(ctx->int_type, 0, 0),
+                LLVMConstInt(ctx->int_type, 7, 0)
+            };
+            LLVMValueRef payload_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ectx_ptr, indices, 2, "payload_slot");
+            LLVMValueRef payload_base = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, payload_slot, "payload_base");
+            set_val(ctx, g->res_id, payload_base);
+            continue;
+        }
+        else if (ctx->shader_type == MESH_SHADER && g->storage_class == SpvStorageClassOutput)
+        {
+            LLVMValueRef indices[] = {
+                LLVMConstInt(ctx->int_type, 0, 0),
+                LLVMConstInt(ctx->int_type, 8, 0)
+            };
+            LLVMValueRef mesh_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ectx_ptr, indices, 2, "mesh_slot");
+            LLVMValueRef mesh_base = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, mesh_slot, "mesh_base");
+
+            SpvDecoInfo* d = &ctx->decorations[g->res_id];
+            size_t byte_offset = 0;
+            if (d->builtin == SpvBuiltInPrimitiveTriangleIndicesEXT)
+            {
+                byte_offset = offsetof(BuiltinMeshOutput, triangle_indices);
+            }
+            else if (d->builtin == SpvBuiltInPrimitiveLineIndicesEXT)
+            {
+                byte_offset = offsetof(BuiltinMeshOutput, line_indices);
+            }
+            else if (d->builtin == SpvBuiltInPrimitivePointIndicesEXT)
+            {
+                byte_offset = offsetof(BuiltinMeshOutput, point_indices);
+            }
+            else if (d->location >= 0)
+            {
+                if (d->per_primitive)
+                {
+                    byte_offset = offsetof(BuiltinMeshOutput, per_primitive_out) +
+                                  (size_t)d->location * sizeof(float) * MESH_MAX_PRIMITIVES * 4;
+                }
+                else 
+                {
+                    byte_offset = offsetof(BuiltinMeshOutput, per_vertex_out) +
+                                  (size_t)d->location * sizeof(float) * MESH_MAX_VERTICES * 4;
+                }
+            }
+            else {
+                uint32_t ptr_type = g->base_type;
+                uint32_t pointee = (ptr_type < ctx->bound) ? ctx->type_info[ptr_type].base_type_id : 0;
+                uint32_t elem_type = pointee;
+                if (pointee > 0 && pointee < ctx->bound && ctx->type_info[pointee].opcode == SpvOpTypeArray)
+                {
+                    elem_type = ctx->type_info[pointee].base_type_id;
+                }
+                bool is_prim_struct = false;
+                if (elem_type > 0 && elem_type < ctx->bound)
+                {
+                    MemberDecoNode* m = ctx->member_decorations[elem_type];
+                    while (m)
+                    {
+                        if (m->buildin == SpvBuiltInPrimitiveId ||
+                            m->buildin == SpvBuiltInLayer ||
+                            m->buildin == SpvBuiltInViewportIndex ||
+                            m->buildin == SpvBuiltInCullPrimitiveEXT)
+                            {
+                            is_prim_struct = true;
+                            break;
+                        }
+                        m = m->next;
+                    }
+                }
+                byte_offset = is_prim_struct
+                    ? offsetof(BuiltinMeshOutput, primitives)
+                    : offsetof(BuiltinMeshOutput, vertices);
+            }
+
+            LLVMValueRef offset_val = LLVMConstInt(LLVMInt64TypeInContext(ctx->context), byte_offset, 0);
+            LLVMValueRef var_ptr = LLVMBuildGEP2(ctx->builder, LLVMInt8TypeInContext(ctx->context), mesh_base, &offset_val, 1, "mesh_out_var_ptr");
+            set_val(ctx, g->res_id, var_ptr);
+            continue;
+        }
         else if (g->storage_class == SpvStorageClassUniform || g->storage_class == SpvStorageClassStorageBuffer ||  g->storage_class ==  SpvStorageClassUniformConstant)
             field_idx = 0;
         else if (g->storage_class == SpvStorageClassInput)
@@ -352,7 +477,7 @@ void resolve_pending_globals(JitContext* ctx)
                 );
                 set_val(ctx, g->res_id, fs_in_addr);
             }
-            else if(ctx->shader_type == COMPUTE_SHADER)
+            else if(ctx->shader_type == COMPUTE_SHADER || ctx->shader_type == TASK_SHADER || ctx->shader_type == MESH_SHADER)
             {
                 SpvDecoInfo* d = &ctx->decorations[g->res_id];
                 int32_t builtin = d->builtin;
@@ -488,4 +613,35 @@ void handle_op_label(JitContext* ctx, uint32_t res_id)
     LLVMPositionBuilderAtEnd(ctx->builder, bb);
     ctx->current_block = bb;
     set_val(ctx, res_id, (LLVMValueRef)bb);
+}
+
+
+void handle_op_barrier(JitContext* ctx, uint32_t res_id, uint32_t* operands, uint32_t opcode)
+{
+    LLVMBuildFence(ctx->builder, LLVMAtomicOrderingSequentiallyConsistent, 0, "");
+    if (opcode == SpvOpControlBarrier) 
+    {
+        uint32_t barrier_idx = ctx->barrier_count++;
+        ctx->shader_info.barrier_count = ctx->barrier_count;
+
+        LLVMValueRef indices[] = {
+            LLVMConstInt(ctx->int_type, 0, 0),
+            LLVMConstInt(ctx->int_type, 5, 0)
+        };
+        LLVMValueRef phase_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 2, "phase_slot");
+        LLVMValueRef phase_val = LLVMBuildLoad2(ctx->builder, ctx->int_type, phase_slot, "phase_val");
+
+        LLVMValueRef is_current = LLVMBuildICmp(ctx->builder, LLVMIntEQ, phase_val, LLVMConstInt(ctx->int_type, barrier_idx, 0), "is_phase_match");
+
+        LLVMBasicBlockRef next_phase_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "next_phase_bb");
+        LLVMBasicBlockRef exit_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "phase_exit_bb");
+
+        LLVMBuildCondBr(ctx->builder, is_current, exit_bb, next_phase_bb);
+
+        LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
+        LLVMBuildRetVoid(ctx->builder);
+
+        LLVMPositionBuilderAtEnd(ctx->builder, next_phase_bb);
+        ctx->current_block = next_phase_bb;
+    }      
 }

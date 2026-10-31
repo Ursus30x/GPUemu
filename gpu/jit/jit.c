@@ -5,6 +5,7 @@
 #include "jit_mem.h"
 #include "jit_smpl.h"
 #include "jit_atomic.h"
+#include <stddef.h>
 #include <llvm-c/Transforms/PassBuilder.h>
 #include "debug_gpu.h"
 
@@ -278,14 +279,29 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpTypeArray:
             handle_op_type_array(ctx, res_id, operands);
             break;
+        case SpvOpTypeRuntimeArray:
+            handle_op_type_runtime_array(ctx, res_id, operands);
+            break;
         case SpvOpConstant:
             handle_op_constant(ctx, res_id, type_id, operands);
             break;
+        case SpvOpConstantTrue:
+        {
+            uint32_t one = 1;
+            handle_op_constant(ctx, res_id, type_id, &one);
+            break;
+        }
+        case SpvOpConstantFalse:
+        {
+            uint32_t zero = 0;
+            handle_op_constant(ctx, res_id, type_id, &zero);
+            break;
+        }
         case SpvOpDecorate:
             handle_op_decorate(ctx, operands, operand_count);
             break;
         case SpvOpMemberDecorate:
-            handle_op_member_decorate(ctx, operands);
+            handle_op_member_decorate(ctx, operands, operand_count);
             break;
         case SpvOpName:
             handle_op_name(ctx, operands);
@@ -336,10 +352,28 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_iequal(ctx, res_id, operands);
             break;
         case SpvOpFOrdLessThan:
-            handle_op_fordlessthan(ctx, res_id, operands);
+        case SpvOpFUnordLessThan:
+            handle_op_fcmp(ctx, res_id, operands, "v_folt", LLVMRealOLT);
             break;
         case SpvOpFOrdGreaterThan:
-            handle_op_fordgreaterthan(ctx, res_id, operands);
+        case SpvOpFUnordGreaterThan:
+            handle_op_fcmp(ctx, res_id, operands, "v_fogt", LLVMRealOGT);
+            break;
+        case SpvOpFOrdLessThanEqual:
+        case SpvOpFUnordLessThanEqual:
+            handle_op_fcmp(ctx, res_id, operands, "v_fole", LLVMRealOLE);
+            break;
+        case SpvOpFOrdGreaterThanEqual:
+        case SpvOpFUnordGreaterThanEqual:
+            handle_op_fcmp(ctx, res_id, operands, "v_foge", LLVMRealOGE);
+            break;
+        case SpvOpFOrdEqual:
+        case SpvOpFUnordEqual:
+            handle_op_fcmp(ctx, res_id, operands, "v_foeq", LLVMRealOEQ);
+            break;
+        case SpvOpFOrdNotEqual:
+        case SpvOpFUnordNotEqual:
+            handle_op_fcmp(ctx, res_id, operands, "v_fone", LLVMRealONE);
             break;
         case SpvOpFMod:
             handle_op_fmod(ctx, res_id, operands);
@@ -421,42 +455,21 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_entry_point(ctx, operands, operand_count);
             break;
         case SpvOpExecutionMode:
-            if (operand_count >= 5 && operands[1] == 17 /* SpvExecutionModeLocalSize */) {
-                ctx->shader_info.local_size_x = operands[2];
-                ctx->shader_info.local_size_y = operands[3];
-                ctx->shader_info.local_size_z = operands[4];
-            }
+            handle_op_ex_mode(ctx, operand_count, operands);
+            break;
+        case SpvOpExecutionModeId:
+            handle_op_ex_mode_id(ctx, operand_count, operands);
+            break;
+        case SpvOpSetMeshOutputsEXT:
+            handle_op_set_mesh_out(ctx, operands);
+            break;
+        case SpvOpEmitMeshTasksEXT:
+            handle_op_emit_mesh_task(ctx, operands);
             break;
         case SpvOpControlBarrier:
         case SpvOpMemoryBarrier:
-        {
-            LLVMBuildFence(ctx->builder, LLVMAtomicOrderingSequentiallyConsistent, 0, "");
-            if (opcode == SpvOpControlBarrier) {
-                uint32_t barrier_idx = ctx->barrier_count++;
-                ctx->shader_info.barrier_count = ctx->barrier_count;
-
-                LLVMValueRef indices[] = {
-                    LLVMConstInt(ctx->int_type, 0, 0),
-                    LLVMConstInt(ctx->int_type, 5, 0)
-                };
-                LLVMValueRef phase_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 2, "phase_slot");
-                LLVMValueRef phase_val = LLVMBuildLoad2(ctx->builder, ctx->int_type, phase_slot, "phase_val");
-
-                LLVMValueRef is_current = LLVMBuildICmp(ctx->builder, LLVMIntEQ, phase_val, LLVMConstInt(ctx->int_type, barrier_idx, 0), "is_phase_match");
-
-                LLVMBasicBlockRef next_phase_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "next_phase_bb");
-                LLVMBasicBlockRef exit_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "phase_exit_bb");
-
-                LLVMBuildCondBr(ctx->builder, is_current, exit_bb, next_phase_bb);
-
-                LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
-                LLVMBuildRetVoid(ctx->builder);
-
-                LLVMPositionBuilderAtEnd(ctx->builder, next_phase_bb);
-                ctx->current_block = next_phase_bb;
-            }
+            handle_op_barrier(ctx, res_id, operands, opcode);
             break;
-        }
         case SpvOpTypeImage:
             handle_op_type_image(ctx, res_id, operands);
             break;
@@ -515,6 +528,8 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_shift_right_arithmetic(ctx, res_id, operands);
             break;
         case SpvOpBitcast:
+        case SpvOpCopyObject:
+        case SpvOpCopyLogical:
             handle_op_bitcast(ctx, res_id, type_id, operands);
             break;
         case SpvOpConvertFToS:
@@ -711,9 +726,30 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
         case SpvOpTypePointer:
             return map_spv_to_llvm_type(ctx, info->base_type_id);
 
+        case SpvOpTypeArray:
+        {
+            LLVMTypeRef elem_type = map_spv_to_llvm_type(ctx, info->base_type_id);
+            uint32_t len = 1;
+            if (info->array_length_id > 0 && info->array_length_id < ctx->bound &&
+                ctx->constant_uint_map[info->array_length_id] > 0) 
+            {
+                len = ctx->constant_uint_map[info->array_length_id];
+            }
+            return LLVMArrayType(elem_type, len);
+        }
+
         case SpvOpTypeStruct: 
-            //TO-DO
-            return LLVMStructTypeInContext(ctx->context, NULL, 0, 0);
+        {
+            if (info->member_count == 0)
+                return LLVMStructTypeInContext(ctx->context, NULL, 0, 0);
+            LLVMTypeRef member_llvm_types[32];
+            uint32_t count = info->member_count < 32 ? info->member_count : 32;
+            for (uint32_t i = 0; i < count; i++)
+            {
+                member_llvm_types[i] = map_spv_to_llvm_type(ctx, info->member_types[i]);
+            }
+            return LLVMStructTypeInContext(ctx->context, member_llvm_types, count, 0);
+        }
         case SpvOpTypeSampler:
         case SpvOpTypeSampledImage:
         case SpvOpTypeImage:
@@ -739,7 +775,9 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         
 
     ctx->bound = binary[3];
-    ctx->type_kind_map = (uint8_t*)calloc(ctx->bound, sizeof(uint8_t));
+    ctx->type_kind_map = (uint32_t*)calloc(ctx->bound, sizeof(uint32_t));
+    ctx->var_type_map = (uint32_t*)calloc(ctx->bound, sizeof(uint32_t));
+    ctx->constant_uint_map = (uint32_t*)calloc(ctx->bound, sizeof(uint32_t));
     create_glsl_std_450_map(ctx);
 
     ctx->id_val_map = (LLVMValueRef*)calloc(ctx->bound, sizeof(LLVMValueRef));
@@ -754,6 +792,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         ctx->decorations[i].location = -1;
         ctx->decorations[i].builtin = -1;
         ctx->decorations[i].array_stride = -1;
+        ctx->decorations[i].per_primitive = 0;
     }
  
 
@@ -766,6 +805,13 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
     ctx->spill_mem_offset = 0;
     ctx->barrier_count = 0;
     ctx->shader_info.barrier_count = 0;
+    ctx->shader_info.local_size_x = 1;
+    ctx->shader_info.local_size_y = 1;
+    ctx->shader_info.local_size_z = 1;
+    memset(ctx->shader_info.local_size_id, 0, sizeof(ctx->shader_info.local_size_id));
+    ctx->shader_info.max_output_vertices = 0;
+    ctx->shader_info.max_output_primitives = 0;
+    ctx->shader_info.output_topology = 0;
 
     DEBUG_PRINT("--- Starting JIT Compilation (LLVM ORC Backend) ---\n");
     LLVMValueRef values[SIMT_WIDTH];
@@ -783,7 +829,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
 
         if (opcode == SpvOpTypeFloat || opcode == SpvOpTypeInt) 
         {
-            ctx->type_kind_map[p[1]] = (uint8_t)opcode;
+            ctx->type_kind_map[p[1]] = opcode;
         }
 
         if (opcode == SpvOpSource || opcode == SpvOpMemberName || 
@@ -865,6 +911,8 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
         if(ctx->type_info[i].opcode == SpvOpTypeStruct) free(ctx->type_info[i].member_types);
     }
     free(ctx->type_kind_map);
+    free(ctx->var_type_map);
+    free(ctx->constant_uint_map);
     free(ctx->id_val_map);
    
     return my_func;
@@ -896,6 +944,7 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     ctx->vec_i1_type = LLVMVectorType(LLVMInt1TypeInContext(ctx->context), SIMT_WIDTH);
     ctx->int8_type = LLVMInt8TypeInContext(ctx->context);
     ctx->ptr_type = LLVMPointerType(ctx->int8_type, 0);
+    ctx->vec_ptr_type = LLVMVectorType(ctx->ptr_type, SIMT_WIDTH);
 
     LLVMTypeRef float_type = LLVMFloatTypeInContext(ctx->context);
     // <16 x float>
@@ -915,21 +964,6 @@ void init_jit(JitContext* ctx,shader_t shader_type)
     LLVMTypeRef simt_vec3_type =
         LLVMArrayType(simt_float, 3);
 
-    // BuiltinVertexOutput
-    LLVMTypeRef builtin_fields[] = {
-        simt_vec4_type,                 // gl_Position
-        simt_float,                     // gl_PointSize
-        LLVMArrayType(simt_float, 1),   // gl_ClipDistance[1]
-        LLVMArrayType(simt_float, 1)    // gl_CullDistance[1]
-    };
-
-    LLVMTypeRef builtin_vertex_output_type =
-        LLVMStructTypeInContext(
-            ctx->context,
-            builtin_fields,
-            4,
-            0);
-
     // ExecutionContext
     LLVMTypeRef exec_ctx_fields[] = {
         LLVMArrayType(ptr_type, MAX_BINDINGS),     // binding_buffers (0)
@@ -939,10 +973,12 @@ void init_jit(JitContext* ctx,shader_t shader_type)
         ptr_type,                                  // spill_buffer (4)
         ctx->int_type,                             // current_phase (5)
         ctx->int_type,                             // active_mask (6)
-        builtin_vertex_output_type                 // vertexOut (7)
+        ptr_type,                                  // task_payload (7)
+        ptr_type,                                  // mesh_output (8)
+        LLVMArrayType(ctx->int_type, 3)            // task_group_count (9)
     };
 
-    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 8, 0);
+    ctx->exec_ctx_type = LLVMStructTypeInContext(ctx->context, exec_ctx_fields, 10, 0);
 
     LLVMTypeRef vs_data_fields[] = {
         simt_vec4_type,// gl_Position (Index 0)
@@ -1040,28 +1076,6 @@ void free_jit(JitContext* ctx)
     {
         LLVMContextDispose(ctx->context);
     }
-
-
-   // if (ctx->type_kind_map) free(ctx->type_kind_map);
-   // if (ctx->id_val_map)    free(ctx->id_val_map);
-   // if (ctx->decorations)   free(ctx->decorations);
-    //if (ctx->type_info)     free(ctx->type_info);
-
-
-    // if (ctx->member_decorations)
-    // {
-    //     for (uint32_t i = 0; i < ctx->bound; ++i) 
-    //     {
-    //         MemberDecoNode* node = ctx->member_decorations[i];
-    //         while (node) 
-    //         {
-    //             MemberDecoNode* next = node->next; 
-    //             free(node);
-    //             node = next;
-    //         }
-    //     }
-    //     free(ctx->member_decorations);
-    // }
 
     if (ctx->names) 
     {

@@ -1,0 +1,60 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
+layout(triangles, max_vertices = 64, max_primitives = 126) out;
+
+struct TaskPayload {
+    uint meshlet_ids[16];
+};
+taskPayloadSharedEXT TaskPayload payload;
+
+struct Meshlet {
+    vec4 bounding_sphere;
+    vec4 cone;
+    uint vertex_offset;
+    uint vertex_count;
+    uint primitive_offset;
+    uint primitive_count;
+};
+
+layout(std430, binding = 0) readonly buffer MeshletBuf {
+    Meshlet meshlets[];
+};
+
+layout(std430, binding = 1) readonly buffer VertexBuf {
+    vec4 positions[];
+};
+
+layout(std430, binding = 2) readonly buffer PrimitiveBuf {
+    uint packed_triangles[];
+};
+
+layout(location = 0) out vec4 out_color[];
+layout(location = 1) perprimitiveEXT out vec4 out_prim_color[];
+
+void main() {
+    uint lane = gl_LocalInvocationIndex;
+    uint meshlet_id = payload.meshlet_ids[gl_WorkGroupID.x];
+    Meshlet m = meshlets[meshlet_id];
+
+    SetMeshOutputsEXT(m.vertex_count, m.primitive_count);
+
+    if (lane < m.vertex_count) {
+        uint v_idx = m.vertex_offset + lane;
+        gl_MeshVerticesEXT[lane].gl_Position = positions[v_idx];
+        out_color[lane] = vec4(float(meshlet_id), float(lane), 1.0, 1.0);
+    }
+
+    if (lane < m.primitive_count) {
+        uint packed_tri = packed_triangles[m.primitive_offset + lane];
+        uint v0 = (packed_tri >> 0) & 0xFFu;
+        uint v1 = (packed_tri >> 8) & 0xFFu;
+        uint v2 = (packed_tri >> 16) & 0xFFu;
+        uint cull_flag = (packed_tri >> 24) & 0xFFu;
+        gl_PrimitiveTriangleIndicesEXT[lane] = uvec3(v0, v1, v2);
+        gl_MeshPrimitivesEXT[lane].gl_PrimitiveID = int(lane + 100u);
+        gl_MeshPrimitivesEXT[lane].gl_CullPrimitiveEXT = (cull_flag != 0u);
+        out_prim_color[lane] = vec4(float(v0), float(v1), float(v2), 1.0);
+    }
+}

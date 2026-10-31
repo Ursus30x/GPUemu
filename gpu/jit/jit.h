@@ -30,7 +30,9 @@
 typedef enum {
     FRAGMENT_SHADER,
     VERTEX_SHADER,
-    COMPUTE_SHADER
+    COMPUTE_SHADER,
+    TASK_SHADER,
+    MESH_SHADER
 } shader_t;
 
 typedef enum {
@@ -114,6 +116,36 @@ typedef struct
     SimtVec4 gl_SubgroupLtMask;
 } BuiltinComputeInput;
 
+#define MESH_MAX_VERTICES 64
+#define MESH_MAX_PRIMITIVES 126
+#define MAX_TASK_PAYLOAD_SIZE (16 * 1024)
+
+typedef struct {
+    float position[4];
+    float point_size;
+    float clip_distance[1];
+    float cull_distance[1];
+} BuiltinMeshVertex;
+
+typedef struct {
+    int32_t primitive_id;
+    int32_t layer;
+    int32_t viewport_index;
+    uint32_t cull_primitive;
+} BuiltinMeshPrimitive;
+
+typedef struct {
+    uint32_t vertex_count;
+    uint32_t primitive_count;
+    BuiltinMeshVertex vertices[MESH_MAX_VERTICES];
+    BuiltinMeshPrimitive primitives[MESH_MAX_PRIMITIVES];
+    uint32_t triangle_indices[MESH_MAX_PRIMITIVES][3];
+    uint32_t line_indices[MESH_MAX_PRIMITIVES][2];
+    uint32_t point_indices[MESH_MAX_PRIMITIVES];
+    float per_vertex_out[MAX_ATTRIBUTES][MESH_MAX_VERTICES][4];
+    float per_primitive_out[MAX_ATTRIBUTES][MESH_MAX_PRIMITIVES][4];
+} BuiltinMeshOutput;
+
 typedef struct {
     void* binding_buffers[MAX_BINDINGS]; 
     void* location_in_buffers[MAX_ATTRIBUTES];
@@ -122,6 +154,9 @@ typedef struct {
     void* spill_buffer;
     uint32_t current_phase;
     uint32_t active_mask;
+    void* task_payload;
+    void* mesh_output;
+    uint32_t task_group_count[3];
 } ExecutionContext;
 
 #define MAX_SHARED_MEM_SIZE (16 * 1024)
@@ -132,6 +167,7 @@ typedef struct {
     int32_t location;
     int32_t builtin;
     int32_t array_stride; 
+    int32_t per_primitive;
     int is_decorated;
 } SpvDecoInfo;
 
@@ -185,6 +221,8 @@ typedef struct {
     uint32_t base_type_id;  
     uint32_t* member_types;
     uint32_t member_count;
+    uint32_t array_length_id;
+    uint32_t storage_class;
     ImageType image_type;
     struct {
         uint32_t image_type_id;
@@ -205,6 +243,10 @@ typedef struct ShaderInfo {
     uint32_t local_size_x;
     uint32_t local_size_y;
     uint32_t local_size_z;
+    uint32_t local_size_id[3];
+    uint32_t max_output_vertices;
+    uint32_t max_output_primitives;
+    uint32_t output_topology;
     uint32_t barrier_count;
 } ShaderInfo;
 
@@ -214,7 +256,9 @@ struct JitContext{
     shader_t shader_type;
     uint32_t output_location_mask;
     uint32_t bound;
-    uint8_t* type_kind_map;
+    uint32_t* type_kind_map;
+    uint32_t* var_type_map;
+    uint32_t* constant_uint_map;
     
     LLVMValueRef* id_val_map; 
 
@@ -252,6 +296,7 @@ struct JitContext{
     LLVMTypeRef vec_i1_type;
     LLVMTypeRef int8_type;
     LLVMTypeRef ptr_type;
+    LLVMTypeRef vec_ptr_type;
     LLVMTypeRef exec_ctx_type;
 
     /* LLVMValueRefs for entry-function parameters (thread-local state) */
