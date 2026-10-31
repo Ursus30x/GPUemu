@@ -24,6 +24,7 @@ EDK2_MODULES=(
     "FrameBenchmark/FrameBenchmark.inf:FrameBenchmark"
     "BlendingTest/BlendingTest.inf:BlendingTest"
     "ShellPkg/Application/Shell/Shell.inf:Shell"
+    "SamplerTest/SamplerTest.inf:SamplerTest"
 )
 
 # Run the test harness autodiscovery

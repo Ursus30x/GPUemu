@@ -873,6 +873,7 @@ jitted_func_t jit_compile_spirv(JitContext* ctx, uint32_t* binary, size_t word_c
 void init_jit(JitContext* ctx,shader_t shader_type)
 {
     ctx->shader_type = shader_type;
+    ctx->output_location_mask = 0;
 
     char *error = NULL;
     LLVMInitializeNativeTarget();

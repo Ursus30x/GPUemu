@@ -277,6 +277,7 @@ static void execute_command(GpuState *gpu, Command *cmd)
                         free_jit(&gpu->jit_ctx_vs); 
                         init_jit(&gpu->jit_ctx_vs, VERTEX_SHADER); 
                         gpu->vs_shader_func = jit_compile_spirv(&gpu->jit_ctx_vs, shader_code, size / 4);
+                        gpu->vs_output_location_mask = gpu->jit_ctx_vs.output_location_mask;
                         gpu->vs_hash = hash;
                     }
                 }

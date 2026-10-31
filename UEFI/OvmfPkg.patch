@@ -39,7 +39,7 @@ diff --git a/OvmfPkg/OvmfPkgX64.dsc b/OvmfPkg/OvmfPkgX64.dsc
 index 947b18816e..05db6ef835 100644
 --- a/OvmfPkg/OvmfPkgX64.dsc
 +++ b/OvmfPkg/OvmfPkgX64.dsc
-@@ -774,6 +774,11 @@
+@@ -774,6 +774,12 @@
  ################################################################################
  [Components]
    OvmfPkg/ResetVector/ResetVector.inf
@@ -47,6 +47,7 @@ index 947b18816e..05db6ef835 100644
 +  SpirvApp/SpirvApp.inf
 +  FrameBenchmark/FrameBenchmark.inf
 +  BlendingTest/BlendingTest.inf
++  SamplerTest/SamplerTest.inf
 +  TestHarness/TestHarness.inf
  
    #

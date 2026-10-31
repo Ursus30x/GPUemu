@@ -16,6 +16,12 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     // We cannot emit LLVM instructions (GEP/Load/Alloca) here because there is no function.
     if (ctx->func == NULL) 
     {
+        if (storage_class == SpvStorageClassOutput &&
+            deco->location >= 0 && deco->location < MAX_ATTRIBUTES)
+        {
+            ctx->output_location_mask |= 1u << deco->location;
+        }
+
         // Add to our "Pending Globals" list to be resolved inside the main function prologue
         if (ctx->global_count < MAX_GLOBALS) 
         {

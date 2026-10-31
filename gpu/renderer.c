@@ -459,6 +459,18 @@ void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float 
         return;
     }
 
+    float *transformed_varyings = NULL;
+    if (gpu->vs_output_location_mask != 0)
+    {
+        transformed_varyings = calloc((size_t)vertex_size * MAX_ATTRIBUTES * 4, sizeof(float));
+        if (!transformed_varyings)
+        {
+            free(transformed_vertices);
+            gpu->gpu_mode = GPU_MODE_3D;
+            return;
+        }
+    }
+
     // PASS 1: Vertex Transformations (SIMT 16-element blocks)
     uint32_t total_vertex_blocks = (vertex_size + 15) / SIMT_WIDTH;
     uint32_t chunk_v_blocks = total_vertex_blocks / NUM_RENDER_THREADS;
@@ -467,6 +479,7 @@ void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float 
     {
         render.args[i].orig_gpu = gpu;
         render.args[i].transformed_vertices = transformed_vertices;
+        render.args[i].transformed_varyings = transformed_varyings;
         render.args[i].primitive_type = prim_type;
         render.args[i].point_size = point_size;
         render.args[i].line_width = line_width;
@@ -487,6 +500,7 @@ void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float 
         {
             render.args[i].orig_gpu = gpu;
             render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].transformed_varyings = transformed_varyings;
             render.args[i].primitive_type = prim_type;
             render.args[i].point_size = point_size;
             render.args[i].line_width = line_width;
@@ -508,6 +522,7 @@ void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float 
         {
             render.args[i].orig_gpu = gpu;
             render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].transformed_varyings = transformed_varyings;
             render.args[i].assembled_triangles = (Triangle *)assembled_lines;
             render.args[i].assembled_triangle_count = line_count;
             render.args[i].primitive_type = prim_type;
@@ -533,6 +548,7 @@ void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float 
         {
             render.args[i].orig_gpu = gpu;
             render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].transformed_varyings = transformed_varyings;
             render.args[i].assembled_triangles = assembled_triangles;
             render.args[i].assembled_triangle_count = tri_count;
             render.args[i].primitive_type = prim_type;
@@ -551,6 +567,7 @@ void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float 
     }
 
     free(transformed_vertices);
+    free(transformed_varyings);
     gpu->gpu_mode = GPU_MODE_3D;
 }
 

@@ -27,6 +27,7 @@ typedef struct {
     float r_inv_w[3], g_inv_w[3], b_inv_w[3], a_inv_w[3];
     float u_inv_w[3], v_inv_w[3];  /* perspective-correct UV interpolants */
     float nx_inv_w[3], ny_inv_w[3], nz_inv_w[3]; /* perspective-correct Normal interpolants */
+    float varying_inv_w[MAX_ATTRIBUTES][4][3];
 } TriangleContext;
 
 
@@ -35,6 +36,7 @@ typedef struct {
     Vec3Raw normal;   /* per-vertex normal vector */
     uint32_t color;
     float u, v;       /* per-vertex texture coordinates */
+    float *varyings;
 } TransformedVertex;
 
 typedef enum {
@@ -54,6 +56,7 @@ typedef struct {
     uint32_t *px;
     uint32_t *py;
     TransformedVertex *transformed_vertices;
+    float *transformed_varyings;
     uint32_t triangle_size;
     uint32_t start_y;
     uint32_t end_y;
