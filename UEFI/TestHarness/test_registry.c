@@ -13,9 +13,39 @@ CONST GPU_TEST_NODE gTestRegistry[] = {
         Test_Compute_VecAdd
     },
     {
+        "test-mesh.dispatch.indirect",
+        "Indirect mesh task dispatch from VRAM buffer offset",
+        Test_Mesh_IndirectDispatch
+    },
+    {
+        "test-mesh.edge.zero_outputs",
+        "Zero mesh tasks (EmitMeshTasksEXT(0,1,1)) and zero mesh outputs (SetMeshOutputsEXT(0,0))",
+        Test_Mesh_ZeroOutputs
+    },
+    {
+        "test-mesh.pipeline.mesh_only",
+        "Mesh-only pipeline without a Task shader bound",
+        Test_Mesh_MeshOnly
+    },
+    {
         "test-mesh.pipeline.task_cull_raster",
         "Task shader meshlet culling and mesh shader triangle rasterization",
         Test_Mesh_TaskCullAndRaster
+    },
+    {
+        "test-mesh.sync.workgroup_barrier_shared",
+        "Multi-workgroup Task and Mesh shader shared memory and OpControlBarrier",
+        Test_Mesh_WorkgroupBarrierShared
+    },
+    {
+        "test-mesh.topology.points_and_lines",
+        "Mesh shader OutputPoints (gl_PointSize) and OutputLinesEXT topologies",
+        Test_Mesh_PointsAndLines
+    },
+    {
+        "test-mesh.varying.per_primitive",
+        "Per-primitive varying attribute (perprimitiveEXT) across shared vertices",
+        Test_Mesh_PerPrimitiveVarying
     },
     {
         "test-raster.blend.alpha",
