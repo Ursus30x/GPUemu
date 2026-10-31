@@ -250,22 +250,6 @@ void jit_call_printf_simt(JitContext* ctx, const char* fmt, LLVMValueRef vec_val
     jit_call_printf(ctx, "]\n", NULL, 0);
 }
 
-static LLVMValueRef jit_extract_scalar_u32(JitContext* ctx, LLVMValueRef val)
-{
-    if (!val) return LLVMConstInt(ctx->int_type, 0, 0);
-    LLVMTypeRef t = LLVMTypeOf(val);
-    if (LLVMGetTypeKind(t) == LLVMVectorTypeKind) 
-    {
-        val = LLVMBuildExtractElement(ctx->builder, val, LLVMConstInt(ctx->int_type, 0, 0), "ext_l0");
-        t = LLVMTypeOf(val);
-    }
-    if (LLVMGetTypeKind(t) == LLVMFloatTypeKind || LLVMGetTypeKind(t) == LLVMDoubleTypeKind) 
-    {
-        return LLVMBuildFPToUI(ctx->builder, val, ctx->int_type, "f2u_s");
-    }
-    return val;
-}
-
 void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count) 
 {
     
@@ -301,6 +285,18 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpConstant:
             handle_op_constant(ctx, res_id, type_id, operands);
             break;
+        case SpvOpConstantTrue:
+        {
+            uint32_t one = 1;
+            handle_op_constant(ctx, res_id, type_id, &one);
+            break;
+        }
+        case SpvOpConstantFalse:
+        {
+            uint32_t zero = 0;
+            handle_op_constant(ctx, res_id, type_id, &zero);
+            break;
+        }
         case SpvOpDecorate:
             handle_op_decorate(ctx, operands, operand_count);
             break;
@@ -356,10 +352,28 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_iequal(ctx, res_id, operands);
             break;
         case SpvOpFOrdLessThan:
-            handle_op_fordlessthan(ctx, res_id, operands);
+        case SpvOpFUnordLessThan:
+            handle_op_fcmp(ctx, res_id, operands, "v_folt", LLVMRealOLT);
             break;
         case SpvOpFOrdGreaterThan:
-            handle_op_fordgreaterthan(ctx, res_id, operands);
+        case SpvOpFUnordGreaterThan:
+            handle_op_fcmp(ctx, res_id, operands, "v_fogt", LLVMRealOGT);
+            break;
+        case SpvOpFOrdLessThanEqual:
+        case SpvOpFUnordLessThanEqual:
+            handle_op_fcmp(ctx, res_id, operands, "v_fole", LLVMRealOLE);
+            break;
+        case SpvOpFOrdGreaterThanEqual:
+        case SpvOpFUnordGreaterThanEqual:
+            handle_op_fcmp(ctx, res_id, operands, "v_foge", LLVMRealOGE);
+            break;
+        case SpvOpFOrdEqual:
+        case SpvOpFUnordEqual:
+            handle_op_fcmp(ctx, res_id, operands, "v_foeq", LLVMRealOEQ);
+            break;
+        case SpvOpFOrdNotEqual:
+        case SpvOpFUnordNotEqual:
+            handle_op_fcmp(ctx, res_id, operands, "v_fone", LLVMRealONE);
             break;
         case SpvOpFMod:
             handle_op_fmod(ctx, res_id, operands);
@@ -441,102 +455,21 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
             handle_op_entry_point(ctx, operands, operand_count);
             break;
         case SpvOpExecutionMode:
-            if (operand_count >= 5 && operands[1] == SpvExecutionModeLocalSize)
-            {
-                ctx->shader_info.local_size_x = operands[2];
-                ctx->shader_info.local_size_y = operands[3];
-                ctx->shader_info.local_size_z = operands[4];
-            } 
-            else if (operand_count >= 3 && operands[1] == SpvExecutionModeOutputVertices)
-            {
-                ctx->shader_info.max_output_vertices = operands[2];
-            } 
-            else if (operand_count >= 3 && operands[1] == SpvExecutionModeOutputPrimitivesEXT)
-            {
-                ctx->shader_info.max_output_primitives = operands[2];
-            } 
-            else if (operand_count >= 2 &&
-                       (operands[1] == SpvExecutionModeOutputPoints ||
-                        operands[1] == SpvExecutionModeOutputLinesEXT ||
-                        operands[1] == SpvExecutionModeOutputTrianglesEXT))
-            {
-                ctx->shader_info.output_topology = operands[1];
-            }
+            handle_op_ex_mode(ctx, operand_count, operands);
             break;
         case SpvOpExecutionModeId:
-            if (operand_count >= 5 && operands[1] == SpvExecutionModeLocalSizeId)
-            {
-                ctx->shader_info.local_size_id[0] = operands[2];
-                ctx->shader_info.local_size_id[1] = operands[3];
-                ctx->shader_info.local_size_id[2] = operands[4];
-            }
+            handle_op_ex_mode_id(ctx, operand_count, operands);
             break;
         case SpvOpSetMeshOutputsEXT:
-        {
-            LLVMValueRef v_cnt = jit_extract_scalar_u32(ctx, get_val(ctx, operands[0]));
-            LLVMValueRef p_cnt = jit_extract_scalar_u32(ctx, get_val(ctx, operands[1]));
-            LLVMValueRef indices[] = {
-                LLVMConstInt(ctx->int_type, 0, 0),
-                LLVMConstInt(ctx->int_type, 8, 0)
-            };
-            LLVMValueRef mesh_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 2, "mesh_slot");
-            LLVMValueRef mesh_base = LLVMBuildLoad2(ctx->builder, ctx->ptr_type, mesh_slot, "mesh_base");
-            LLVMTypeRef i8_type = LLVMInt8TypeInContext(ctx->context);
-            LLVMTypeRef i64_type = LLVMInt64TypeInContext(ctx->context);
-            LLVMValueRef v_off = LLVMConstInt(i64_type, offsetof(BuiltinMeshOutput, vertex_count), 0);
-            LLVMValueRef p_off = LLVMConstInt(i64_type, offsetof(BuiltinMeshOutput, primitive_count), 0);
-            LLVMValueRef v_ptr = LLVMBuildGEP2(ctx->builder, i8_type, mesh_base, &v_off, 1, "v_cnt_ptr");
-            LLVMValueRef p_ptr = LLVMBuildGEP2(ctx->builder, i8_type, mesh_base, &p_off, 1, "p_cnt_ptr");
-            LLVMBuildStore(ctx->builder, v_cnt, v_ptr);
-            LLVMBuildStore(ctx->builder, p_cnt, p_ptr);
+            handle_op_set_mesh_out(ctx, operands);
             break;
-        }
         case SpvOpEmitMeshTasksEXT:
-        {
-            for (int k = 0; k < 3; k++) 
-            {
-                LLVMValueRef g_cnt = jit_extract_scalar_u32(ctx, get_val(ctx, operands[k]));
-                LLVMValueRef indices[] = {
-                    LLVMConstInt(ctx->int_type, 0, 0),
-                    LLVMConstInt(ctx->int_type, 9, 0),
-                    LLVMConstInt(ctx->int_type, k, 0)
-                };
-                LLVMValueRef slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 3, "task_grp_slot");
-                LLVMBuildStore(ctx->builder, g_cnt, slot);
-            }
-            LLVMBuildRetVoid(ctx->builder);
+            handle_op_emit_mesh_task(ctx, operands);
             break;
-        }
         case SpvOpControlBarrier:
         case SpvOpMemoryBarrier:
-        {
-            LLVMBuildFence(ctx->builder, LLVMAtomicOrderingSequentiallyConsistent, 0, "");
-            if (opcode == SpvOpControlBarrier) {
-                uint32_t barrier_idx = ctx->barrier_count++;
-                ctx->shader_info.barrier_count = ctx->barrier_count;
-
-                LLVMValueRef indices[] = {
-                    LLVMConstInt(ctx->int_type, 0, 0),
-                    LLVMConstInt(ctx->int_type, 5, 0)
-                };
-                LLVMValueRef phase_slot = LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 2, "phase_slot");
-                LLVMValueRef phase_val = LLVMBuildLoad2(ctx->builder, ctx->int_type, phase_slot, "phase_val");
-
-                LLVMValueRef is_current = LLVMBuildICmp(ctx->builder, LLVMIntEQ, phase_val, LLVMConstInt(ctx->int_type, barrier_idx, 0), "is_phase_match");
-
-                LLVMBasicBlockRef next_phase_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "next_phase_bb");
-                LLVMBasicBlockRef exit_bb = LLVMAppendBasicBlockInContext(ctx->context, ctx->func, "phase_exit_bb");
-
-                LLVMBuildCondBr(ctx->builder, is_current, exit_bb, next_phase_bb);
-
-                LLVMPositionBuilderAtEnd(ctx->builder, exit_bb);
-                LLVMBuildRetVoid(ctx->builder);
-
-                LLVMPositionBuilderAtEnd(ctx->builder, next_phase_bb);
-                ctx->current_block = next_phase_bb;
-            }
+            handle_op_barrier(ctx, res_id, operands, opcode);
             break;
-        }
         case SpvOpTypeImage:
             handle_op_type_image(ctx, res_id, operands);
             break;
@@ -1143,28 +1076,6 @@ void free_jit(JitContext* ctx)
     {
         LLVMContextDispose(ctx->context);
     }
-
-
-   // if (ctx->type_kind_map) free(ctx->type_kind_map);
-   // if (ctx->id_val_map)    free(ctx->id_val_map);
-   // if (ctx->decorations)   free(ctx->decorations);
-    //if (ctx->type_info)     free(ctx->type_info);
-
-
-    // if (ctx->member_decorations)
-    // {
-    //     for (uint32_t i = 0; i < ctx->bound; ++i) 
-    //     {
-    //         MemberDecoNode* node = ctx->member_decorations[i];
-    //         while (node) 
-    //         {
-    //             MemberDecoNode* next = node->next; 
-    //             free(node);
-    //             node = next;
-    //         }
-    //     }
-    //     free(ctx->member_decorations);
-    // }
 
     if (ctx->names) 
     {

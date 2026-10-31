@@ -283,22 +283,13 @@ void handle_op_iequal(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     set_val(ctx, res_id, cmp);
 }
 
-void handle_op_fordlessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+
+void handle_op_fcmp(JitContext* ctx, uint32_t res_id, uint32_t* operands, const char* str, LLVMRealPredicate pred)
 {
     LLVMValueRef lhs = get_val(ctx, operands[0]);
     LLVMValueRef rhs = get_val(ctx, operands[1]);
 
-    LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOLT, lhs, rhs,"v_folt");
-    set_val(ctx, res_id, cmp);
-}
-
-void handle_op_fordgreaterthan(JitContext* ctx, uint32_t res_id, uint32_t* operands)
-{
-    LLVMValueRef lhs = get_val(ctx, operands[0]);
-    LLVMValueRef rhs = get_val(ctx, operands[1]);
-
-    LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOGT, lhs, rhs, "v_fogt");
-
+    LLVMValueRef cmp = LLVMBuildFCmp(ctx->builder, pred, lhs, rhs, str);
     set_val(ctx, res_id, cmp);
 }
 
@@ -876,9 +867,8 @@ void handle_ext_smoothstep(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 }
 void handle_ext_fmix(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
-    //x * (1 - a) + y * a.
+    // x * (1 - a) + y * a
     LLVMValueRef scalars[SIMT_WIDTH];
-   
     LLVMTypeRef f32_type = ctx->float_type;
 
     LLVMValueRef x = get_val(ctx, operands[0]);
@@ -886,6 +876,27 @@ void handle_ext_fmix(JitContext* ctx, uint32_t res_id, uint32_t* operands)
     LLVMValueRef a = get_val(ctx, operands[2]);
 
     CREATE_CONST_VEC(one_vec, (float)1.0f);
+
+    if (LLVMGetTypeKind(LLVMTypeOf(x)) == LLVMArrayTypeKind)
+    {
+        uint32_t count = LLVMGetArrayLength(LLVMTypeOf(x));
+        LLVMValueRef res = LLVMGetUndef(LLVMTypeOf(x));
+        bool a_is_array = (LLVMGetTypeKind(LLVMTypeOf(a)) == LLVMArrayTypeKind);
+        for (uint32_t i = 0; i < count; i++)
+        {
+            LLVMValueRef xi = LLVMBuildExtractValue(ctx->builder, x, i, "fmix_xi");
+            LLVMValueRef yi = LLVMBuildExtractValue(ctx->builder, y, i, "fmix_yi");
+            LLVMValueRef ai = a_is_array ? LLVMBuildExtractValue(ctx->builder, a, i, "fmix_ai") : a;
+            LLVMValueRef oma = LLVMBuildFSub(ctx->builder, one_vec, ai, "fmix_oma");
+            LLVMValueRef x_oma = LLVMBuildFMul(ctx->builder, xi, oma, "fmix_x_oma");
+            LLVMValueRef y_a = LLVMBuildFMul(ctx->builder, yi, ai, "fmix_y_a");
+            LLVMValueRef ri = LLVMBuildFAdd(ctx->builder, x_oma, y_a, "fmix_ri");
+            res = LLVMBuildInsertValue(ctx->builder, res, ri, i, "fmix_ins");
+        }
+        set_val(ctx, res_id, res);
+        return;
+    }
+
     LLVMValueRef one_minus_a = LLVMBuildFSub(ctx->builder, one_vec, a, "one_minus_a");
     LLVMValueRef x_times_one_minus_a = LLVMBuildFMul(ctx->builder, x, one_minus_a, "x_times_one_minus_a");
 

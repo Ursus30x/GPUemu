@@ -769,6 +769,20 @@ void gpu_render_mesh_tasks_simt(void *opaque)
         &prim_count,
         &mesh_prim_type);
 
+    float shader_point_size = 0.0f;
+    for (uint32_t mwg = 0; mwg < total_mesh_wg; mwg++)
+    {
+        for (uint32_t v = 0; v < mesh_outputs[mwg].vertex_count && v < MESH_MAX_VERTICES; v++)
+        {
+            if (mesh_outputs[mwg].vertices[v].point_size > 0.0f)
+            {
+                shader_point_size = mesh_outputs[mwg].vertices[v].point_size;
+                break;
+            }
+        }
+        if (shader_point_size > 0.0f) break;
+    }
+
     free(mesh_outputs);
     free(mesh_tasks);
     free(task_mesh_counts);
@@ -780,7 +794,7 @@ void gpu_render_mesh_tasks_simt(void *opaque)
         uint32_t chunk_y = height / NUM_RENDER_THREADS;
         chunk_y = (chunk_y + 3) & ~3;
 
-        float point_size = gpu->point_size > 0.0f ? gpu->point_size : 1.0f;
+        float point_size = shader_point_size > 0.0f ? shader_point_size : (gpu->point_size > 0.0f ? gpu->point_size : 1.0f);
         float line_width = gpu->line_width > 0.0f ? gpu->line_width : 1.0f;
 
         for (int i = 0; i < NUM_RENDER_THREADS; i++)

@@ -3,6 +3,10 @@
 #include "debug_gpu.h"
 #include <math.h>
 
+/* ========================================================================= */
+/* Section 1: Color, Math & Resource Binding Helpers                         */
+/* ========================================================================= */
+
 static inline uint8_t color_to_u8(float c)
 {
     if (c <= 0.0f) return 0;
@@ -25,7 +29,8 @@ static void bind_resources_to_context(GpuState *gpu, ExecutionContext *ectx)
     bind_ubo_to_context(gpu, ectx);
     for (int slot = 1; slot < MAX_BINDINGS; slot++)
     {
-        if (gpu->texture_desc_addr[slot] != 0 && gpu->texture_desc_addr[slot] + sizeof(GpuTextureDescriptorVram) <= GPU_VRAM_SIZE)
+        if (gpu->texture_desc_addr[slot] != 0 &&
+            gpu->texture_desc_addr[slot] + sizeof(GpuTextureDescriptorVram) <= GPU_VRAM_SIZE)
         {
             GpuTextureDescriptorVram *vram_desc = (GpuTextureDescriptorVram *)(gpu->vram_ptr + gpu->texture_desc_addr[slot]);
             if (vram_desc->data_vram_addr != 0 && vram_desc->data_vram_addr < GPU_VRAM_SIZE)
@@ -73,6 +78,201 @@ static void bind_resources_to_context(GpuState *gpu, ExecutionContext *ectx)
     }
 }
 
+static void bind_compute_resources(GpuState *gpu, ExecutionContext *ectx)
+{
+    bind_resources_to_context(gpu, ectx);
+    for (int slot = 0; slot < MAX_BINDINGS; slot++)
+    {
+        if (gpu->ssbo_config[slot].addr != 0 && gpu->ssbo_config[slot].size > 0)
+        {
+            ectx->binding_buffers[slot] = gpu->vram_ptr + gpu->ssbo_config[slot].addr;
+        }
+    }
+    if (gpu->ssbo_config[0].size == 0 && gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0)
+    {
+        ectx->binding_buffers[0] = gpu->vram_ptr + gpu->uinform_config.addr;
+    }
+}
+
+/* ========================================================================= */
+/* Section 2: Vertex Transformation & Attribute Handling                     */
+/* ========================================================================= */
+
+static void fetch_standard_vertex_attributes(
+    const uint8_t *vbo_base,
+    uint32_t base_idx,
+    uint16_t exec_mask,
+    SimtVec4 in_attribs[MAX_ATTRIBUTES_PER_SHADER])
+{
+    const Vec3 *vertices = (const Vec3*)vbo_base;
+    for (int lane = 0; lane < SIMT_WIDTH; lane++)
+    {
+        if (exec_mask & (1 << lane))
+        {
+            uint32_t i = base_idx + lane;
+            in_attribs[0].elem[0][lane] = vertices[i].x;
+            in_attribs[0].elem[1][lane] = vertices[i].y;
+            in_attribs[0].elem[2][lane] = vertices[i].z;
+            in_attribs[0].elem[3][lane] = 1.0f;
+
+            in_attribs[1].elem[0][lane] = vertices[i].u;
+            in_attribs[1].elem[1][lane] = vertices[i].v;
+        }
+    }
+}
+
+static void fetch_custom_vertex_attributes(
+    GpuState *gpu,
+    const uint8_t *vbo_base,
+    uint32_t base_idx,
+    uint16_t exec_mask,
+    SimtVec4 in_attribs[MAX_ATTRIBUTES_PER_SHADER])
+{
+    uint32_t mask = gpu->vertex_attribs.enabled_mask;
+    while (mask != 0)
+    {
+        int loc = __builtin_ctz(mask);
+        mask &= ~(1u << loc);
+
+        const GpuVertexAttribDesc *desc = &gpu->vertex_attribs.attribs[loc];
+        uint32_t stride = desc->stride;
+        uint32_t offset = desc->offset;
+        uint32_t components = desc->size;
+        uint32_t type = desc->type;
+
+        #pragma GCC unroll 16
+        for (int lane = 0; lane < SIMT_WIDTH; lane++)
+        {
+            if (!(exec_mask & (1 << lane))) continue;
+
+            uint32_t vert_idx = base_idx + lane;
+            const uint8_t *src_ptr = vbo_base + (vert_idx * stride) + offset;
+
+            if (type == GPU_ATTRIB_FLOAT)
+            {
+                const float *fsrc = (const float *)src_ptr;
+                switch (components)
+                {
+                    case 4: in_attribs[loc].elem[3][lane] = fsrc[3]; /* fallthrough */
+                    case 3: in_attribs[loc].elem[2][lane] = fsrc[2]; /* fallthrough */
+                    case 2: in_attribs[loc].elem[1][lane] = fsrc[1]; /* fallthrough */
+                    case 1: in_attribs[loc].elem[0][lane] = fsrc[0]; break;
+                }
+                if (components < 4 && loc == 0) in_attribs[loc].elem[3][lane] = 1.0f;
+            }
+            else if (type == GPU_ATTRIB_UBYTE_NORM)
+            {
+                const uint8_t *bsrc = (const uint8_t *)src_ptr;
+                const float inv255 = 1.0f / 255.0f;
+                switch (components)
+                {
+                    case 4: in_attribs[loc].elem[3][lane] = bsrc[3] * inv255; /* fallthrough */
+                    case 3: in_attribs[loc].elem[2][lane] = bsrc[2] * inv255; /* fallthrough */
+                    case 2: in_attribs[loc].elem[1][lane] = bsrc[1] * inv255; /* fallthrough */
+                    case 1: in_attribs[loc].elem[0][lane] = bsrc[0] * inv255; break;
+                }
+                if (components < 4) in_attribs[loc].elem[3][lane] = 1.0f;
+            }
+            else
+            {
+                const uint32_t *usrc = (const uint32_t *)src_ptr;
+                switch (components)
+                {
+                    case 4: in_attribs[loc].elem[3][lane] = *(const float*)&usrc[3]; /* fallthrough */
+                    case 3: in_attribs[loc].elem[2][lane] = *(const float*)&usrc[2]; /* fallthrough */
+                    case 2: in_attribs[loc].elem[1][lane] = *(const float*)&usrc[1]; /* fallthrough */
+                    case 1: in_attribs[loc].elem[0][lane] = *(const float*)&usrc[0]; break;
+                }
+            }
+        }
+    }
+}
+
+static void unpack_custom_transformed_vertex(
+    GpuState *gpu,
+    TransformedVertex *out_v,
+    uint32_t lane,
+    const SimtVec4 vs_out_varyings[MAX_ATTRIBUTES_PER_SHADER],
+    const SimtVec4 in_attribs[MAX_ATTRIBUTES_PER_SHADER])
+{
+    bool has_vs_out_1 = (vs_out_varyings[1].elem[0][lane] != 0.0f || vs_out_varyings[1].elem[1][lane] != 0.0f ||
+                         vs_out_varyings[1].elem[2][lane] != 0.0f || vs_out_varyings[1].elem[3][lane] != 0.0f);
+    bool has_vs_out_0 = (vs_out_varyings[0].elem[0][lane] != 0.0f || vs_out_varyings[0].elem[1][lane] != 0.0f ||
+                         vs_out_varyings[0].elem[2][lane] != 0.0f || vs_out_varyings[0].elem[3][lane] != 0.0f);
+
+    // 1. Setup Normal
+    if (has_vs_out_1)
+    {
+        out_v->normal.x = vs_out_varyings[0].elem[0][lane];
+        out_v->normal.y = vs_out_varyings[0].elem[1][lane];
+        out_v->normal.z = vs_out_varyings[0].elem[2][lane];
+    }
+    else if ((gpu->vertex_attribs.enabled_mask & (1 << 1)) && gpu->vertex_attribs.attribs[1].size >= 3)
+    {
+        out_v->normal.x = in_attribs[1].elem[0][lane];
+        out_v->normal.y = in_attribs[1].elem[1][lane];
+        out_v->normal.z = in_attribs[1].elem[2][lane];
+    }
+    else
+    {
+        out_v->normal.x = 0.0f;
+        out_v->normal.y = 0.0f;
+        out_v->normal.z = 1.0f;
+    }
+
+    // 2. Setup UV
+    if (has_vs_out_1)
+    {
+        out_v->u = vs_out_varyings[1].elem[0][lane];
+        out_v->v = vs_out_varyings[1].elem[1][lane];
+    }
+    else if (has_vs_out_0)
+    {
+        out_v->u = vs_out_varyings[0].elem[0][lane];
+        out_v->v = vs_out_varyings[0].elem[1][lane];
+    }
+    else if (gpu->vertex_attribs.enabled_mask & (1 << 3))
+    {
+        out_v->u = in_attribs[3].elem[0][lane];
+        out_v->v = in_attribs[3].elem[1][lane];
+    }
+    else if ((gpu->vertex_attribs.enabled_mask & (1 << 1)) && gpu->vertex_attribs.attribs[1].size <= 2)
+    {
+        out_v->u = in_attribs[1].elem[0][lane];
+        out_v->v = in_attribs[1].elem[1][lane];
+    }
+    else
+    {
+        out_v->u = 0.0f;
+        out_v->v = 0.0f;
+    }
+
+    // 3. Setup Color
+    if (vs_out_varyings[2].elem[0][lane] != 0.0f || vs_out_varyings[2].elem[1][lane] != 0.0f ||
+        vs_out_varyings[2].elem[2][lane] != 0.0f || vs_out_varyings[2].elem[3][lane] != 0.0f)
+    {
+        uint8_t cr = color_to_u8(vs_out_varyings[2].elem[0][lane]);
+        uint8_t cg = color_to_u8(vs_out_varyings[2].elem[1][lane]);
+        uint8_t cb = color_to_u8(vs_out_varyings[2].elem[2][lane]);
+        uint8_t ca = color_to_u8(vs_out_varyings[2].elem[3][lane]);
+        out_v->color = RGBA_TO_UINT(cr, cg, cb, ca);
+    }
+    else if (gpu->vertex_attribs.enabled_mask & (1 << 2))
+    {
+        uint8_t cb = color_to_u8(in_attribs[2].elem[0][lane]);
+        uint8_t cg = color_to_u8(in_attribs[2].elem[1][lane]);
+        uint8_t cr = color_to_u8(in_attribs[2].elem[2][lane]);
+        uint8_t ca = color_to_u8(in_attribs[2].elem[3][lane]);
+        out_v->color = RGBA_TO_UINT(cr, cg, cb, ca);
+    }
+    else
+    {
+        uint8_t cu = color_to_u8(out_v->u);
+        uint8_t cv = color_to_u8(out_v->v);
+        out_v->color = RGBA_TO_UINT(cu, cv, 128, 255);
+    }
+}
+
 void worker_transform_vertices_simt_impl(RenderThreadArgs *args) 
 {
     GpuState local_gpu = *(args->orig_gpu); 
@@ -98,82 +298,11 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
 
         if (__builtin_expect(!custom_layout, 0))
         {
-            Vec3 *vertices = (Vec3*)vbo_base;
-            for (int lane = 0; lane < SIMT_WIDTH; lane++)
-            {
-                if (exec_mask & (1 << lane))
-                {
-                    uint32_t i = base_idx + lane;
-                    in_attribs[0].elem[0][lane] = vertices[i].x;
-                    in_attribs[0].elem[1][lane] = vertices[i].y;
-                    in_attribs[0].elem[2][lane] = vertices[i].z;
-                    in_attribs[0].elem[3][lane] = 1.0f;
-
-                    in_attribs[1].elem[0][lane] = vertices[i].u;
-                    in_attribs[1].elem[1][lane] = vertices[i].v;
-                }
-            }
+            fetch_standard_vertex_attributes(vbo_base, base_idx, exec_mask, in_attribs);
         }
         else
         {
-            uint32_t mask = gpu->vertex_attribs.enabled_mask;
-            while (mask != 0)
-            {
-                int loc = __builtin_ctz(mask);
-                mask &= ~(1u << loc);
-
-                const GpuVertexAttribDesc *desc = &gpu->vertex_attribs.attribs[loc];
-                uint32_t stride = desc->stride;
-                uint32_t offset = desc->offset;
-                uint32_t components = desc->size;
-                uint32_t type = desc->type;
-
-                #pragma GCC unroll 16
-                for (int lane = 0; lane < SIMT_WIDTH; lane++)
-                {
-                    if (!(exec_mask & (1 << lane))) continue;
-
-                    uint32_t vert_idx = base_idx + lane;
-                    const uint8_t *src_ptr = vbo_base + (vert_idx * stride) + offset;
-
-                    if (type == GPU_ATTRIB_FLOAT)
-                    {
-                        const float *fsrc = (const float *)src_ptr;
-                        switch (components)
-                        {
-                            case 4: in_attribs[loc].elem[3][lane] = fsrc[3]; /* fallthrough */
-                            case 3: in_attribs[loc].elem[2][lane] = fsrc[2]; /* fallthrough */
-                            case 2: in_attribs[loc].elem[1][lane] = fsrc[1]; /* fallthrough */
-                            case 1: in_attribs[loc].elem[0][lane] = fsrc[0]; break;
-                        }
-                        if (components < 4 && loc == 0) in_attribs[loc].elem[3][lane] = 1.0f;
-                    }
-                    else if (type == GPU_ATTRIB_UBYTE_NORM)
-                    {
-                        const uint8_t *bsrc = (const uint8_t *)src_ptr;
-                        const float inv255 = 1.0f / 255.0f;
-                        switch (components)
-                        {
-                            case 4: in_attribs[loc].elem[3][lane] = bsrc[3] * inv255; /* fallthrough */
-                            case 3: in_attribs[loc].elem[2][lane] = bsrc[2] * inv255; /* fallthrough */
-                            case 2: in_attribs[loc].elem[1][lane] = bsrc[1] * inv255; /* fallthrough */
-                            case 1: in_attribs[loc].elem[0][lane] = bsrc[0] * inv255; break;
-                        }
-                        if (components < 4) in_attribs[loc].elem[3][lane] = 1.0f;
-                    }
-                    else
-                    {
-                        const uint32_t *usrc = (const uint32_t *)src_ptr;
-                        switch (components)
-                        {
-                            case 4: in_attribs[loc].elem[3][lane] = *(float*)&usrc[3]; /* fallthrough */
-                            case 3: in_attribs[loc].elem[2][lane] = *(float*)&usrc[2]; /* fallthrough */
-                            case 2: in_attribs[loc].elem[1][lane] = *(float*)&usrc[1]; /* fallthrough */
-                            case 1: in_attribs[loc].elem[0][lane] = *(float*)&usrc[0]; break;
-                        }
-                    }
-                }
-            }
+            fetch_custom_vertex_attributes(gpu, vbo_base, base_idx, exec_mask, in_attribs);
         }
 
         ExecutionContext jit_ctx = {0};
@@ -201,23 +330,23 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
             uint32_t global_idx = base_idx + i;
             if (global_idx < total_vertices)
             {
-                TransformedVertex *transformed = &args->transformed_vertices[global_idx];
-                memset(transformed, 0, sizeof(*transformed));
-                transformed->pos.x = vs_out.gl_Position.elem[0][i];
-                transformed->pos.y = vs_out.gl_Position.elem[1][i];
-                transformed->pos.z = vs_out.gl_Position.elem[2][i];
-                transformed->pos.w = vs_out.gl_Position.elem[3][i];
+                TransformedVertex *out_v = &args->transformed_vertices[global_idx];
+                memset(out_v, 0, sizeof(*out_v));
+                out_v->pos.x = vs_out.gl_Position.elem[0][i];
+                out_v->pos.y = vs_out.gl_Position.elem[1][i];
+                out_v->pos.z = vs_out.gl_Position.elem[2][i];
+                out_v->pos.w = vs_out.gl_Position.elem[3][i];
 
-                transformed->varyings = args->transformed_varyings != NULL
+                out_v->varyings = args->transformed_varyings != NULL
                     ? args->transformed_varyings + (size_t)global_idx * MAX_ATTRIBUTES * 4
                     : NULL;
-                if (transformed->varyings != NULL)
+                if (out_v->varyings != NULL)
                 {
                     for (int location = 0; location < MAX_ATTRIBUTES; location++)
                     {
                         for (int component = 0; component < 4; component++)
                         {
-                            transformed->varyings[location * 4 + component] =
+                            out_v->varyings[location * 4 + component] =
                                 vs_out_varyings[location].elem[component][i];
                         }
                     }
@@ -226,99 +355,32 @@ void worker_transform_vertices_simt_impl(RenderThreadArgs *args)
                 if (!custom_layout)
                 {
                     Vec3 *vertices = (Vec3*)vbo_base;
-                    args->transformed_vertices[global_idx].color    = vertices[global_idx].rgba;
-                    args->transformed_vertices[global_idx].normal.x = 0.0f;
-                    args->transformed_vertices[global_idx].normal.y = 0.0f;
-                    args->transformed_vertices[global_idx].normal.z = 1.0f;
-                    args->transformed_vertices[global_idx].u        = vs_out_varyings[0].elem[0][i];
-                    args->transformed_vertices[global_idx].v        = vs_out_varyings[0].elem[1][i];
+                    out_v->color    = vertices[global_idx].rgba;
+                    out_v->normal.x = 0.0f;
+                    out_v->normal.y = 0.0f;
+                    out_v->normal.z = 1.0f;
+                    out_v->u        = vs_out_varyings[0].elem[0][i];
+                    out_v->v        = vs_out_varyings[0].elem[1][i];
                 }
                 else
                 {
-                    bool has_vs_out_1 = (vs_out_varyings[1].elem[0][i] != 0.0f || vs_out_varyings[1].elem[1][i] != 0.0f || vs_out_varyings[1].elem[2][i] != 0.0f || vs_out_varyings[1].elem[3][i] != 0.0f);
-                    bool has_vs_out_0 = (vs_out_varyings[0].elem[0][i] != 0.0f || vs_out_varyings[0].elem[1][i] != 0.0f || vs_out_varyings[0].elem[2][i] != 0.0f || vs_out_varyings[0].elem[3][i] != 0.0f);
-
-                    // 1. Setup Normal
-                    if (has_vs_out_1)
-                    {
-                        // Multi-varying output: Loc 0 = Normal, Loc 1 = UV
-                        args->transformed_vertices[global_idx].normal.x = vs_out_varyings[0].elem[0][i];
-                        args->transformed_vertices[global_idx].normal.y = vs_out_varyings[0].elem[1][i];
-                        args->transformed_vertices[global_idx].normal.z = vs_out_varyings[0].elem[2][i];
-                    }
-                    else if ((gpu->vertex_attribs.enabled_mask & (1 << 1)) && gpu->vertex_attribs.attribs[1].size >= 3)
-                    {
-                        args->transformed_vertices[global_idx].normal.x = in_attribs[1].elem[0][i];
-                        args->transformed_vertices[global_idx].normal.y = in_attribs[1].elem[1][i];
-                        args->transformed_vertices[global_idx].normal.z = in_attribs[1].elem[2][i];
-                    }
-                    else
-                    {
-                        args->transformed_vertices[global_idx].normal.x = 0.0f;
-                        args->transformed_vertices[global_idx].normal.y = 0.0f;
-                        args->transformed_vertices[global_idx].normal.z = 1.0f;
-                    }
-
-                    // 2. Setup UV
-                    if (has_vs_out_1)
-                    {
-                        args->transformed_vertices[global_idx].u = vs_out_varyings[1].elem[0][i];
-                        args->transformed_vertices[global_idx].v = vs_out_varyings[1].elem[1][i];
-                    }
-                    else if (has_vs_out_0)
-                    {
-                        // Single varying output: Loc 0 = UV / TexCoord
-                        args->transformed_vertices[global_idx].u = vs_out_varyings[0].elem[0][i];
-                        args->transformed_vertices[global_idx].v = vs_out_varyings[0].elem[1][i];
-                    }
-                    else if (gpu->vertex_attribs.enabled_mask & (1 << 3))
-                    {
-                        args->transformed_vertices[global_idx].u = in_attribs[3].elem[0][i];
-                        args->transformed_vertices[global_idx].v = in_attribs[3].elem[1][i];
-                    }
-                    else if ((gpu->vertex_attribs.enabled_mask & (1 << 1)) && gpu->vertex_attribs.attribs[1].size <= 2)
-                    {
-                        args->transformed_vertices[global_idx].u = in_attribs[1].elem[0][i];
-                        args->transformed_vertices[global_idx].v = in_attribs[1].elem[1][i];
-                    }
-                    else
-                    {
-                        args->transformed_vertices[global_idx].u = 0.0f;
-                        args->transformed_vertices[global_idx].v = 0.0f;
-                    }
-
-                    // 3. Setup Color
-                    if (vs_out_varyings[2].elem[0][i] != 0.0f || vs_out_varyings[2].elem[1][i] != 0.0f || vs_out_varyings[2].elem[2][i] != 0.0f || vs_out_varyings[2].elem[3][i] != 0.0f)
-                    {
-                        uint8_t cr = color_to_u8(vs_out_varyings[2].elem[0][i]);
-                        uint8_t cg = color_to_u8(vs_out_varyings[2].elem[1][i]);
-                        uint8_t cb = color_to_u8(vs_out_varyings[2].elem[2][i]);
-                        uint8_t ca = color_to_u8(vs_out_varyings[2].elem[3][i]);
-                        args->transformed_vertices[global_idx].color = RGBA_TO_UINT(cr, cg, cb, ca);
-                    }
-                    else if (gpu->vertex_attribs.enabled_mask & (1 << 2))
-                    {
-                        // In Vec3, uint32_t color in memory is [B, G, R, A]
-                        uint8_t cb = color_to_u8(in_attribs[2].elem[0][i]);
-                        uint8_t cg = color_to_u8(in_attribs[2].elem[1][i]);
-                        uint8_t cr = color_to_u8(in_attribs[2].elem[2][i]);
-                        uint8_t ca = color_to_u8(in_attribs[2].elem[3][i]);
-                        args->transformed_vertices[global_idx].color = RGBA_TO_UINT(cr, cg, cb, ca);
-                    }
-                    else
-                    {
-                        // Fallback when color is not bound: encode (u, v) into color so shaders expecting varying at loc 0 (like volume3d) also receive u,v
-                        uint8_t cu = color_to_u8(args->transformed_vertices[global_idx].u);
-                        uint8_t cv = color_to_u8(args->transformed_vertices[global_idx].v);
-                        args->transformed_vertices[global_idx].color = RGBA_TO_UINT(cu, cv, 128, 255);
-                    }
+                    unpack_custom_transformed_vertex(gpu, out_v, i, vs_out_varyings, in_attribs);
                 }
             }
         }
     }
 }
 
-static bool setup_geometry_and_bounds(Vec4 v0, Vec4 v1, Vec4 v2, GpuState *gpu, int band_min_y, int band_max_y, TriangleContext *ctx, float *out_inv_area) 
+/* ========================================================================= */
+/* Section 3: Fragment Rasterization Pipeline (Triangles)                    */
+/* ========================================================================= */
+
+static bool setup_geometry_and_bounds(
+    Vec4 v0, Vec4 v1, Vec4 v2,
+    GpuState *gpu,
+    int band_min_y, int band_max_y,
+    TriangleContext *ctx,
+    float *out_inv_area) 
 {
     Vec4 v[3] = {v0, v1, v2};
     uint32_t width = gpu->width;
@@ -361,7 +423,13 @@ static bool setup_geometry_and_bounds(Vec4 v0, Vec4 v1, Vec4 v2, GpuState *gpu, 
     return true;
 }
 
-static void setup_invariants(Col3 color, Vec3Raw normals[3], float u[3], float v[3], const TransformedVertex *vertices[3], float inv_area, TriangleContext *ctx) 
+static void setup_invariants(
+    Col3 color,
+    Vec3Raw normals[3],
+    float u[3], float v[3],
+    const TransformedVertex *vertices[3],
+    float inv_area,
+    TriangleContext *ctx)
 {
     Vec3 p_zero = {0.0f, 0.0f, 0.0f};
     Vec3 p_dx1  = {1.0f, 0.0f, 0.0f};
@@ -438,7 +506,11 @@ static void setup_invariants(Col3 color, Vec3Raw normals[3], float u[3], float v
     ctx->start_w3 = ctx->start_w0 * ctx->a_inv_w[0] + ctx->start_w1 * ctx->a_inv_w[1] + ctx->start_w2 * ctx->a_inv_w[2];
 }
 
-static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stamp_w1, float stamp_w2, float stamp_w3, TriangleContext *ctx, float *lane_w0, float *lane_w1, float *lane_w2, float *lane_w3) 
+static uint16_t evaluate_stamp_coverage(
+    int x, int y,
+    float stamp_w0, float stamp_w1, float stamp_w2, float stamp_w3,
+    TriangleContext *ctx,
+    float *lane_w0, float *lane_w1, float *lane_w2, float *lane_w3) 
 {
     uint16_t exec_mask = 0x0000;
 
@@ -470,7 +542,16 @@ static uint16_t evaluate_stamp_coverage(int x, int y, float stamp_w0, float stam
     return exec_mask;
 }
 
-static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, float *lane_w0, float *lane_w1, float *lane_w2, float *lane_a, TriangleContext *ctx, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv, SimtVec3 *fs_in_normal, SimtVec4 fs_in_varyings[MAX_ATTRIBUTES]) 
+static uint16_t process_z_and_interpolate(
+    int x, int y,
+    uint16_t exec_mask,
+    float *lane_w0, float *lane_w1, float *lane_w2, float *lane_a,
+    TriangleContext *ctx,
+    GpuState *gpu,
+    SimtVec4 *fs_in_color,
+    SimtVec2 *fs_in_uv,
+    SimtVec3 *fs_in_normal,
+    SimtVec4 fs_in_varyings[MAX_ATTRIBUTES])
 {
     uint16_t shade_mask = 0x0000;
     uint32_t width = gpu->width;
@@ -491,7 +572,7 @@ static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, floa
         
         if (z < Z_BUFFER(gpu)[idx]) 
         {
-            if(gpu->depth_write_enable == 1)
+            if (gpu->depth_write_enable == 1)
             {
                 Z_BUFFER(gpu)[idx] = z;
             }
@@ -528,7 +609,15 @@ static uint16_t process_z_and_interpolate(int x, int y, uint16_t exec_mask, floa
     return shade_mask;
 }
 
-static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState *gpu, SimtVec4 *fs_in_color, SimtVec2 *fs_in_uv, SimtVec3 *fs_in_normal, SimtVec4 fs_in_varyings[MAX_ATTRIBUTES], BuiltinFragmentInput* fs_input) 
+static void execute_shader_and_write(
+    int x, int y,
+    uint16_t shade_mask,
+    GpuState *gpu,
+    SimtVec4 *fs_in_color,
+    SimtVec2 *fs_in_uv,
+    SimtVec3 *fs_in_normal,
+    SimtVec4 fs_in_varyings[MAX_ATTRIBUTES],
+    BuiltinFragmentInput* fs_input)
 {
     SimtVec4 out_color = {0};
     ExecutionContext jit_ctx = {0};
@@ -580,7 +669,11 @@ static void execute_shader_and_write(int x, int y, uint16_t shade_mask, GpuState
     }
 }
 
-void draw_triangle_simt_band(const TransformedVertex *vertices[3], GpuState *gpu, int band_min_y, int band_max_y, RenderThreadArgs *args)
+void draw_triangle_simt_band(
+    const TransformedVertex *vertices[3],
+    GpuState *gpu,
+    int band_min_y, int band_max_y,
+    RenderThreadArgs *args)
 {
     TriangleContext ctx = {0};
     float inv_area;
@@ -620,7 +713,6 @@ void draw_triangle_simt_band(const TransformedVertex *vertices[3], GpuState *gpu
             float stamp_w3 = row_w3 + ((float)(sx - ctx.stamp_min_x)) * ctx.d_w3_dx;
 
             float lane_w0[16], lane_w1[16], lane_w2[16], lane_w3[16];
-            
             uint16_t exec_mask = evaluate_stamp_coverage(sx, sy, stamp_w0, stamp_w1, stamp_w2, stamp_w3, &ctx, lane_w0, lane_w1, lane_w2, lane_w3);
 
             if (exec_mask == 0x0000) continue;
@@ -669,6 +761,10 @@ void worker_rasterize_bands_simt_impl(RenderThreadArgs *args)
         draw_triangle_simt_band(triangle_vertices, gpu, band_min_y, band_max_y, args);
     }
 }
+
+/* ========================================================================= */
+/* Section 4: Points & Lines Rasterization                                   */
+/* ========================================================================= */
 
 void worker_rasterize_points_simt_impl(RenderThreadArgs *args)
 {
@@ -874,137 +970,9 @@ void worker_rasterize_lines_simt_impl(RenderThreadArgs *args)
     }
 }
 
-void worker_compute_simt_impl(RenderThreadArgs *args)
-{
-    GpuState local_gpu = *(args->orig_gpu);
-    GpuState *gpu = &local_gpu;
-
-    uint32_t total_wg = gpu->dispatch_total_workgroups;
-    if (total_wg == 0) return;
-
-    // Find worker ID by matching args pointer
-    //int worker_id = 0;
-    // for (int i = 0; i < NUM_RENDER_THREADS; i++) {
-    //     if (args == &args->orig_gpu->refresh_thread) {} // dummy comparison
-    // }
-    // Calculate chunk for this thread
-    //uint32_t chunk = (total_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
-    
-    // Determine worker_id based on address offset from pool
-    // Note: RenderThreadArgs array element index:
-    uint32_t wg_start = 0;
-    uint32_t wg_end = 0;
-    // Each thread gets assigned a range of workgroups
-    // To be thread-agnostic, args contains start_block and end_block set by dispatch
-    wg_start = args->start_block;
-    wg_end = args->end_block;
-
-    uint32_t Sx = gpu->cs_local_size_x > 0 ? gpu->cs_local_size_x : 1;
-    uint32_t Sy = gpu->cs_local_size_y > 0 ? gpu->cs_local_size_y : 1;
-    uint32_t Sz = gpu->cs_local_size_z > 0 ? gpu->cs_local_size_z : 1;
-    uint64_t local_count_wide = (uint64_t)Sx * Sy * Sz;
-    if (local_count_wide > UINT32_MAX) {
-        DEBUG_PRINT("[COMPUTE] Local size is too large: (%u, %u, %u)\n", Sx, Sy, Sz);
-        return;
-    }
-    uint32_t local_count = (uint32_t)local_count_wide;
-    uint32_t warps_per_wg = (local_count + SIMT_WIDTH - 1) / SIMT_WIDTH;
-
-    uint32_t Gx = gpu->dispatch_group_count_x > 0 ? gpu->dispatch_group_count_x : 1;
-    uint32_t Gy = gpu->dispatch_group_count_y > 0 ? gpu->dispatch_group_count_y : 1;
-    uint32_t Gz = gpu->dispatch_group_count_z > 0 ? gpu->dispatch_group_count_z : 1;
-
-    for (uint32_t wg_linear = wg_start; wg_linear < wg_end; wg_linear++)
-    {
-        uint32_t Wx = wg_linear % Gx;
-        uint32_t Wy = (wg_linear / Gx) % Gy;
-        uint32_t Wz = wg_linear / (Gx * Gy);
-
-        uint8_t shared_mem[MAX_SHARED_MEM_SIZE];
-        memset(shared_mem, 0, sizeof(shared_mem));
-
-        uint32_t num_warps = warps_per_wg > 0 ? warps_per_wg : 1;
-        uint8_t *warp_spill = (uint8_t *)calloc(num_warps, 2048);
-
-        uint32_t num_phases = gpu->cs_barrier_count + 1;
-
-        for (uint32_t phase = 0; phase < num_phases; phase++)
-        {
-            for (uint32_t w = 0; w < warps_per_wg; w++)
-            {
-                uint32_t base_lane = w * SIMT_WIDTH;
-                uint32_t active_lanes = local_count > base_lane ? local_count - base_lane : 0;
-                if (active_lanes > SIMT_WIDTH) active_lanes = SIMT_WIDTH;
-                BuiltinComputeInput cs_in = {0};
-
-                for (int i = 0; i < SIMT_WIDTH; i++)
-                {
-                    uint32_t linear = base_lane + i;
-                    uint32_t lx = linear % Sx;
-                    uint32_t ly = (linear / Sx) % Sy;
-                    uint32_t lz = linear / (Sx * Sy);
-
-                    cs_in.gl_LocalInvocationID.elem[0][i] = (float)lx;
-                    cs_in.gl_LocalInvocationID.elem[1][i] = (float)ly;
-                    cs_in.gl_LocalInvocationID.elem[2][i] = (float)lz;
-
-                    cs_in.gl_GlobalInvocationID.elem[0][i] = (float)(Wx * Sx + lx);
-                    cs_in.gl_GlobalInvocationID.elem[1][i] = (float)(Wy * Sy + ly);
-                    cs_in.gl_GlobalInvocationID.elem[2][i] = (float)(Wz * Sz + lz);
-
-                    cs_in.gl_LocalInvocationIndex[i] = (float)linear;
-
-                    cs_in.gl_WorkGroupID.elem[0][i] = (float)Wx;
-                    cs_in.gl_WorkGroupID.elem[1][i] = (float)Wy;
-                    cs_in.gl_WorkGroupID.elem[2][i] = (float)Wz;
-
-                    cs_in.gl_NumWorkGroups.elem[0][i] = (float)Gx;
-                    cs_in.gl_NumWorkGroups.elem[1][i] = (float)Gy;
-                    cs_in.gl_NumWorkGroups.elem[2][i] = (float)Gz;
-
-                    cs_in.gl_WorkGroupSize.elem[0][i] = (float)Sx;
-                    cs_in.gl_WorkGroupSize.elem[1][i] = (float)Sy;
-                    cs_in.gl_WorkGroupSize.elem[2][i] = (float)Sz;
-
-                    cs_in.gl_SubgroupSize[i] = (float)SIMT_WIDTH;
-                    cs_in.gl_SubgroupInvocationID[i] = (float)i;
-                    cs_in.gl_NumSubgroups[i] = (float)warps_per_wg;
-                    cs_in.gl_SubgroupID[i] = (float)w;
-                    cs_in.gl_SubgroupEqMask.elem[0][i] = (float)(1u << i);
-                    cs_in.gl_SubgroupGeMask.elem[0][i] = (float)((0xFFFFu << i) & 0xFFFFu);
-                    cs_in.gl_SubgroupGtMask.elem[0][i] = (float)((0xFFFFu << (i + 1)) & 0xFFFFu);
-                    cs_in.gl_SubgroupLeMask.elem[0][i] = (float)((1u << (i + 1)) - 1u);
-                    cs_in.gl_SubgroupLtMask.elem[0][i] = (float)((1u << i) - 1u);
-                }
-
-                ExecutionContext ectx = {0};
-                ectx.shared_memory = shared_mem;
-                ectx.spill_buffer = warp_spill ? (warp_spill + w * 2048) : NULL;
-                ectx.current_phase = phase;
-                ectx.active_mask = active_lanes == SIMT_WIDTH ? 0xFFFFu : ((1u << active_lanes) - 1u);
-
-                // Bind UBO
-                if (gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0) {
-                    ectx.binding_buffers[0] = gpu->vram_ptr + gpu->uinform_config.addr;
-                }
-
-                // Bind SSBOs / Resources
-                for (int slot = 0; slot < MAX_BINDINGS; slot++) {
-                    if (gpu->ssbo_config[slot].addr != 0 && gpu->ssbo_config[slot].size > 0) {
-                        ectx.binding_buffers[slot] = gpu->vram_ptr + gpu->ssbo_config[slot].addr;
-                    }
-                }
-
-                if (gpu->cs_shader_func) {
-                    gpu->cs_shader_func(&ectx, NULL, NULL, &cs_in);
-                }
-            }
-        }
-        if (warp_spill) {
-            free(warp_spill);
-        }
-    }
-}
+/* ========================================================================= */
+/* Section 5: Compute, Task & Mesh Pipeline                                  */
+/* ========================================================================= */
 
 static void populate_compute_builtin_input(
     BuiltinComputeInput *cs_in,
@@ -1056,16 +1024,73 @@ static void populate_compute_builtin_input(
     }
 }
 
-static void bind_task_mesh_resources(GpuState *gpu, ExecutionContext *ectx)
+void worker_compute_simt_impl(RenderThreadArgs *args)
 {
-    bind_resources_to_context(gpu, ectx);
-    for (int slot = 0; slot < MAX_BINDINGS; slot++) {
-        if (gpu->ssbo_config[slot].addr != 0 && gpu->ssbo_config[slot].size > 0) {
-            ectx->binding_buffers[slot] = gpu->vram_ptr + gpu->ssbo_config[slot].addr;
-        }
+    GpuState local_gpu = *(args->orig_gpu);
+    GpuState *gpu = &local_gpu;
+
+    uint32_t total_wg = gpu->dispatch_total_workgroups;
+    if (total_wg == 0) return;
+
+    uint32_t wg_start = args->start_block;
+    uint32_t wg_end = args->end_block;
+
+    uint32_t Sx = gpu->cs_local_size_x > 0 ? gpu->cs_local_size_x : 1;
+    uint32_t Sy = gpu->cs_local_size_y > 0 ? gpu->cs_local_size_y : 1;
+    uint32_t Sz = gpu->cs_local_size_z > 0 ? gpu->cs_local_size_z : 1;
+    uint64_t local_count_wide = (uint64_t)Sx * Sy * Sz;
+    if (local_count_wide > UINT32_MAX) {
+        DEBUG_PRINT("[COMPUTE] Local size is too large: (%u, %u, %u)\n", Sx, Sy, Sz);
+        return;
     }
-    if (gpu->ssbo_config[0].size == 0 && gpu->uinform_config.size > 0 && gpu->uinform_config.addr != 0) {
-        ectx->binding_buffers[0] = gpu->vram_ptr + gpu->uinform_config.addr;
+    uint32_t local_count = (uint32_t)local_count_wide;
+    uint32_t warps_per_wg = (local_count + SIMT_WIDTH - 1) / SIMT_WIDTH;
+
+    uint32_t Gx = gpu->dispatch_group_count_x > 0 ? gpu->dispatch_group_count_x : 1;
+    uint32_t Gy = gpu->dispatch_group_count_y > 0 ? gpu->dispatch_group_count_y : 1;
+    uint32_t Gz = gpu->dispatch_group_count_z > 0 ? gpu->dispatch_group_count_z : 1;
+
+    for (uint32_t wg_linear = wg_start; wg_linear < wg_end; wg_linear++)
+    {
+        uint32_t Wx = wg_linear % Gx;
+        uint32_t Wy = (wg_linear / Gx) % Gy;
+        uint32_t Wz = wg_linear / (Gx * Gy);
+
+        uint8_t shared_mem[MAX_SHARED_MEM_SIZE];
+        memset(shared_mem, 0, sizeof(shared_mem));
+
+        uint32_t num_warps = warps_per_wg > 0 ? warps_per_wg : 1;
+        uint8_t *warp_spill = (uint8_t *)calloc(num_warps, 2048);
+
+        uint32_t num_phases = gpu->cs_barrier_count + 1;
+
+        for (uint32_t phase = 0; phase < num_phases; phase++)
+        {
+            for (uint32_t w = 0; w < warps_per_wg; w++)
+            {
+                uint32_t base_lane = w * SIMT_WIDTH;
+                uint32_t active_lanes = local_count > base_lane ? local_count - base_lane : 0;
+                if (active_lanes > SIMT_WIDTH) active_lanes = SIMT_WIDTH;
+
+                BuiltinComputeInput cs_in = {0};
+                populate_compute_builtin_input(&cs_in, base_lane, Sx, Sy, Sz, Wx, Wy, Wz, Gx, Gy, Gz, warps_per_wg, w);
+
+                ExecutionContext ectx = {0};
+                ectx.shared_memory = shared_mem;
+                ectx.spill_buffer = warp_spill ? (warp_spill + w * 2048) : NULL;
+                ectx.current_phase = phase;
+                ectx.active_mask = active_lanes == SIMT_WIDTH ? 0xFFFFu : ((1u << active_lanes) - 1u);
+
+                bind_compute_resources(gpu, &ectx);
+
+                if (gpu->cs_shader_func) {
+                    gpu->cs_shader_func(&ectx, NULL, NULL, &cs_in);
+                }
+            }
+        }
+        if (warp_spill) {
+            free(warp_spill);
+        }
     }
 }
 
@@ -1132,7 +1157,7 @@ void worker_task_shader_simt_impl(RenderThreadArgs *args)
                 ectx.task_group_count[1] = emitted_counts[1];
                 ectx.task_group_count[2] = emitted_counts[2];
 
-                bind_task_mesh_resources(gpu, &ectx);
+                bind_compute_resources(gpu, &ectx);
                 gpu->ts_shader_func(&ectx, NULL, NULL, &cs_in);
 
                 emitted_counts[0] = ectx.task_group_count[0];
@@ -1187,6 +1212,10 @@ void worker_mesh_shader_simt_impl(RenderThreadArgs *args)
 
         uint8_t shared_mem[MAX_SHARED_MEM_SIZE];
         memset(shared_mem, 0, sizeof(shared_mem));
+        uint8_t empty_payload[MAX_TASK_PAYLOAD_SIZE];
+        if (!task->task_payload) {
+            memset(empty_payload, 0, sizeof(empty_payload));
+        }
 
         uint32_t num_warps = warps_per_wg > 0 ? warps_per_wg : 1;
         uint8_t *warp_spill = (uint8_t *)calloc(num_warps, 2048);
@@ -1208,10 +1237,10 @@ void worker_mesh_shader_simt_impl(RenderThreadArgs *args)
                 ectx.spill_buffer = warp_spill ? (warp_spill + w * 2048) : NULL;
                 ectx.current_phase = phase;
                 ectx.active_mask = active_lanes == SIMT_WIDTH ? 0xFFFFu : ((1u << active_lanes) - 1u);
-                ectx.task_payload = task->task_payload;
+                ectx.task_payload = task->task_payload ? task->task_payload : empty_payload;
                 ectx.mesh_output = mesh_out;
 
-                bind_task_mesh_resources(gpu, &ectx);
+                bind_compute_resources(gpu, &ectx);
                 gpu->ms_shader_func(&ectx, NULL, NULL, &cs_in);
             }
         }
