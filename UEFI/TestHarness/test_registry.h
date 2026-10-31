@@ -10,7 +10,13 @@
 
 // Forward declarations of discovered test functions
 TEST_STATUS Test_Compute_VecAdd(IN GOP_3D_PROTOCOL *Gop3D);
+TEST_STATUS Test_Mesh_IndirectDispatch(IN GOP_3D_PROTOCOL *Gop3D);
+TEST_STATUS Test_Mesh_ZeroOutputs(IN GOP_3D_PROTOCOL *Gop3D);
+TEST_STATUS Test_Mesh_MeshOnly(IN GOP_3D_PROTOCOL *Gop3D);
 TEST_STATUS Test_Mesh_TaskCullAndRaster(IN GOP_3D_PROTOCOL *Gop3D);
+TEST_STATUS Test_Mesh_WorkgroupBarrierShared(IN GOP_3D_PROTOCOL *Gop3D);
+TEST_STATUS Test_Mesh_PointsAndLines(IN GOP_3D_PROTOCOL *Gop3D);
+TEST_STATUS Test_Mesh_PerPrimitiveVarying(IN GOP_3D_PROTOCOL *Gop3D);
 TEST_STATUS Test_Raster_BlendAlpha(IN GOP_3D_PROTOCOL *Gop3D);
 TEST_STATUS Test_Raster_Triangles(IN GOP_3D_PROTOCOL *Gop3D);
 TEST_STATUS Test_Sampler_2DNearest(IN GOP_3D_PROTOCOL *Gop3D);

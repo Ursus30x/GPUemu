@@ -4,6 +4,12 @@
 #include "common_fixture.h"
 #include "../res/shaders/meshlet_cull_ts.h"
 #include "../res/shaders/meshlet_gen_ms.h"
+#include "../res/shaders/mesh_only_ms.h"
+#include "../res/shaders/mesh_points_ms.h"
+#include "../res/shaders/mesh_lines_ms.h"
+#include "../res/shaders/mesh_per_prim_ms.h"
+#include "../res/shaders/mesh_barrier_ts.h"
+#include "../res/shaders/mesh_barrier_ms.h"
 #include "../res/shaders/raster_default_fs.h"
 
 #define MESH_MAX_SSBO_SLOTS 8
@@ -36,6 +42,7 @@ typedef struct _MESH_FIXTURE {
     EFI_STATUS (*SetFragShader)(struct _MESH_FIXTURE *Fix, CONST VOID *ShaderCode, UINT32 CodeSize);
     EFI_STATUS (*SetBuffer)(struct _MESH_FIXTURE *Fix, UINT32 Slot, CONST VOID *Data, UINT32 Size);
     EFI_STATUS (*DrawMeshTasks)(struct _MESH_FIXTURE *Fix, UINT32 Gx, UINT32 Gy, UINT32 Gz);
+    EFI_STATUS (*DrawMeshTasksIndirect)(struct _MESH_FIXTURE *Fix, UINT32 IndirectSlot, UINT32 ByteOffset);
     UINT32     (*ReadPixel)(struct _MESH_FIXTURE *Fix, UINT32 X, UINT32 Y);
 } MESH_FIXTURE;
 
@@ -152,7 +159,38 @@ STATIC inline EFI_STATUS MeshFixtureDrawMeshTasks(MESH_FIXTURE *Fix, UINT32 Gx, 
         }
     }
 
-    Gop3D->GpuCmdDrawMeshTasks(Gop3D, (Gx > 0) ? Gx : 1, (Gy > 0) ? Gy : 1, (Gz > 0) ? Gz : 1);
+    Gop3D->GpuCmdDrawMeshTasks(Gop3D, Gx, Gy, Gz);
+    Gop3D->GpuCmdEnd(Gop3D);
+
+    return Gop3D->GpuPresent(Gop3D);
+}
+
+STATIC inline EFI_STATUS MeshFixtureDrawMeshTasksIndirect(MESH_FIXTURE *Fix, UINT32 IndirectSlot, UINT32 ByteOffset) {
+    if (Fix == NULL || Fix->Gop3D == NULL || Fix->hMS == GPU_NULL_ADDR || Fix->hFS == GPU_NULL_ADDR) {
+        return EFI_INVALID_PARAMETER;
+    }
+    if (IndirectSlot >= MESH_MAX_SSBO_SLOTS || Fix->hBuffers[IndirectSlot] == GPU_NULL_ADDR) {
+        return EFI_INVALID_PARAMETER;
+    }
+
+    GOP_3D_PROTOCOL *Gop3D = Fix->Gop3D;
+
+    Gop3D->GpuCmdBegin(Gop3D);
+    Gop3D->GpuCmdClearFrame(Gop3D, Fix->ClearColor);
+    Gop3D->GpuCmdSetBlendState(Gop3D, FALSE, Gop3dBlendFactorOne, Gop3dBlendFactorZero);
+    Gop3D->GpuCmdSetDepthWrite(Gop3D, TRUE);
+
+    Gop3D->GpuCmdBindTaskShader(Gop3D, Fix->hTS, Fix->TsSize);
+    Gop3D->GpuCmdBindMeshShader(Gop3D, Fix->hMS, Fix->MsSize);
+    Gop3D->GpuCmdBindFragShader(Gop3D, Fix->hFS, Fix->FsSize);
+
+    for (UINT32 Slot = 0; Slot < MESH_MAX_SSBO_SLOTS; Slot++) {
+        if (Fix->hBuffers[Slot] != GPU_NULL_ADDR) {
+            Gop3D->GpuCmdBindSSBO(Gop3D, Slot, Fix->hBuffers[Slot], Fix->BufferSizes[Slot]);
+        }
+    }
+
+    Gop3D->GpuCmdDrawMeshTasksIndirect(Gop3D, Fix->hBuffers[IndirectSlot] + ByteOffset);
     Gop3D->GpuCmdEnd(Gop3D);
 
     return Gop3D->GpuPresent(Gop3D);
@@ -183,9 +221,10 @@ STATIC inline BOOLEAN HarnessInitMeshFixture(IN GOP_3D_PROTOCOL *Gop3D, OUT MESH
     Fix->SetTaskShader = MeshFixtureSetTaskShader;
     Fix->SetMeshShader = MeshFixtureSetMeshShader;
     Fix->SetFragShader = MeshFixtureSetFragShader;
-    Fix->SetBuffer     = MeshFixtureSetBuffer;
-    Fix->DrawMeshTasks = MeshFixtureDrawMeshTasks;
-    Fix->ReadPixel     = MeshFixtureReadPixel;
+    Fix->SetBuffer             = MeshFixtureSetBuffer;
+    Fix->DrawMeshTasks         = MeshFixtureDrawMeshTasks;
+    Fix->DrawMeshTasksIndirect = MeshFixtureDrawMeshTasksIndirect;
+    Fix->ReadPixel             = MeshFixtureReadPixel;
 
     Gop3D->GpuSetMode(Gop3D, 1);
 
