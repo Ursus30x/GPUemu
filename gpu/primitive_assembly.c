@@ -262,6 +262,7 @@ static void populate_mesh_vertex(TransformedVertex *dst, const BuiltinMeshOutput
         dst->normal.y = 0.0f;
         dst->normal.z = 1.0f;
     }
+    dst->varyings = NULL;
 }
 
 void assemble_mesh_primitives(
@@ -338,7 +339,7 @@ void assemble_mesh_primitives(
     }
 
     uint32_t verts_per_prim = (prim_type == GPU_PRIM_POINTS) ? 1 : ((prim_type == GPU_PRIM_LINES) ? 2 : 3);
-    TransformedVertex *verts = (TransformedVertex *)malloc(sizeof(TransformedVertex) * total_prims * verts_per_prim);
+    TransformedVertex *verts = (TransformedVertex *)calloc(total_prims * verts_per_prim, sizeof(TransformedVertex));
     if (!verts) 
     {
         return;

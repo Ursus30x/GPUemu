@@ -801,6 +801,7 @@ void gpu_render_mesh_tasks_simt(void *opaque)
         {
             render.args[i].orig_gpu = gpu;
             render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].transformed_varyings = NULL;
             render.args[i].assembled_triangles = (mesh_prim_type == GPU_PRIM_LINES) ? (Triangle *)assembled_lines : assembled_triangles;
             render.args[i].assembled_triangle_count = prim_count;
             render.args[i].primitive_type = mesh_prim_type;
