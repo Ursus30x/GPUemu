@@ -29,7 +29,6 @@ static inline LLVMValueRef jit_get_context_field_ptr(JitContext *ctx, uint32_t f
     };
     return LLVMBuildInBoundsGEP2(ctx->builder, ctx->exec_ctx_type, ctx->env_arg_param, indices, 2, name);
 }
-}
 
 static inline LLVMValueRef jit_get_context_indexed_ptr(JitContext *ctx, uint32_t field_idx, uint32_t sub_idx, const char *name)
 {

@@ -877,7 +877,9 @@ void worker_rasterize_points_simt_impl(RenderThreadArgs *args)
                                 for (int component = 0; component < 4; component++)
                                 {
                                     fs_in_varyings[location].elem[component][lane] =
-                                        vertices[i].varyings[location * 4 + component];
+                                        (vertices[i].varyings != NULL)
+                                            ? vertices[i].varyings[location * 4 + component]
+                                            : 0.0f;
                                 }
                             }
 
