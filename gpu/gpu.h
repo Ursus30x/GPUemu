@@ -1,3 +1,5 @@
+#define GPUEPU
+#include <sys/time.h> 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/units.h"
@@ -14,6 +16,8 @@
 #include "gpu_isa.h"
 #include "gpu_hw.h"
 #include "vram.h"
+#include "jit.h"
+#include "jit_smpl.h"
 
 #ifndef GPU_H
 #define GPU_H
@@ -24,7 +28,7 @@
 #define GPU_VRAM_EDGES_SEGMENT(s)   (&((s)->vram_ptr[GPU_VRAM_EDGES_SEGMENT_ADDR]))
 #define GPU_VRAM_SHADER_SEGMENT(s)  (&((s)->vram_ptr[GPU_VRAM_SHADER_SEGMENT_ADDR]))
 
-#define FB(s)              ((uint32_t*) (gpu->vram_ptr + gpu->framebuffer_vram_offset))
+#define FB(s)              ((uint32_t*) ((s)->vram_ptr + (s)->framebuffer_vram_offset))
 #define VERTEX_TABLE(s)    ((Vec3*)     (gpu->vram_ptr + gpu->vbo_config.addr))
 #define EDGES_TABLE(s)     ((Edge*)     (gpu->vram_ptr + gpu->edge_config.addr))
 #define TRIANGLES_TABLE(s) ((Triangle*) (gpu->vram_ptr + gpu->edge_config.addr))
@@ -49,47 +53,124 @@
 #define REG_RB_START(s)      (*(uint32_t*)&s->cmd[REG_RING_BUFFER_START])
 #define REG_RB_END(s)        (*(uint32_t*)&s->cmd[REG_RING_BUFFER_END])
 
+typedef enum {
+    GPU_BLEND_FACTOR_ZERO                = 0,
+    GPU_BLEND_FACTOR_ONE                 = 1,
+    GPU_BLEND_FACTOR_SRC_ALPHA           = 2,
+    GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA = 3,
+    GPU_BLEND_FACTOR_DST_ALPHA           = 4,
+    GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA = 5,
+    GPU_BLEND_FACTOR_SRC_COLOR           = 6,
+    GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR = 7,
+    GPU_BLEND_FACTOR_DST_COLOR           = 8,
+    GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR = 9
+} GpuBlendFactor;
 
 
 typedef struct GpuState {
-    
     PCIDevice pdev;
     MemoryRegion mmiomem;         // BAR0: MMIO
     MemoryRegion vrammem;         // BAR1: VRAM
-    QemuConsole *con;             
+    QemuConsole *con;
     QEMUTimer *timer;
 
-    uint8_t *vram_ptr;            
+    uint8_t *vram_ptr;
 
 
-    uint32_t gpu_mode;            
-    uint32_t ring_buffer_head;
-    uint32_t ring_buffer_tail;
-    uint32_t ring_buffer_start;
-    uint32_t ring_buffer_end;
-    uint32_t vs_code_addr;        // 0x10
-    uint32_t fs_code_addr;        // 0x14
-    uint32_t width;               // 0x18
-    uint32_t height;              // 0x1C
-    uint32_t framebuffer_vram_offset; // 0x20
-    uint32_t gpu_time;            // 0x24 
-    uint32_t zbuffer_addr;            // 0x28
+    uint32_t gpu_mode;                  // 0x00
+    uint32_t ring_buffer_head;          // 0x04
+    uint32_t ring_buffer_tail;          // 0x08
+    uint32_t ring_buffer_start;         // 0x0C
+    uint32_t ring_buffer_end;           // 0x10
+    uint32_t vs_code_addr;              // 0x14
+    uint32_t fs_code_addr;              // 0x18
+    uint32_t cs_code_addr;              // 0x48
+    uint32_t width;                     // 0x1C
+    uint32_t height;                    // 0x20
+    uint32_t framebuffer_vram_offset;   // 0x24
+    uint32_t gpu_time;                  // 0x28
+    uint32_t zbuffer_addr;              // 0x2C
+    uint32_t int_status;                // 0x30
+    uint32_t int_mask;                  // 0x34
+    uint64_t dma_addr;                  // 0x38
+    uint32_t dma_vram;                  // 0x3C
+    uint32_t dma_size;                  // 0x40
+    uint32_t dma_cmd;                   // 0x44
 
+    // Threading primitives for asynchronous processing
+    QemuThread cmd_thread;
+    QemuMutex cmd_mutex;
+    QemuCond cmd_cond;
+    bool cmd_pending;
+
+    QemuThread dma_thread;
+    QemuMutex dma_mutex;
+    QemuCond dma_cond;
+    bool dma_pending;
+
+    QemuMutex render_mutex;
+
+    uint32_t *internal_fb;
+    QemuThread refresh_thread;
+
+    bool threads_exit;
+    // STATE 
     GenericBufferConfig vbo_config;
     GenericBufferConfig edge_config;
     GenericBufferConfig uinform_config;
+    GenericBufferConfig ssbo_config[MAX_BINDINGS];
+    SetVertexAttribConfigPayload vertex_attribs;
+    bool has_custom_vertex_layout;
+    uint32_t vs_output_location_mask;
 
-    Mat4 regs[REG_MAT_SIZE];        
+    uint32_t texture_desc_addr[MAX_BINDINGS];
+    TextureSamplerDescriptor textures[MAX_BINDINGS];
+    
+    uint8_t         blend_enable;          
+    GpuBlendFactor  blend_src_factor;     
+    GpuBlendFactor  blend_dst_factor;     
+    GpuBlendOp      blend_op;
+    uint8_t         depth_write_enable; 
+
+    uint32_t        primitive_type; /* GpuPrimitiveType */
+    float           point_size;
+    float           line_width; 
+
+    // Compute dispatch state
+    uint32_t dispatch_group_count_x;
+    uint32_t dispatch_group_count_y;
+    uint32_t dispatch_group_count_z;
+    uint32_t cs_local_size_x;
+    uint32_t cs_local_size_y;
+    uint32_t cs_local_size_z;
+    uint32_t cs_barrier_count;
+    uint32_t dispatch_total_workgroups;
+
+    //LEGACY ASM
+    Mat4 regs[REG_MAT_SIZE];
     Preg pRegs[REG_P_GEN_SIZE];
-                     
     // fragment pseudo regs
-    float px, py;                  
-    uint32_t pr, pg, pb;   
+    float px, py;
+    uint32_t pr, pg, pb;
     // vector pseudo regs
     Mat4 v_out;
     Mat4 v_pos;
-    
-    uint8_t cFlag;            
+
+    uint8_t cFlag;
+
+    bool use_legacy_asm;
+
+    //jitter
+    JitContext jit_ctx_vs; 
+    JitContext jit_ctx_fs; 
+    JitContext jit_ctx_cs; 
+    jitted_func_t vs_shader_func; 
+    jitted_func_t fs_shader_func; 
+    jitted_func_t cs_shader_func; 
+    uint32_t vs_hash;
+    uint32_t fs_hash;
+    uint32_t cs_hash;
+
 } GpuState;
 
 

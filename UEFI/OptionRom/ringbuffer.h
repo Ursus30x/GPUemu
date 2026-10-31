@@ -1,7 +1,7 @@
 #ifndef RINGBUFFER_H
 #define RINGBUFFER_H
 
-#include "oprom.h" 
+#include "oprom.h"
 // Assumes definitions for VRAMADDR, EFI_STATUS, etc.
 
 struct GpuRingBuffer {
@@ -12,11 +12,11 @@ struct GpuRingBuffer {
 
     VRAMADDR ringHead;          // WRITE Pointer: Offset where CPU writes next
     VRAMADDR ringTail;          // READ Pointer: Last known GPU position
-    
+
     // --- System RAM Staging Batch ---
     UINT8    *cmdBatchBufferPtr; // System RAM buffer for batching
     UINT32   cmdBatchBufferSize; // Total capacity of the batch
-    UINT32   cmdBatchCursor;     // Current write position 
+    UINT32   cmdBatchCursor;     // Current write position
 };
 
 extern struct GpuRingBuffer gpuRingBuffer;
@@ -64,6 +64,12 @@ EFI_STATUS EFIAPI GpuRingBufferWaitSpace(IN UINT32 bytesNeeded);
 
 // Returns TRUE if Ring Head == Ring Tail (GPU has finished all commands).
 BOOLEAN EFIAPI GpuRingBufferIsIdle();
+
+// Enables or disables GPU interrupts
+VOID EFIAPI GpuRingBufferEnableInterrupts(IN BOOLEAN Enable);
+
+// Acknowledges pending interrupts
+VOID EFIAPI GpuRingBufferAckInterrupt(IN UINT32 Mask);
 
 // Returns the amount of free space (in bytes) currently available in the VRAM Ring Buffer.
 UINT32 EFIAPI GpuRingBufferGetFreeSpace();

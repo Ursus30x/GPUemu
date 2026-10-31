@@ -1,6 +1,7 @@
 #include "ringbuffer.h"
 #include "gpu_memory.h"
-#include "gpu_hw.h" 
+#include "gpu_hw.h"
+#include "sync.h"
 #include <Library/UefiBootServicesTableLib.h> // gBS
 
 struct GpuRingBuffer gpuRingBuffer;
@@ -8,8 +9,11 @@ struct GpuRingBuffer gpuRingBuffer;
 EFI_STATUS EFIAPI GpuRingBufferInit(
     IN UINT32   RingSize)
 {
+    // Ensure that command buffer processing is idle
+    GpuCmdSync();
+
     gpuRingBuffer.bufferSize = RingSize;
-    
+
     // Allocate VRAM
     gpuRingBuffer.bufferStartAddr = GpuAllocateMem(RingSize, "RINGBUFFER");
     if (gpuRingBuffer.bufferStartAddr == 0) return EFI_OUT_OF_RESOURCES;
@@ -32,9 +36,9 @@ EFI_STATUS EFIAPI GpuRingBufferInit(
     GpuMmioWrite32(REG_RING_BUFFER_HEAD_ADDR, gpuRingBuffer.ringHead);
 
     GpuMmioWrite32(REG_GPU_MODE_ADDR, 1); // Re-enable
-    
+
     // Allocate Host Staging Buffer
-    gpuRingBuffer.cmdBatchBufferPtr = AllocatePool(RingSize); 
+    gpuRingBuffer.cmdBatchBufferPtr = AllocatePool(RingSize);
     if (gpuRingBuffer.cmdBatchBufferPtr == NULL) {
         GpuFreeMem(gpuRingBuffer.bufferStartAddr);
         return EFI_OUT_OF_RESOURCES;
@@ -73,7 +77,7 @@ UINT32 EFIAPI GpuRingBufferGetFreeSpace()
     UINT32 size = gpuRingBuffer.bufferSize;
 
     if (head >= tail) {
-        return (size - (head - tail)) - 4; 
+        return (size - (head - tail)) - 4;
     } else {
         return (tail - head) - 4;
     }
@@ -91,7 +95,12 @@ EFI_STATUS EFIAPI GpuRingBufferWaitSpace(IN UINT32 bytesNeeded)
     // Stall path: Wait for GPU
     UINT32 attempts = 0;
     while (GpuRingBufferGetFreeSpace() < bytesNeeded) {
-        gBS->Stall(10); 
+        // If we're waiting for completion, check if the interrupt bit is set
+        if (GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_CMD_DONE) {
+            GpuRingBufferAckInterrupt(GPU_INT_CMD_DONE);
+        }
+
+        gBS->Stall(10);
         GpuReadRingTail();
 
         if (++attempts > 100000) {
@@ -107,7 +116,7 @@ EFI_STATUS EFIAPI GpuRingBufferFlush()
     if (gpuRingBuffer.cmdBatchCursor == 0) return EFI_SUCCESS;
 
     UINT32 bytesToWrite = gpuRingBuffer.cmdBatchCursor;
-    
+
     // Ensure space exists (may stall)
     EFI_STATUS Status = GpuRingBufferWaitSpace(bytesToWrite);
     if (EFI_ERROR(Status)) return Status;
@@ -116,10 +125,10 @@ EFI_STATUS EFIAPI GpuRingBufferFlush()
 
     // Fix: Prevent split commands by padding and wrapping manually
     if (bytesToWrite > spaceAtEnd) {
-        
+
         // Fill the "dead space" at the end with NOPs (0x00)
         if (spaceAtEnd > 0) {
-            VOID *Nops = AllocateZeroPool(spaceAtEnd); 
+            VOID *Nops = AllocateZeroPool(spaceAtEnd);
             if (Nops) {
                 GpuVramWrite(gpuRingBuffer.ringHead, Nops, spaceAtEnd);
                 FreePool(Nops);
@@ -128,13 +137,18 @@ EFI_STATUS EFIAPI GpuRingBufferFlush()
 
         // Wrap Head to Start
         gpuRingBuffer.ringHead = gpuRingBuffer.bufferStartAddr;
-        
+
         // Re-Wait for space at the START.
         Status = GpuRingBufferWaitSpace(bytesToWrite);
         if (EFI_ERROR(Status)) return Status;
     }
 
-    GpuVramWrite(gpuRingBuffer.ringHead, gpuRingBuffer.cmdBatchBufferPtr, bytesToWrite);
+    // Use DMA to transfer the command batch to VRAM
+    GpuDmaWrite(gpuRingBuffer.ringHead, gpuRingBuffer.cmdBatchBufferPtr, bytesToWrite);
+
+    // WAIT FOR DMA TO FINISH - to not read stale/corrupted commands
+    GpuDmaSync();
+
     gpuRingBuffer.ringHead += bytesToWrite;
 
     // Wrap logic for perfect alignment
@@ -162,7 +176,7 @@ EFI_STATUS EFIAPI GpuRingBufferAddCmd(IN VOID *CmdData, IN UINT32 Size)
 
     CopyMem(gpuRingBuffer.cmdBatchBufferPtr + gpuRingBuffer.cmdBatchCursor, CmdData, Size);
     gpuRingBuffer.cmdBatchCursor += Size;
-    
+
     return EFI_SUCCESS;
 }
 
@@ -170,6 +184,17 @@ BOOLEAN EFIAPI GpuRingBufferIsIdle()
 {
     GpuReadRingTail();
     return (gpuRingBuffer.ringTail == gpuRingBuffer.ringHead);
+}
+
+VOID EFIAPI GpuRingBufferEnableInterrupts(IN BOOLEAN Enable)
+{
+    UINT32 Mask = Enable ? (GPU_INT_CMD_DONE | GPU_INT_DMA_DONE) : 0;
+    GpuMmioWrite32(REG_INT_MASK_ADDR, Mask);
+}
+
+VOID EFIAPI GpuRingBufferAckInterrupt(IN UINT32 Mask)
+{
+    GpuMmioWrite32(REG_INT_ACK_ADDR, Mask);
 }
 
 VOID EFIAPI GpuRingBufferPrintState()

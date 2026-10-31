@@ -1,92 +1,174 @@
 #!/bin/bash
-set -e # Exit immediately if a command exits with a non-zero status
+# scripts/apply_patches.sh - Setup submodules, codegen, symlinks, and patches
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
+set -e
+source "$(dirname "$0")/common.sh"
 
-################################################
-#################### COMMON ####################
-################################################
+FORCE_RESET=0
+if [ "${1:-}" = "--force" ] || [ "${1:-}" = "-f" ]; then
+    FORCE_RESET=1
+    log_warn "Force mode enabled: submodules will be reset to clean state."
+fi
 
-git submodule init 
-git submodule update --recursive
+# ============================================================================
+# GPU Code Generation (SPIR-V & GLSL grammar headers)
+# ============================================================================
+generate_gpu_headers() {
+    log_step "Checking SPIR-V and GLSL code generation..."
+    local gen_dir="$GPU_DIR/gen"
 
-rm -f .last_build_type
-################################################
-################# QEMU PATCHES #################
-################################################
+    local core_json="$gen_dir/spirv.core.grammar.json"
+    local core_url="https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/main/include/spirv/unified1/spirv.core.grammar.json"
+    if [ ! -f "$core_json" ]; then
+        log_info "Downloading $core_json..."
+        wget -q "$core_url" -O "$core_json"
+    fi
+    (cd "$gen_dir" && python3 gen_spirv_header.py)
 
-# Enter QEMU repo
-cd "$CWD/qemu"
+    local glsl_json="$gen_dir/extinst.glsl.std.450.grammar.json"
+    local glsl_url="https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/main/include/spirv/unified1/extinst.glsl.std.450.grammar.json"
+    if [ ! -f "$glsl_json" ]; then
+        log_info "Downloading $glsl_json..."
+        wget -q "$glsl_url" -O "$glsl_json"
+    fi
+    (cd "$gen_dir" && python3 gen_glsl_header.py)
+}
 
-# Restore QEMU repo to avoid conflicts
-git restore .
-git clean -qfdx
+# ============================================================================
+# Patch helper: applies patch only if not already applied
+# ============================================================================
+apply_submodule_patch() {
+    local target_dir="$1"
+    local patch_file="$2"
+    local extra_args="${3:-}"
 
-# Symlink gpu implementation to QEMU hardware
-ln -sf "$CWD/gpu/gpu.c" "$CWD/qemu/hw/misc/gpu.c"
-ln -sf "$CWD/gpu/gpu.h" "$CWD/qemu/hw/misc/gpu.h"
-ln -sf "$CWD/gpu/debug_gpu.h" "$CWD/qemu/hw/misc/debug_gpu.h"
-ln -sf "$CWD/gpu/renderer.c" "$CWD/qemu/hw/misc/renderer.c"
-ln -sf "$CWD/gpu/renderer.h" "$CWD/qemu/hw/misc/renderer.h"
-ln -sf "$CWD/gpu/math3d.c" "$CWD/qemu/hw/misc/math3d.c"
-ln -sf "$CWD/gpu/math3d.h" "$CWD/qemu/hw/misc/math3d.h"
-ln -sf "$CWD/include/gpu_isa.h" "$CWD/qemu/hw/misc/gpu_isa.h"
-ln -sf "$CWD/include/gpu_hw.h" "$CWD/qemu/hw/misc/gpu_hw.h"
-ln -sf "$CWD/include/vram.h" "$CWD/qemu/hw/misc/vram.h"
+    (
+        cd "$target_dir"
+        if [ "$FORCE_RESET" -eq 1 ]; then
+            log_warn "Restoring $target_dir to clean state..."
+            git restore .
+        fi
 
-# Apply config patches
-git apply "$CWD/gpu/qemu.patch"
+        if git apply --reverse --check $extra_args "$patch_file" >/dev/null 2>&1; then
+            log_info "Patch $(basename "$patch_file") is already applied in $(basename "$target_dir")."
+        else
+            log_step "Applying $(basename "$patch_file") to $(basename "$target_dir")..."
+            git apply $extra_args "$patch_file"
+        fi
+    )
+}
 
-################################################
-################# EDK2 PATCHES #################
-################################################
+# ============================================================================
+# Main Setup Sequence
+# ============================================================================
+generate_gpu_headers
 
-# Enter EDK2 repo
-cd "$CWD/edk2"
+log_step "Updating git submodules..."
+if [ ! -f "$QEMU_DIR/configure" ] || [ ! -f "$EDK2_DIR/edksetup.sh" ]; then
+    (
+        cd "$REPO_ROOT"
+        git submodule update --init
+    )
+fi
+rm -f "$MARKER_FILE"
 
-# Restore EDK2 repo to avoid conflicts
-git restore .
-git clean -qfdx
+# --- Setup QEMU ---
+log_step "Setting up QEMU configuration & symlinks..."
+apply_submodule_patch "$QEMU_DIR" "$GPU_DIR/qemu.patch"
 
-# Build stuff nedeed for edk2 to build project
-git submodule init 
-git submodule update --recursive
+# JIT internal symlinks
+create_symlink "$GPU_DIR/debug_gpu.h"          "$GPU_DIR/jit/debug_gpu.h"
+create_symlink "$GPU_DIR/gen/spirv_jit_meta.h" "$GPU_DIR/jit/spirv_jit_meta.h"
+create_symlink "$GPU_DIR/gen/glsl_std_450.h"   "$GPU_DIR/jit/glsl_std_450.h"
 
-make -C BaseTools
+# QEMU hardware symlinks
+QEMU_FILES=(
+    "gpu/gpu.c"
+    "gpu/gpu.h"
+    "gpu/debug_gpu.h"
+    "gpu/renderer.c"
+    "gpu/renderer.h"
+    "gpu/primitive_assembly.c"
+    "gpu/primitive_assembly.h"
+    "gpu/rasterizer_simt.c"
+    "gpu/rasterizer_simt.h"
+    "gpu/math3d.c"
+    "gpu/math3d.h"
+    "gpu/asm.c"
+    "gpu/asm.h"
+    "gpu/jit/jit.c"
+    "gpu/jit/jit.h"
+    "gpu/jit/jit_alu.c"
+    "gpu/jit/jit_alu.h"
+    "gpu/jit/jit_decorators.c"
+    "gpu/jit/jit_decorators.h"
+    "gpu/gen/spirv_jit_meta.h"
+    "gpu/gen/glsl_std_450.h"
+    "gpu/jit/jit_flow.c"
+    "gpu/jit/jit_flow.h"
+    "gpu/jit/jit_mem.c"
+    "gpu/jit/jit_mem.h"
+    "gpu/jit/jit_smpl.h"
+    "gpu/jit/jit_smpl.c"
+    "gpu/jit/jit_atomic.h"
+    "gpu/jit/jit_atomic.c"
+    "include/gpu_isa.h"
+    "include/gpu_hw.h"
+    "include/vram.h"
+)
 
-# Remove old driver symlinks/files for driver implementation
-rm -f "$CWD/edk2/OptionRom"
-rm -f "$CWD/edk2/DemoApp"
-rm -f "$CWD/edk2/FrameBenchmark" 
-rm -f "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
-rm -f "$CWD/edk2/OptionRom/gpu_isa.h"
-rm -f "$CWD/edk2/OptionRom/gpu_hw.h"
-rm -f "$CWD/edk2/OptionRom/varm.h"
-rm -f "$CWD/edk2/Conf/target.txt"
+for file in "${QEMU_FILES[@]}"; do
+    filename="$(basename "$file")"
+    create_symlink "$REPO_ROOT/$file" "$QEMU_DIR/hw/misc/$filename"
+done
 
-# Symlink driver implementation to EDK2
-ln -sf "$CWD/UEFI/OptionRom"                        "$CWD/edk2/OptionRom"
-ln -sf "$CWD/UEFI/DemoApp"                          "$CWD/edk2/DemoApp"
-ln -sf "$CWD/UEFI/FrameBenchmark"                   "$CWD/edk2/FrameBenchmark"
-ln -sf "$CWD/UEFI/OvmfPkg/Include/Protocol/Gop3D.h" "$CWD/edk2/OvmfPkg/Include/Protocol/Gop3D.h"
-ln -sf "$CWD/include/gpu_isa.h"                     "$CWD/edk2/OptionRom/gpu_isa.h"
-ln -sf "$CWD/include/gpu_hw.h"                      "$CWD/edk2/OptionRom/gpu_hw.h"
-ln -sf "$CWD/include/vram.h"                        "$CWD/edk2/OptionRom/vram.h"
-ln -sf "$CWD/UEFI/target.txt"                       "$CWD/edk2/Conf/target.txt"
+# Build and run JIT standalone tests
+log_step "Building and verifying JIT engine..."
+make -C "$GPU_DIR/jit"
+(cd "$GPU_DIR/jit/test" && python3 test.py)
 
-# Apply dsc patches
-git apply "$CWD/UEFI/OvmfPkg.patch"
+# --- Setup EDK2 ---
+log_step "Setting up EDK2 configuration & symlinks..."
+if [ ! -d "$EDK2_DIR/MdePkg/Library/MipiSysTLib/mipisyst/library/include" ] || \
+   [ ! -f "$EDK2_DIR/BaseTools/Source/C/BrotliCompress/brotli/c/include/brotli/encode.h" ]; then
+    (
+        cd "$EDK2_DIR"
+        git submodule update --init --depth 1 || git submodule update --init
+    )
+fi
+apply_submodule_patch "$EDK2_DIR" "$UEFI_DIR/OvmfPkg.patch" "--ignore-space-change --ignore-whitespace"
 
-################################################
-################################################
+EDK2_MAPPINGS=(
+    "UEFI/OptionRom:edk2/OptionRom"
+    "UEFI/SpirvApp:edk2/SpirvApp"
+    "UEFI/BlendingTest:edk2/BlendingTest"
+    "UEFI/SamplerTest:edk2/SamplerTest"
+    "UEFI/FrameBenchmark:edk2/FrameBenchmark"
+    "UEFI/OvmfPkg/Include/Protocol/Gop3D.h:edk2/OvmfPkg/Include/Protocol/Gop3D.h"
+    "include/gpu_isa.h:edk2/OptionRom/gpu_isa.h"
+    "include/gpu_hw.h:edk2/OptionRom/gpu_hw.h"
+    "include/vram.h:edk2/OptionRom/vram.h"
+    "UEFI/target.txt:edk2/Conf/target.txt"
+)
 
-# Compiler symlink
-rm -f  "$CWD/compiler/gpu_isa.h"
-rm -f  "$CWD/compiler/gpu_hw.h"
-rm -f  "$CWD/compiler/vram.h"
-ln -sf "$CWD/include/gpu_isa.h" "$CWD/compiler/gpu_isa.h"
-ln -sf "$CWD/include/gpu_hw.h" "$CWD/compiler/gpu_hw.h"
-ln -sf "$CWD/include/vram.h" "$CWD/compiler/vram.h"
+# If TestHarness directory exists on this branch, map it
+if [ -d "$UEFI_DIR/TestHarness" ]; then
+    EDK2_MAPPINGS+=("UEFI/TestHarness:edk2/TestHarness")
+fi
 
-cd "$CWD"
+for mapping in "${EDK2_MAPPINGS[@]}"; do
+    src="${mapping%%:*}"
+    dst="${mapping##*:}"
+    create_symlink "$REPO_ROOT/$src" "$REPO_ROOT/$dst"
+done
+
+log_step "Building EDK2 BaseTools..."
+make -C "$EDK2_DIR/BaseTools"
+
+# --- Setup Compiler ---
+log_step "Setting up Compiler headers..."
+create_symlink "$INCLUDE_DIR/gpu_isa.h" "$COMPILER_DIR/gpu_isa.h"
+create_symlink "$INCLUDE_DIR/gpu_hw.h"  "$COMPILER_DIR/gpu_hw.h"
+create_symlink "$INCLUDE_DIR/vram.h"    "$COMPILER_DIR/vram.h"
+
+log_success "Patches, code generation, and symlinks applied"

@@ -6,7 +6,7 @@
 
 This started as a university project for the System Firmware (*Oprogramowanie Systemowe*) course, intended to emulate a simple PCI device in UEFI using QEMU. The scope eventually expanded to a full GPU emulation, covering everything from PCI communication to shader assembly code, VRAM management, and a graphics API. It is mainly used as a learning tool to understand how GPUs work from the ground up.
 
-Currently, the GPU consists of a simple UEFI Driver, a shader assembler, and a few UEFI benchmark apps to demonstrate functionality.
+Currently, the project features a multithreaded software rasterizer inside QEMU, a custom matrix/scalar shader ISA with a two-pass assembler, a UEFI Option ROM driver with VRAM management, and a suite of UEFI benchmark and test applications.
 
 This project could be extended in many ways, and the final product is not yet fully defined.
 
@@ -16,10 +16,15 @@ Since most of this project relies on modifying QEMU and EDK2 projects, we decide
 
 Here are the instructions:
 -   Download needed packages:
-    -   For Ubuntu/Debian:
+    -   For Debian based distros:
     ``` sh
     apt install make g++ gcc python3 uuid-dev nasm python3-pip python3-venv ninja-build libglib2.0-dev cmake libpixman-1-dev libgtk-3-dev
     ```
+    -   For Arch based distros:
+    ```
+    pacman -Syu make python3 gcc ninja meson glib2 glib2-devel base-devel pixman gtk3 nasm
+    ```
+
 
 -   Run `scripts/apply_patches.sh`
     -   This prepares submodules, applies patches to them, and symlinks directories to their respective submodules.
@@ -29,17 +34,50 @@ Here are the instructions:
 
 ## Running
 
-To run the UEFI Shell using our card, run `scripts/run.sh`.
+To start QEMU with the GPU emulation card and UEFI environment:
+```bash
+./scripts/run.sh [DEBUG|RELEASE] [CommandToRun]
+```
+- CommandToRun argument enters a command on start of the EFI shell.
 
-This launches QEMU with our device as a video output and links the `Build` directory of EDK2 with our benchmark apps.
+### Applications & Demos
 
-You can enter this directory from the UEFI shell by typing `FS0:` in the UEFI shell terminal.
+You can run applications interactively inside the shell, or pass them as arguments to `./scripts/run.sh`:
 
-<img width="640" height="480" alt="gpu-test" src="https://github.com/user-attachments/assets/7f997a02-8cee-4be2-8ce5-7e9d8b3ab094" />
+- **Showcase Demo (`SpirvApp`)**:
+  Start demo of implemented features which both include 3D and compute workloads:
+  ```bash
+  ./scripts/run.sh SpirvApp
+  ```
 
+  <img width="640" height="480" alt="gpu-test" src="https://github.com/user-attachments/assets/7f997a02-8cee-4be2-8ce5-7e9d8b3ab094" />
+
+- **Test Harness (`TestHarness`)**:
+  Runs automated verification tests for rasterization (blending, primitives, depth) and compute shaders (SSBOs, parallel dispatch):
+  ```bash
+  # Run all tests
+  ./scripts/run.sh TestHarness
+
+  # Run specific tests using wildcard filters
+  ./scripts/run.sh TestHarness --test-case=raster.*
+  ./scripts/run.sh TestHarness --test-case=compute.*
+
+  # List all available tests
+  ./scripts/run.sh TestHarness --test-list
+  ```
+
+- **Debugging**:
+  To launch QEMU with GDB attached:
+  ```bash
+  ./scripts/debug.sh [DEBUG|RELEASE] [CommandToRun]
+  ```
 
 ## Documentation
 
-Architectural specifications and choices are documented in `/docs`.
+Architectural specifications and ISA definitions are documented in [`doc/`](doc/):
+- [GPU Hardware Specification](doc/gpuSpec.md)
+- [Shader ISA Reference](doc/shaderSpec.md)
+- [Software Rasterizer Pipeline & Threading](doc/renderThreads.md)
+- [Shader Compiler Specification](doc/compilerSpec.md)
 
 APIs, the Driver, and the GPU are documented via comments within the code itself.

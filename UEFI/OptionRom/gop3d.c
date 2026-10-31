@@ -10,10 +10,14 @@
 
 #include "ringbuffer.h"
 #include "gpu_memory.h"
-#include "vram.h" 
+#include "vram.h"
+#include "gpu_hw.h"
+#include "sync.h"
 
 
 #define RING_BUFFER_SIZE (1 << 16) // 64KB
+
+STATIC GOP_3D_BLEND_OP mCurrentBlendOp = Gop3dBlendOpAdd;
 
 /* -------------------------------------------------------------------------
  * Initialization & Teardown
@@ -25,6 +29,11 @@ EFI_STATUS EFIAPI GpuInit(
 {
     // Reset Ring Buffer to clean state
     GpuRingBufferClearCmdBuffer();
+
+    // Enable GPU interrupts
+    GpuRingBufferEnableInterrupts(TRUE);
+
+    mCurrentBlendOp = Gop3dBlendOpAdd;
 
     DEBUG((EFI_D_INFO, "GOP3D: Initialized.\n"));
     return EFI_SUCCESS;
@@ -40,7 +49,7 @@ EFI_STATUS EFIAPI GpuDestroy(
     }
 
     GpuRingBufferClearCmdBuffer();
-    
+
     DEBUG((EFI_D_INFO, "GOP3D: Destroyed.\n"));
     return EFI_SUCCESS;
 }
@@ -50,6 +59,22 @@ EFI_STATUS EFIAPI GpuSetMode(
   IN UINT32 Mode
   )
 {
+  if (Mode == GPU_MODE_GOP) {
+    EFI_STATUS Status = GpuCmdSync();
+    if (EFI_ERROR(Status)) {
+      return Status;
+    }
+
+    Status = GpuRingBufferFlush();
+    if (EFI_ERROR(Status)) {
+      return Status;
+    }
+
+    while (!GpuRingBufferIsIdle()) {
+      gBS->Stall(10);
+    }
+  }
+
     GpuMmioWrite32(REG_GPU_MODE_ADDR, Mode);
     DEBUG((EFI_D_INFO, "GOP3D: SetMode(%d) (Stub)\n", Mode));
     return EFI_SUCCESS;
@@ -78,7 +103,7 @@ EFI_STATUS EFIAPI GpuCmdEnd(
  * ------------------------------------------------------------------------- */
 
 // Internal helper function
-EFI_STATUS EFIAPI GpuBindResourceGeneric(
+EFI_STATUS EFIAPI GpuCmdBindResourceGeneric(
   IN StateID StateId,
   IN VRAMADDR Address,
   IN UINT32 Size,
@@ -88,10 +113,10 @@ EFI_STATUS EFIAPI GpuBindResourceGeneric(
     Command cmd;
     cmd.opcode = CMD_SET_STATE;
     cmd.payload.state.state_id = StateId;
-    
+
     GenericBufferConfig conf;
     conf.addr = Address;
-    conf.size = Size;  
+    conf.size = Size;
     conf.element_type = ElementType;
 
     cmd.payload.state.value.buffer_config = conf;
@@ -99,37 +124,37 @@ EFI_STATUS EFIAPI GpuBindResourceGeneric(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
-EFI_STATUS EFIAPI GpuBindVBO(
+EFI_STATUS EFIAPI GpuCmdBindVBO(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
-  IN UINT32 Size             
+  IN UINT32 Size
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_VBO_CONFIG, GpuAddress, Size,D_TYPE_VEC3); 
+    return GpuCmdBindResourceGeneric(STATE_ID_VBO_CONFIG, GpuAddress, Size,D_TYPE_VEC3);
 }
 
-EFI_STATUS EFIAPI GpuBindIBO(
+EFI_STATUS EFIAPI GpuCmdBindIBO(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
-  IN UINT32 Size             
+  IN UINT32 Size
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_EDGE_CONFIG, GpuAddress, Size, D_TYPE_VEC2);
+    return GpuCmdBindResourceGeneric(STATE_ID_EDGE_CONFIG, GpuAddress, Size, D_TYPE_VEC2);
 }
 
-EFI_STATUS EFIAPI GpuBindUBO(
+EFI_STATUS EFIAPI GpuCmdBindUBO(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
-  IN UINT32 Size           
+  IN UINT32 Size
   )
 {
-    return GpuBindResourceGeneric(STATE_ID_UNIFORM_CONFIG, GpuAddress, Size, D_TYPE_MAT4);
+    return GpuCmdBindResourceGeneric(STATE_ID_UNIFORM_CONFIG, GpuAddress, Size, D_TYPE_MAT4);
 }
 
-EFI_STATUS EFIAPI GpuBindVertShader(
+EFI_STATUS EFIAPI GpuCmdBindVertShader(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
-  IN UINT32 Size              
+  IN UINT32 Size
   )
 {
     Command cmd;
@@ -140,7 +165,7 @@ EFI_STATUS EFIAPI GpuBindVertShader(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
-EFI_STATUS EFIAPI GpuBindFragShader(
+EFI_STATUS EFIAPI GpuCmdBindFragShader(
   IN GOP_3D_PROTOCOL *This,
   IN VRAMADDR GpuAddress,
   IN UINT32 Size
@@ -150,15 +175,154 @@ EFI_STATUS EFIAPI GpuBindFragShader(
     cmd.opcode = CMD_SET_STATE;
     cmd.payload.state.state_id = STATE_ID_FRAGMENT_SHADER_PTR;
     cmd.payload.state.value.shader_ptrs.fs_addr = GpuAddress;
-    
+
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
+
+EFI_STATUS EFIAPI GpuCmdBindCompShader(
+  IN GOP_3D_PROTOCOL *This,
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_COMPUTE_SHADER_PTR;
+    cmd.payload.state.value.shader_ptrs.cs_addr = GpuAddress;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdBindSSBO(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32 BindingSlot,
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_SSBO_CONFIG;
+    cmd.payload.state.value.ssbo_config.binding = BindingSlot;
+    cmd.payload.state.value.ssbo_config.addr = GpuAddress;
+    cmd.payload.state.value.ssbo_config.size = Size;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdBindTexture(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32 BindingSlot,
+  IN VRAMADDR DescAddress
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_TEXTURE_CONFIG;
+    cmd.payload.state.value.texture_config.binding_slot = BindingSlot;
+    cmd.payload.state.value.texture_config.desc_vram_addr = DescAddress;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+
+EFI_STATUS EFIAPI GpuCmdSetBlendState(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableBlend,
+  IN GOP_3D_BLEND_FACTOR  SrcFactor,
+  IN GOP_3D_BLEND_FACTOR  DstFactor
+)
+{
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_BLEND_CONFIG;
+  cmd.payload.state.value.blend_config.enable = EnableBlend;
+  cmd.payload.state.value.blend_config.dst_factor = DstFactor;
+  cmd.payload.state.value.blend_config.src_factor = SrcFactor;
+  cmd.payload.state.value.blend_config.blend_op = (UINT8)mCurrentBlendOp;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdSetBlendOp(
+  IN GOP_3D_PROTOCOL  *This,
+  IN GOP_3D_BLEND_OP  BlendOp
+)
+{
+  Command cmd;
+  mCurrentBlendOp = BlendOp;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_BLEND_OP;
+  cmd.payload.state.value.blend_op = (UINT8)BlendOp;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdSetBlendEquation(
+  IN GOP_3D_PROTOCOL        *This,
+  IN GOP_3D_BLEND_EQUATION  BlendEquation
+)
+{
+  return GpuCmdSetBlendOp(This, BlendEquation);
+}
+
+EFI_STATUS EFIAPI GpuCmdSetBlendStateEx(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableBlend,
+  IN GOP_3D_BLEND_FACTOR  SrcFactor,
+  IN GOP_3D_BLEND_FACTOR  DstFactor,
+  IN GOP_3D_BLEND_OP      BlendOp
+)
+{
+  Command cmd;
+  mCurrentBlendOp = BlendOp;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_BLEND_CONFIG;
+  cmd.payload.state.value.blend_config.enable = EnableBlend;
+  cmd.payload.state.value.blend_config.dst_factor = DstFactor;
+  cmd.payload.state.value.blend_config.src_factor = SrcFactor;
+  cmd.payload.state.value.blend_config.blend_op = (UINT8)BlendOp;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+EFI_STATUS EFIAPI GpuCmdSetDepthWrite(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableDepthWrite
+)
+{
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_DEPTH_CONFIG;
+  cmd.payload.state.value.depth_config.depth_write_enable = EnableDepthWrite;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
 
 /* -------------------------------------------------------------------------
  * Data Transfer
  * ------------------------------------------------------------------------- */
 
-EFI_STATUS EFIAPI GpuTransferBuffer(
+
+
+EFI_STATUS EFIAPI GpuFreeBuffer(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  VRAMADDR            *GpuAddress
+)
+{
+    if (GpuAddress == NULL) {
+      return EFI_INVALID_PARAMETER;
+    }
+
+    if (*GpuAddress != GPU_NULL_ADDR) {
+        GpuFreeMem(*GpuAddress);
+        *GpuAddress = GPU_NULL_ADDR;
+    }
+
+    return EFI_SUCCESS;
+}
+
+EFI_STATUS EFIAPI GpuCmdTransferBuffer(
   IN  GOP_3D_PROTOCOL     *This,
   IN  GOP_3D_BUFFER_TYPE  Type,
   IN  VOID                *HostData,
@@ -175,27 +339,31 @@ EFI_STATUS EFIAPI GpuTransferBuffer(
     else if (Type == Gop3dBufferTypeIndex) Tag = "IBO";
     else if (Type == Gop3dBufferTypeUniform) Tag = "UBO";
     else if (Type == Gop3dBufferTypeShaderCode) Tag = "SHADER";
+    else if (Type == Gop3dBufferTypeTexture) Tag = "TEX";
+    else if (Type == Gop3dBufferTypeTextureDesc) Tag = "TEXDESC";
 
     (VOID)Tag; // Suppress "unused variable" error if debug is disabled
-    
+
     // Allocate VRAM
     VRAMADDR Addr = GpuAllocateMem(Size, Tag);
-    if (Addr == 0) {
+    if (Addr == GPU_NULL_ADDR) {
         return EFI_OUT_OF_RESOURCES;
     }
 
-    // Transfer Data (CPU -> VRAM)
-    EFI_STATUS Status = GpuVramWrite(Addr, HostData, Size);
-    if (EFI_ERROR(Status)) {
-        GpuFreeMem(Addr);
-        return Status;
-    }
+    Command cmd;
+    ZeroMem(&cmd, sizeof(Command));
+    cmd.opcode = CMD_DMA_TRANSFER;
+    cmd.payload.dma.host_addr = (UINT64)(UINTN)HostData;
+    cmd.payload.dma.vram_offset = Addr;
+    cmd.payload.dma.size = Size;
+    cmd.payload.dma.cmd = GPU_DMA_CMD_TO_VRAM;
 
     *GpuAddress = Addr;
-    return EFI_SUCCESS;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
-EFI_STATUS EFIAPI GpuUpdateBuffer(
+EFI_STATUS EFIAPI GpuCmdUpdateBuffer(
   IN     GOP_3D_PROTOCOL     *This,
   IN     GOP_3D_BUFFER_TYPE  Type,
   IN     VOID                *HostData,
@@ -212,19 +380,27 @@ EFI_STATUS EFIAPI GpuUpdateBuffer(
 
     // If existing buffer is large enough, just overwrite it
     if (OldSize >= Size) {
-        return GpuVramWrite(OldAddr, HostData, Size);
+        Command cmd;
+        ZeroMem(&cmd, sizeof(Command));
+        cmd.opcode = CMD_DMA_TRANSFER;
+        cmd.payload.dma.host_addr = (UINT64)(UINTN)HostData;
+        cmd.payload.dma.vram_offset = OldAddr;
+        cmd.payload.dma.size = Size;
+        cmd.payload.dma.cmd = GPU_DMA_CMD_TO_VRAM;
+
+        return GpuRingBufferAddCmd(&cmd, sizeof(Command));
     }
 
     // If updated size is bigger, try to allocate new buffer first
-    VRAMADDR NewAddr = 0;
-    EFI_STATUS Status = GpuTransferBuffer(This, Type, HostData, Size, &NewAddr);
+    VRAMADDR NewAddr = GPU_NULL_ADDR;
+    EFI_STATUS Status = GpuCmdTransferBuffer(This, Type, HostData, Size, &NewAddr);
 
-    if (EFI_ERROR(Status) || NewAddr == 0) {
+    if (EFI_ERROR(Status) || NewAddr == GPU_NULL_ADDR) {
         return EFI_OUT_OF_RESOURCES;
     }
 
     // TODO: Implement proper realloc mechanizm in memory allocator
-    if (OldAddr != 0) {
+    if (OldAddr != GPU_NULL_ADDR) {
         GpuFreeMem(OldAddr);
     }
 
@@ -233,28 +409,28 @@ EFI_STATUS EFIAPI GpuUpdateBuffer(
     return EFI_SUCCESS;
 }
 
-EFI_STATUS EFIAPI GpuFreeBuffer(
+
+EFI_STATUS EFIAPI GpuCmdReadBuffer(
   IN  GOP_3D_PROTOCOL     *This,
-  IN  VRAMADDR            *GpuAddress
+  IN  VRAMADDR            GpuAddress,
+  OUT VOID                *HostData,
+  IN  UINT32              Size
 )
 {
-    if (GpuAddress == NULL) {
+    if (HostData == NULL || Size == 0 || GpuAddress == 0) {
       return EFI_INVALID_PARAMETER;
     }
 
-    if (*GpuAddress != 0) {
-        GpuFreeMem(*GpuAddress);
-        *GpuAddress = 0;
-    }
+    GpuCmdSync();
 
-    return EFI_SUCCESS;
+    return GpuVramRead(HostData, GpuAddress, Size);
 }
 
 /* -------------------------------------------------------------------------
  * Drawing & Execution
  * ------------------------------------------------------------------------- */
 
-EFI_STATUS EFIAPI GpuClearFrame(
+EFI_STATUS EFIAPI GpuCmdClearFrame(
   IN GOP_3D_PROTOCOL *This,
   IN UINT32 Color
   )
@@ -262,27 +438,67 @@ EFI_STATUS EFIAPI GpuClearFrame(
     Command cmd;
     cmd.opcode = CMD_CLEAR_FRAMEBUFFER;
     cmd.payload.clear.options = 0b11; // Clear Color + Depth
-    
+    cmd.payload.clear.reserved[0] = 0;
+    cmd.payload.clear.reserved[1] = 0;
+    cmd.payload.clear.reserved[2] = 0;
+    cmd.payload.clear.color = Color;
+
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
-EFI_STATUS EFIAPI GpuDraw(
+EFI_STATUS EFIAPI GpuCmdDraw(
   IN GOP_3D_PROTOCOL      *This,
   IN GOP_3D_TOPOLOGY      Topology,
   IN UINT32               VertexCount
   )
 {
     PrimitiveType primType = PRIMITIVE_TYPE_TRIANGLES;
-    
+
     if (Topology == Gop3dTopologyLines) {
         primType = PRIMITIVE_TYPE_LINES;
     } else if (Topology == Gop3dTopologyPoints) {
         primType = PRIMITIVE_TYPE_POINTS;
+    } else if (Topology == Gop3dTopologyLineStrip) {
+        primType = PRIMITIVE_TYPE_LINE_STRIP;
+    } else if (Topology == Gop3dTopologyTriangleStrip) {
+        primType = PRIMITIVE_TYPE_TRIANGLE_STRIP;
+    } else if (Topology == Gop3dTopologyTriangleFan) {
+        primType = PRIMITIVE_TYPE_TRIANGLE_FAN;
+    } else if (Topology == Gop3dTopologyQuads) {
+        primType = PRIMITIVE_TYPE_QUADS;
     }
     Command cmd;
     cmd.opcode = CMD_DRAW_PRIMITIVE;
     cmd.payload.draw.type = primType;
-    
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdDispatchCompute(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               GroupCountX,
+  IN UINT32               GroupCountY,
+  IN UINT32               GroupCountZ
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_DISPATCH;
+    cmd.payload.dispatch.group_count_x = GroupCountX;
+    cmd.payload.dispatch.group_count_y = GroupCountY;
+    cmd.payload.dispatch.group_count_z = GroupCountZ;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdDispatchComputeIndirect(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  )
+{
+    Command cmd;
+    cmd.opcode = CMD_DISPATCH_INDIRECT;
+    cmd.payload.dispatch_indirect.indirect_offset = IndirectOffset;
+
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
@@ -290,55 +506,164 @@ EFI_STATUS EFIAPI GpuSubmitCmd(
   IN GOP_3D_PROTOCOL *This
   )
 {
+    // Ensure previous batch is done before kicking new one
+    GpuCmdSync();
+
+    EFI_STATUS Status = GpuRingBufferFlush();
+    if (!EFI_ERROR(Status)) {
+        GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
+        Private->DmaFence.CmdBusy = TRUE;
+    }
+
 #ifdef MEM_DEBUG
     DEBUG((DEBUG_INFO, "Mem Dump after command submition\n"));
     GpuDebugDumpMemoryMap();
+    GpuDebugDumpMmio();
 #endif
-    return GpuRingBufferFlush();
+
+
+    return Status;
 }
 
 EFI_STATUS EFIAPI GpuPresent(
   IN GOP_3D_PROTOCOL *This
   )
 {
+    // If there's recorded commands, submit them
     GpuSubmitCmd(This);
-    GpuRingBufferWaitSpace(0); // Wait for idle (Sync)
+
+    // Later there will be handling of multi-buffering, right now its a frontend for command submition
+
     return EFI_SUCCESS;
+}
+EFI_STATUS EFIAPI GpuCmdVertexAttribPointer(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location,
+  IN UINT32          NumComponents,
+  IN UINT32          Type,
+  IN BOOLEAN         Normalized,
+  IN UINT32          Stride,
+  IN UINT32          Offset
+  )
+{
+  if (Location >= MAX_ATTRIBUTES_PER_SHADER) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
+  GpuVertexAttribDesc *desc = &Private->VertexAttribs.attribs[Location];
+
+  desc->location   = Location;
+  desc->size       = NumComponents;
+  desc->type       = Type;
+  desc->normalized = Normalized ? 1 : 0;
+  desc->stride     = Stride;
+  desc->offset     = Offset;
+
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_VERTEX_ATTRIB_CONFIG;
+  cmd.payload.state.value.attrib_config = Private->VertexAttribs;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdEnableVertexAttribArray(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location
+  )
+{
+  if (Location >= MAX_ATTRIBUTES_PER_SHADER) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
+  Private->VertexAttribs.enabled_mask |= (1u << Location);
+  Private->VertexAttribs.attribs[Location].enabled = 1;
+
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_VERTEX_ATTRIB_CONFIG;
+  cmd.payload.state.value.attrib_config = Private->VertexAttribs;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdDisableVertexAttribArray(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location
+  )
+{
+  if (Location >= MAX_ATTRIBUTES_PER_SHADER) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_GOP3D(This);
+  Private->VertexAttribs.enabled_mask &= ~(1u << Location);
+  Private->VertexAttribs.attribs[Location].enabled = 0;
+
+  Command cmd;
+  cmd.opcode = CMD_SET_STATE;
+  cmd.payload.state.state_id = STATE_ID_VERTEX_ATTRIB_CONFIG;
+  cmd.payload.state.value.attrib_config = Private->VertexAttribs;
+
+  return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
 /* -------------------------------------------------------------------------
  * Protocol Setup
  * ------------------------------------------------------------------------- */
 
-EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private) 
+EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
 {
   DEBUG((DEBUG_INFO, "GOP3D: Setting up GOP3D protocol\n"));
 
   GpuRingBufferInit(RING_BUFFER_SIZE);
-  
-  // Link Implementation to Protocol Pointers
-  Private->Gop3dProtocol.GpuInit           = GpuInit;
-  Private->Gop3dProtocol.GpuDestroy        = GpuDestroy;
-  Private->Gop3dProtocol.GpuSetMode        = GpuSetMode;
-  
-  Private->Gop3dProtocol.GpuCmdBegin       = GpuCmdBegin;
-  Private->Gop3dProtocol.GpuCmdEnd         = GpuCmdEnd;
-  
-  Private->Gop3dProtocol.GpuBindVBO        = GpuBindVBO;
-  Private->Gop3dProtocol.GpuBindIBO        = GpuBindIBO;
-  Private->Gop3dProtocol.GpuBindUBO        = GpuBindUBO;
-  Private->Gop3dProtocol.GpuBindVertShader = GpuBindVertShader;
-  Private->Gop3dProtocol.GpuBindFragShader = GpuBindFragShader;
-  
-  Private->Gop3dProtocol.GpuTransferBuffer = GpuTransferBuffer;
-  Private->Gop3dProtocol.GpuUpdateBuffer   = GpuUpdateBuffer;
-  Private->Gop3dProtocol.GpuFreeBuffer     = GpuFreeBuffer;
 
-  Private->Gop3dProtocol.GpuClearFrame     = GpuClearFrame;
-  Private->Gop3dProtocol.GpuDraw           = GpuDraw;
-  
-  Private->Gop3dProtocol.GpuSubmitCmd      = GpuSubmitCmd;
-  Private->Gop3dProtocol.GpuPresent        = GpuPresent;
+  // Link Implementation to Protocol Pointers
+  Private->Gop3dProtocol.GpuInit                       = GpuInit;
+  Private->Gop3dProtocol.GpuDestroy                    = GpuDestroy;
+  Private->Gop3dProtocol.GpuSetMode                    = GpuSetMode;
+
+  Private->Gop3dProtocol.GpuCmdBegin                   = GpuCmdBegin;
+  Private->Gop3dProtocol.GpuCmdEnd                     = GpuCmdEnd;
+
+  Private->Gop3dProtocol.GpuCmdBindUBO                 = GpuCmdBindUBO;
+  Private->Gop3dProtocol.GpuCmdBindVBO                 = GpuCmdBindVBO;
+  Private->Gop3dProtocol.GpuCmdBindIBO                 = GpuCmdBindIBO;
+  Private->Gop3dProtocol.GpuCmdBindFragShader          = GpuCmdBindFragShader;
+  Private->Gop3dProtocol.GpuCmdBindVertShader          = GpuCmdBindVertShader;
+  Private->Gop3dProtocol.GpuCmdBindTexture             = GpuCmdBindTexture;
+
+  Private->Gop3dProtocol.GpuCmdSetBlendState           = GpuCmdSetBlendState;
+  Private->Gop3dProtocol.GpuCmdSetDepthWrite           = GpuCmdSetDepthWrite;
+
+  Private->Gop3dProtocol.GpuFreeBuffer                 = GpuFreeBuffer;
+
+  Private->Gop3dProtocol.GpuCmdTransferBuffer          = GpuCmdTransferBuffer;
+  Private->Gop3dProtocol.GpuCmdUpdateBuffer            = GpuCmdUpdateBuffer;
+
+  Private->Gop3dProtocol.GpuCmdBindCompShader          = GpuCmdBindCompShader;
+  Private->Gop3dProtocol.GpuCmdBindSSBO                = GpuCmdBindSSBO;
+
+  Private->Gop3dProtocol.GpuCmdReadBuffer              = GpuCmdReadBuffer;
+
+  Private->Gop3dProtocol.GpuCmdDispatchCompute         = GpuCmdDispatchCompute;
+  Private->Gop3dProtocol.GpuCmdDispatchComputeIndirect = GpuCmdDispatchComputeIndirect;
+
+  Private->Gop3dProtocol.GpuCmdDraw                    = GpuCmdDraw;
+  Private->Gop3dProtocol.GpuCmdClearFrame              = GpuCmdClearFrame;
+
+  Private->Gop3dProtocol.GpuSubmitCmd                  = GpuSubmitCmd;
+  Private->Gop3dProtocol.GpuPresent                    = GpuPresent;
+
+  Private->Gop3dProtocol.GpuCmdVertexAttribPointer       = GpuCmdVertexAttribPointer;
+  Private->Gop3dProtocol.GpuCmdEnableVertexAttribArray  = GpuCmdEnableVertexAttribArray;
+  Private->Gop3dProtocol.GpuCmdDisableVertexAttribArray = GpuCmdDisableVertexAttribArray;
+
+  Private->Gop3dProtocol.GpuCmdSetBlendOp                = GpuCmdSetBlendOp;
+  Private->Gop3dProtocol.GpuCmdSetBlendEquation          = GpuCmdSetBlendEquation;
+  Private->Gop3dProtocol.GpuCmdSetBlendStateEx          = GpuCmdSetBlendStateEx;
 
   return EFI_SUCCESS;
 }

@@ -10,8 +10,8 @@
 
 // --- Definitions ---
 // Matches GPU layout. defined here, DO NOT redefine in app.c
-typedef struct { float x, y, z; UINT32 color; } Vec3; 
-typedef struct { UINT32 v1, v2; } Edge; 
+typedef struct { float x, y, z; UINT32 color; float u, v; } Vec3;
+typedef struct { UINT32 v1, v2; } Edge;
 typedef struct { UINT32 a, b, c; } Triangle;
 
 typedef struct {
@@ -28,7 +28,7 @@ static void Sin(float x, float *out) {
     // Normalize to -PI to PI
     while (x > PI) x -= 2 * PI;
     while (x < -PI) x += 2 * PI;
-    
+
     float res = x;
     float term = x;
     for (int i = 1; i <= 6; i++) {
@@ -54,7 +54,7 @@ static void Tan(float x, float *out) {
 
 static void Mat4_Identity(Mat4 *res) {
     SetMem(res, sizeof(Mat4), 0);
-    res->m[0][0] = 1.0f; res->m[1][1] = 1.0f; 
+    res->m[0][0] = 1.0f; res->m[1][1] = 1.0f;
     res->m[2][2] = 1.0f; res->m[3][3] = 1.0f;
 }
 
@@ -93,17 +93,17 @@ static void Mat4_Translate(float x, float y, float z, Mat4 *res) {
     res->m[0][3] = x; res->m[1][3] = y; res->m[2][3] = z;
 }
 
-static void Mat4_Scale(float s, Mat4 *res) {
-    Mat4_Identity(res);
-    res->m[0][0] = s; res->m[1][1] = s; res->m[2][2] = s;
-}
+// static void Mat4_Scale(float sx, float sy, float sz, Mat4 *res) {
+//     Mat4_Identity(res);
+//     res->m[0][0] = sx; res->m[1][1] = sy; res->m[2][2] = sz;
+// }
 
 static void Mat4_Perspective(float fov, float aspect, float nearPlane, float farPlane, Mat4 *res) {
     SetMem(res, sizeof(Mat4), 0);
     float t;
     Tan(fov * 0.5f, &t);
     float f = 1.0f / t;
-    
+
     res->m[0][0] = f / aspect;
     res->m[1][1] = f;
     res->m[2][2] = farPlane / (farPlane - nearPlane);

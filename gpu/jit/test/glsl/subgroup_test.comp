@@ -1,0 +1,41 @@
+#version 450
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_shuffle : enable
+
+layout(local_size_x = 16) in;
+
+layout(binding = 0) buffer InBuf {
+    float in_data[];
+};
+
+layout(binding = 1) buffer OutBuf {
+    float sum_reduced;
+    float ballot_bits;
+    float elect_val;
+    float pad;
+    float shuffle_val[16];
+};
+
+void main() {
+    uint idx = gl_LocalInvocationIndex;
+    float val = in_data[idx];
+
+    // Subgroup Add Reduction
+    float sum = subgroupAdd(val);
+    if (subgroupElect()) {
+        sum_reduced = sum;
+        elect_val = 42.0;
+    }
+
+    // Subgroup Ballot
+    uvec4 ballot = subgroupBallot(val > 5.0);
+    if (idx == 0) {
+        ballot_bits = float(ballot.x);
+    }
+
+    // Subgroup Shuffle (reverse order: lane 0 gets lane 15, lane 1 gets lane 14, ...)
+    float shuf = subgroupShuffle(val, 15u - idx);
+    shuffle_val[idx] = shuf;
+}

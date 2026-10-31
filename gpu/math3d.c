@@ -1,6 +1,6 @@
 #include "math3d.h"
 
-Vec4 vec4_add(Vec4 a, Vec4 b) 
+Vec4 vec4_add(Vec4 a, Vec4 b)
 {
     Vec4 r;
     r.x = a.x + b.x;
@@ -9,7 +9,7 @@ Vec4 vec4_add(Vec4 a, Vec4 b)
     r.w = a.w + b.w;
     return r;
 }
-Mat4 mat4_mul(Mat4 *a, Mat4 *b) 
+Mat4 mat4_mul(Mat4 *a, Mat4 *b)
 {
     Mat4 r = {0};
     for(int i=0;i<4;i++)
@@ -19,14 +19,14 @@ Mat4 mat4_mul(Mat4 *a, Mat4 *b)
     return r;
 }
 
-Mat4 mat4_identity(void) 
+Mat4 mat4_identity(void)
 {
     Mat4 m = {0};
     for(int i=0;i<4;i++) m.m[i][i] = 1.0f;
     return m;
 }
 
-Mat4 mat4_rotate_y(float angle) 
+Mat4 mat4_rotate_y(float angle)
 {
     Mat4 m = mat4_identity();
     m.m[0][0] = cosf(angle);  m.m[0][2] = sinf(angle);
@@ -34,7 +34,7 @@ Mat4 mat4_rotate_y(float angle)
     return m;
 }
 
-Mat4 mat4_rotate_x(float angle) 
+Mat4 mat4_rotate_x(float angle)
 {
     Mat4 m = mat4_identity();
     m.m[1][1] = cosf(angle);  m.m[1][2] = -sinf(angle);
@@ -42,14 +42,14 @@ Mat4 mat4_rotate_x(float angle)
     return m;
 }
 
-Mat4 mat4_translate(float x, float y, float z) 
+Mat4 mat4_translate(float x, float y, float z)
 {
     Mat4 m = mat4_identity();
     m.m[0][3] = x; m.m[1][3] = y; m.m[2][3] = z;
     return m;
 }
 
-Mat4 mat4_perspective(float fov, float aspect, float near, float far) 
+Mat4 mat4_perspective(float fov, float aspect, float near, float far)
 {
     Mat4 m = {0};
     float f = 1.0f / tanf(fov * 0.5f);
@@ -71,7 +71,7 @@ Vec4 mat4_mul_vec4(Mat4 *mat, Vec4 v)
     return r;
 }
 
-Mat4 get_mat_from_arg(int arg_val, Mat4* gpu_regs, uint8_t* shader_segment) 
+Mat4 get_mat_from_arg(int arg_val, Mat4* gpu_regs, uint8_t* shader_segment)
 {
     Mat4 mat;
     if (0) {

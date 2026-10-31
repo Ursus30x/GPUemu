@@ -45,6 +45,8 @@ This document describes the architecture of a custom emulated graphics card desi
 | 0x24   | FB_ADDR         | `framebuffer_vram_offset` | 4B | RW | Framebuffer memory offset in VRAM   |
 | 0x28   | GPU_TIME        | `gpu_time`          | 4B   | R   | GPU elapsed time counter (ms)       |
 | 0x2C   | ZBUFFER_ADDR    | `zbuffer_addr`      | 4B   | RW  | Z-buffer memory offset in VRAM      |
+| 0x30   | INT_STATUS      | `int_status`        | 4B   | RW1C| Pending interrupts (Write 1 to Clear)|
+| 0x34   | INT_MASK        | `int_mask`          | 4B   | RW  | Interrupt enable mask               |
 
 ### 2.2 GPU Modes
 
@@ -52,7 +54,7 @@ This document describes the architecture of a custom emulated graphics card desi
 typedef enum {
     GPU_MODE_GOP,   // Graphics Output Protocol (BIOS framebuffer)
     GPU_MODE_3D,    // 3D rendering pipeline
-    GPU_MODE_IDLE   // Idle 
+    GPU_MODE_IDLE   // Idle
 } GpuMode;
 ```
 
@@ -65,6 +67,7 @@ typedef enum {
 ### 2.3 MMIO Access Semantics
 
 - **Writes to RING_HEAD** trigger command processor immediately
+- **Writes to INT_STATUS** clear the corresponding bits (Acknowledge)
 - **All writes are word-aligned** (4-byte boundaries)
 - **Misaligned accesses** are rejected with error
 
@@ -668,7 +671,7 @@ while (gpu->ring_buffer_head != gpu->ring_buffer_tail) {
 
 The **GOP 3D Protocol** (`gGop3dProtocolGuid`) is the primary software interface for UEFI applications to interact with the GPU. It provides a set of function pointers that abstract away direct MMIO register access and command buffer management.
 
-**Protocol Location:** `Protocol/Gop3D.h`
+**Protocol Name:** `GOP_3D_PROTOCOL`
 
 **Protocol GUID:** `{ 0x12345678, 0x1234, 0x5678, { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0 } }`
 
@@ -870,6 +873,35 @@ mGOP3D->GpuFreeBuffer(mGOP3D, &shader_addr);
 
 ---
 
+#### **GpuCmdReadBuffer**
+
+```c
+EFI_STATUS GpuCmdReadBuffer(
+    IN  GOP_3D_PROTOCOL *This,
+    IN  VRAMADDR        GpuAddress,
+    OUT VOID            *HostData,
+    IN  UINT32          Size
+);
+```
+
+**Purpose:** Read data back from GPU VRAM to system memory (host RAM). Waits for pending GPU execution before copying.
+
+**Parameters:**
+- `This` — Pointer to the GOP_3D_PROTOCOL instance
+- `GpuAddress` — Source VRAM address offset
+- `HostData` — Pointer to target buffer in host memory
+- `Size` — Number of bytes to read
+
+**Returns:** `EFI_SUCCESS` on success
+
+**Example:**
+```c
+float output_data[16];
+mGOP3D->GpuCmdReadBuffer(mGOP3D, hSSBO_C, output_data, sizeof(output_data));
+```
+
+---
+
 #### **GpuBindVertShader** / **GpuBindFragShader**
 
 ```c
@@ -1046,13 +1078,13 @@ mGOP3D->GpuSetMode(mGOP3D, 1);  // Enable 3D
 
 // 2. Upload static assets (once)
 VRAMADDR hVBO, hIBO, hVS, hFS;
-mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex, 
+mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeVertex,
                           vertices, sizeof(vertices), &hVBO);
-mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex, 
+mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeIndex,
                           indices, sizeof(indices), &hIBO);
-mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, 
+mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode,
                           shader_vs, sizeof(shader_vs), &hVS);
-mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, 
+mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode,
                           shader_fs, sizeof(shader_fs), &hFS);
 
 // 3. Render loop
@@ -1061,25 +1093,25 @@ while (!done) {
     Mat4 mvp = ComputeTransformation();
     VRAMADDR hMVP;
     if (first_frame) {
-        mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform, 
+        mGOP3D->GpuTransferBuffer(mGOP3D, Gop3dBufferTypeUniform,
                                   &mvp, sizeof(mvp), &hMVP);
     } else {
-        mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform, 
+        mGOP3D->GpuUpdateBuffer(mGOP3D, Gop3dBufferTypeUniform,
                                 &mvp, sizeof(mvp), &hMVP);
     }
 
     // Record frame
     mGOP3D->GpuCmdBegin(mGOP3D);
     mGOP3D->GpuClearFrame(mGOP3D, 0xFF000000);
-    
+
     mGOP3D->GpuBindVertShader(mGOP3D, hVS, sizeof(shader_vs));
     mGOP3D->GpuBindFragShader(mGOP3D, hFS, sizeof(shader_fs));
     mGOP3D->GpuBindVBO(mGOP3D, hVBO, vertex_count);
     mGOP3D->GpuBindIBO(mGOP3D, hIBO, index_count);
     mGOP3D->GpuBindUBO(mGOP3D, hMVP, sizeof(mvp));
-    
+
     mGOP3D->GpuDraw(mGOP3D, Gop3dTopologyTriangles, index_count);
-    
+
     mGOP3D->GpuCmdEnd(mGOP3D);
     mGOP3D->GpuSubmitCmd(mGOP3D);
     mGOP3D->GpuPresent(mGOP3D);
@@ -1134,3 +1166,61 @@ However, applications **must**:
 - Respect maximum VRAM capacity (32 MB)
 
 ---
+## 13. Interrupt Management (MSI)
+
+### 13.1 Overview
+
+The GPU uses **Message Signaled Interrupts (MSI)** to notify the CPU of specific hardware events. This reduces CPU overhead by eliminating the need for continuous polling of the `RING_TAIL` register.
+
+### 13.2 Interrupt Registers
+
+#### **INT_STATUS (0x30) [Read / Write-1-to-Clear]**
+A 32-bit bitmask indicating which events have occurred.
+
+| Bit | Name | Description |
+|-----|------|-------------|
+| 0   | `GPU_INT_CMD_DONE` | Set when the command processor becomes idle (Head == Tail). |
+| 1-31| *Reserved* | Future use. |
+
+#### **INT_MASK (0x34) [Read / Write]**
+A 32-bit bitmask used to enable or disable the signaling of specific interrupts.
+
+- If a bit is `1`, the GPU will send an MSI message when the corresponding event occurs.
+- If a bit is `0`, the GPU will update `INT_STATUS` but will **not** trigger an interrupt signal.
+
+### 13.3 Interrupt Workflow (The Handshake)
+
+1. **Initialization:** The driver sets `INT_MASK` to enable desired interrupts (e.g., `0x01` for Command Done).
+2. **Execution:** The CPU submits commands and continues other work.
+3. **GPU Signal:** When the GPU finishes, it sets the `GPU_INT_CMD_DONE` bit in `INT_STATUS`.
+4. **MSI Trigger:** If the mask bit is enabled, the GPU sends an MSI message to the CPU.
+5. **Acknowledgment:** Upon receiving the interrupt, the driver reads `INT_STATUS` to identify the event and then writes that same value back to `INT_STATUS` to clear (Acknowledge) the interrupt.
+
+### 13.4 Simple example of interrupt in practice
+
+Example how does the interrupt work in GpuPresent:
+```cpp
+    1 EFI_STATUS GpuPresent(GOP_3D_PROTOCOL *This) {
+    2     // 1. Send the batch to VRAM and "Kick" the GPU by writing to RING_HEAD
+    3     GpuSubmitCmd(This);
+    4
+    5     // 2. WAIT for the Interrupt Status bit (Bit 0) to flip to 1
+    6     // The CPU is now "Spinning" or "Waiting" efficiently
+    7     while (!(GpuMmioRead32(REG_INT_STATUS_ADDR) & GPU_INT_CMD_DONE)) {
+    8         gBS->Stall(10);
+    9     }
+   10
+   11     // 3. ACK the interrupt (Tell the GPU we saw the report)
+   12     GpuRingBufferAckInterrupt(GPU_INT_CMD_DONE);
+   13
+   14     return EFI_SUCCESS;
+   15 }
+```
+
+Which roughly equates to:
+```txt
+* START:    STATUS=0, MASK=1
+* GPU BUSY: STATUS=0, MASK=1
+* GPU DONE: STATUS=1, MASK=1 \\MSI Sent!
+* CPU ACK:  STATUS=0, MASK=1 \\Ready for the next frame
+```

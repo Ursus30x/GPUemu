@@ -5,7 +5,6 @@
 
 #define MAX_UNIFORMS_PER_SHADER  16
 #define MAX_ATTRIBUTES_PER_SHADER 8
-
 typedef enum {
     D_TYPE_FLOAT = 1,
     D_TYPE_VEC2,
@@ -16,33 +15,33 @@ typedef enum {
 } DataType;
 
 typedef struct {
-    uint32_t addr;          
-    uint32_t size;             
-    DataType element_type;     
+    uint32_t addr;
+    uint32_t size;
+    DataType element_type;
 } GenericBufferConfig;
 
 
 typedef struct {
-    DataType data_type;        
-    uint32_t offset; 
+    DataType data_type;
+    uint32_t offset;
 } AttributeMap;
 
 typedef struct __attribute__((packed)) {
     DataType data_type;
-    uint32_t offset_in_buffer; 
+    uint32_t offset_in_buffer;
 } ShaderResourceMap;
 
 
 
 typedef struct __attribute__((packed)) {
-    uint32_t shader_type;       
+    uint32_t shader_type;
     uint32_t num_instructions;
-    
+
     uint32_t num_uniforms;
-    ShaderResourceMap uniform_map[MAX_UNIFORMS_PER_SHADER]; 
-    
+    ShaderResourceMap uniform_map[MAX_UNIFORMS_PER_SHADER];
+
     uint32_t num_attributes;
-    AttributeMap attribute_map[MAX_ATTRIBUTES_PER_SHADER]; 
+    AttributeMap attribute_map[MAX_ATTRIBUTES_PER_SHADER];
 
 } Shader_Header;
 
@@ -55,49 +54,170 @@ typedef struct
 
 
 typedef enum {
-    CMD_NOOP               = 0x00, 
-    CMD_DRAW_PRIMITIVE     = 0x01, 
+    CMD_NOOP               = 0x00,
+    CMD_DRAW_PRIMITIVE     = 0x01,
     CMD_SET_STATE          = 0x02,
     CMD_CLEAR_FRAMEBUFFER  = 0x03,
+    CMD_DMA_TRANSFER       = 0x04,
+    CMD_DMA_UPDATE         = 0x05,
+    CMD_DISPATCH           = 0x06,
+    CMD_DISPATCH_INDIRECT  = 0x07
 } CommandOpcode;
 
 
 typedef enum {
     STATE_ID_VBO_CONFIG = 1,
-    STATE_ID_EDGE_CONFIG,   
+    STATE_ID_EDGE_CONFIG,
     STATE_ID_UNIFORM_CONFIG,
-    STATE_ID_VERTEX_SHADER_PTR,    
-    STATE_ID_FRAGMENT_SHADER_PTR
+    STATE_ID_VERTEX_SHADER_PTR,
+    STATE_ID_FRAGMENT_SHADER_PTR,
+    STATE_ID_TEXTURE_CONFIG,
+    STATE_ID_BLEND_CONFIG,
+    STATE_ID_DEPTH_CONFIG,
+    STATE_ID_COMPUTE_SHADER_PTR,
+    STATE_ID_SSBO_CONFIG,
+    STATE_ID_VERTEX_ATTRIB_CONFIG,
+    STATE_ID_BLEND_OP
 } StateID;
+#define MAX_MIP_LEVELS 14
+typedef struct __attribute__((packed)) {
+    uint32_t group_count_x;
+    uint32_t group_count_y;
+    uint32_t group_count_z;
+} DispatchPayload;
+
+typedef struct __attribute__((packed)) {
+    uint32_t indirect_offset;
+} DispatchIndirectPayload;
+
+typedef struct __attribute__((packed)) {
+    uint32_t binding;
+    uint32_t addr;
+    uint32_t size;
+} SsboConfigPayload;
+
+typedef struct __attribute__((packed)) {
+    uint32_t data_vram_addr;          // VRAM offset of Mip level 0 pixel data
+    uint32_t mip_vram_addr[MAX_MIP_LEVELS]; // VRAM relative offsets for Mip levels 0..13
+    uint32_t width;                   // Base width (Level 0)
+    uint32_t height;                  // Base height (Level 0)
+    uint32_t depth;                   // Base depth (Level 0, set to 1 for 2D)
+    uint32_t channels;                // 1, 2, 3, 4
+    uint32_t dimension;               // 0: 2D, 1: 3D (GpuTextureDimension)
+    uint32_t filter;
+    uint32_t wrap;                     
+    uint32_t wrap_u;                  // WrapMode for U/S
+    uint32_t wrap_v;                  // WrapMode for V/T
+    uint32_t wrap_w;                  // WrapMode for W/R (3D volume depth axis)
+    uint32_t num_mip_levels;          // Number of mipmap levels present (1 = base level only)
+    float    max_anisotropy;          // Max anisotropic ratio (1.0f = disabled, up to 16.0f)
+    float    min_lod;                 // Minimum clamp for LOD (e.g. 0.0f)
+    float    max_lod;                 // Maximum clamp for LOD (e.g. 13.0f)
+    float    lod_bias;                // User LOD bias (added to computed LOD)
+} GpuTextureDescriptorVram;
+typedef struct __attribute__((packed)) {
+    uint32_t binding_slot;   // 1..MAX_BINDINGS-1
+    uint32_t desc_vram_addr; // VRAM offset of GpuTextureDescriptorVram
+} SetTexturePayload;
 
 
 typedef enum {
-    PRIMITIVE_TYPE_POINTS  = 0x01, //TO-DO IN FUTURE
-    PRIMITIVE_TYPE_LINES   = 0x02,
-    PRIMITIVE_TYPE_TRIANGLES = 0x03, // TO-DO IN FUTURE
+    GPU_BLEND_OP_ADD              = 0,
+    GPU_BLEND_OP_SUBTRACT         = 1,
+    GPU_BLEND_OP_REVERSE_SUBTRACT = 2,
+    GPU_BLEND_OP_MIN              = 3,
+    GPU_BLEND_OP_MAX              = 4
+} GpuBlendOp;
+
+typedef struct __attribute__((packed)) {
+    uint8_t  enable;
+    uint8_t  src_factor;
+    uint8_t  dst_factor;
+    uint8_t  blend_op;
+} SetBlendPayload;
+
+typedef struct __attribute__((packed)) {
+    uint8_t  depth_test_enable;
+    uint8_t  depth_write_enable;
+    uint16_t reserved;
+} SetDepthPayload;
+
+
+typedef enum {
+    PRIMITIVE_TYPE_POINTS         = 0x01,
+    PRIMITIVE_TYPE_LINES          = 0x02,
+    PRIMITIVE_TYPE_LINE_STRIP     = 0x03,
+    PRIMITIVE_TYPE_TRIANGLES      = 0x04,
+    PRIMITIVE_TYPE_TRIANGLE_STRIP = 0x05,
+    PRIMITIVE_TYPE_TRIANGLE_FAN   = 0x06,
+    PRIMITIVE_TYPE_QUADS          = 0x07,
 } PrimitiveType;
 
 
 typedef struct __attribute__((packed)) {
-    PrimitiveType type;         
+    PrimitiveType type;
 } DrawPrimitivePayload;
 
+#ifndef _GPU_ATTRIB_TYPE_DEFINED
+#define _GPU_ATTRIB_TYPE_DEFINED
+typedef enum {
+    GPU_ATTRIB_FLOAT       = 1,  /* 32-bit IEEE Float (1 to 4 components) */
+    GPU_ATTRIB_UBYTE_NORM  = 2,  /* Unsigned 8-bit integer normalized to [0.0, 1.0] */
+    GPU_ATTRIB_INT32       = 3,  /* 32-bit signed integer */
+    GPU_ATTRIB_UINT32      = 4   /* 32-bit unsigned integer */
+} GpuAttribType;
+#endif
+
+#ifndef _GPU_VERTEX_ATTRIB_DESC_DEFINED
+#define _GPU_VERTEX_ATTRIB_DESC_DEFINED
 typedef struct __attribute__((packed)) {
-    StateID state_id; 
-    
+    uint32_t location;      /* Shader input location (0 .. 7) */
+    uint32_t size;          /* Component count: 1, 2, 3, or 4 */
+    uint32_t type;          /* GpuAttribType */
+    uint8_t  normalized;    /* 1 = normalize integer types to float; 0 = direct */
+    uint8_t  enabled;       /* 1 = active; 0 = disabled */
+    uint16_t reserved;      /* Padding for 4-byte alignment */
+    uint32_t stride;        /* Byte offset between consecutive vertices (0 = tightly packed) */
+    uint32_t offset;        /* Byte offset of attribute from VBO base address */
+} GpuVertexAttribDesc;
+
+typedef struct __attribute__((packed)) {
+    uint32_t enabled_mask;  /* Bitmask: bit i indicates if location i is enabled */
+    GpuVertexAttribDesc attribs[MAX_ATTRIBUTES_PER_SHADER];
+} SetVertexAttribConfigPayload;
+#endif
+
+typedef struct __attribute__((packed)) {
+    StateID state_id;
+
     union {
         GenericBufferConfig buffer_config;
         struct __attribute__((packed)) {
-            uint32_t vs_addr;             
+            uint32_t vs_addr;
             uint32_t fs_addr;
+            uint32_t cs_addr;
         } shader_ptrs;
-        
+        SetTexturePayload texture_config;
+        SetDepthPayload depth_config;
+        SetBlendPayload blend_config;
+        SsboConfigPayload ssbo_config;
+        SetVertexAttribConfigPayload attrib_config;
+        uint8_t blend_op;
     } value;
 } SetStatePayload;
 
 typedef struct __attribute__((packed)) {
-    uint8_t options; // TO-DO in future
+    uint8_t  options; // Bit 0: Clear Color, Bit 1: Clear Depth
+    uint8_t  reserved[3];
+    uint32_t color;   // Background color (ARGB)
 } ClearFramebufferPayload;
+
+typedef struct __attribute__((packed)) {
+    uint64_t host_addr;
+    uint32_t vram_offset;
+    uint32_t size;
+    uint32_t cmd;
+} DmaTransferPayload;
 
 typedef struct __attribute__((packed)) {
     CommandOpcode opcode;
@@ -106,7 +226,10 @@ typedef struct __attribute__((packed)) {
         DrawPrimitivePayload draw;
         SetStatePayload state;
         ClearFramebufferPayload clear;
-        uint32_t raw_data[8]; 
+        DmaTransferPayload dma;
+        DispatchPayload dispatch;
+        DispatchIndirectPayload dispatch_indirect;
+        uint32_t raw_data[8];
     } payload;
 } Command;
 
@@ -116,18 +239,19 @@ typedef struct __attribute__((packed)) {
 
 #define CMD_BEGIN() \
     uint32_t current_offset = 0; \
-    size_t cmd_size = sizeof(Command); 
+    size_t cmd_size = sizeof(Command);
 
 #define CMD_DBG_END(offset) \
     gpu->ring_buffer_head = offset + current_offset;\
-    gpu->ring_buffer_tail = offset; 
+    gpu->ring_buffer_tail = offset;
 
 #define CMD_CLEAR_FB(ring_buffer_base) \
 { \
     Command cmd1 = { \
         .opcode = CMD_CLEAR_FRAMEBUFFER, \
         .payload.clear = { \
-            .options = 0b11}}; \
+            .options = 0b11, \
+            .color = 0xFF000000}}; \
     memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
     current_offset += cmd_size; \
 }
@@ -195,6 +319,32 @@ typedef struct __attribute__((packed)) {
                 .vs_addr = vs \
             } \
     }}; \
+    memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
+    current_offset += cmd_size; \
+}
+
+#define CMD_SET_TEXTURE(ring_buffer_base, slot, desc_addr) \
+{ \
+    Command cmd1 = { \
+        .opcode = CMD_SET_STATE, \
+        .payload.state = { \
+            .state_id = STATE_ID_TEXTURE_CONFIG, \
+            .value.texture_config = { \
+                .binding_slot = slot, \
+                .desc_vram_addr = desc_addr \
+            }}}; \
+    memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
+    current_offset += cmd_size; \
+}
+
+#define CMD_SET_VERTEX_ATTRIBS(ring_buffer_base, conf) \
+{ \
+    Command cmd1 = { \
+        .opcode = CMD_SET_STATE, \
+        .payload.state = { \
+            .state_id = STATE_ID_VERTEX_ATTRIB_CONFIG, \
+            .value.attrib_config = conf \
+        }}; \
     memcpy(ring_buffer_base + current_offset, &cmd1, cmd_size); \
     current_offset += cmd_size; \
 }
