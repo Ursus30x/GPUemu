@@ -29,7 +29,7 @@ index 90f3f89de7..352d9b1180 100644
 +  modules: ['core', 'orcjit', 'native', 'executionengine'],
 +  required: true
 +)
-+system_ss.add(when: 'CONFIG_GPU', if_true: [files('math3d.c', 'primitive_assembly.c', 'jit_atomic.c', 'rasterizer_simt.c', 'renderer.c', 'jit_decorators.c', 'jit_mem.c', 'jit_smpl.c', 'jit_flow.c', 'jit_alu.c', 'jit.c', 'asm.c', 'gpu.c'), llvm_dep])
++system_ss.add(when: 'CONFIG_GPU', if_true: [files('math3d.c', 'primitive_assembly.c', 'jit_atomic.c', 'rasterizer_simt.c', 'renderer.c', 'jit_decorators.c', 'jit_mem.c', 'jit_smpl.c', 'jit_flow.c', 'jit_ext.c','jit_alu.c', 'jit.c', 'asm.c', 'gpu.c'), llvm_dep])
 +
  
  system_ss.add(when: 'CONFIG_EDU', if_true: files('edu.c'))

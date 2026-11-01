@@ -281,6 +281,17 @@ void jit_emit_instr(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t 
         case SpvOpConstant:
             handle_op_constant(ctx, res_id, type_id, operands);
             break;
+        case SpvOpConstantTrue:
+        case SpvOpConstantFalse:
+        {
+            LLVMTypeRef i1 = LLVMInt1TypeInContext(ctx->context);
+            LLVMValueRef const_val = LLVMConstInt(i1, (opcode == SpvOpConstantTrue) ? 1 : 0, 0);
+            LLVMValueRef vals[SIMT_WIDTH];
+            for (int i = 0; i < SIMT_WIDTH; i++) vals[i] = const_val;
+            LLVMValueRef vec_val = LLVMConstVector(vals, SIMT_WIDTH);
+            set_val(ctx, res_id, vec_val);
+            break;
+        }
         case SpvOpDecorate:
             handle_op_decorate(ctx, operands, operand_count);
             break;
@@ -698,7 +709,8 @@ LLVMTypeRef map_spv_to_llvm_type(JitContext *ctx, uint32_t type_id)
         case SpvOpTypeVector: 
         {
             uint32_t count = info->member_count; 
-            return LLVMArrayType(ctx->vec_float_type, count);
+            LLVMTypeRef comp_type = map_spv_to_llvm_type(ctx, info->base_type_id);
+            return LLVMArrayType(comp_type, count);
         }
 
         case SpvOpTypeMatrix: 
