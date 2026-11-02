@@ -253,6 +253,68 @@ TEST(vec_math, "out/vec_math.spv", VERTEX_SHADER,  {
     PRINT_VEC4("gl_Position:\n", glPos);
 })
 
+TEST(ext_vec, "out/ext_vec.spv", VERTEX_SHADER, {
+    struct ubo_t {
+        SimtVec4 v;
+    };
+    struct ubo_t ubo;
+    ubo.v.elem[0] = SPLAT(1.6f);  // round -> 2.0, floor -> 1.0, clamp -> 1.6 => 4.6
+    ubo.v.elem[1] = SPLAT(-2.3f); // round -> -2.0, floor -> -3.0, clamp -> 0.0 => -5.0
+    ubo.v.elem[2] = SPLAT(3.5f);  // round -> 4.0, floor -> 3.0, clamp -> 3.5 => 10.5
+    ubo.v.elem[3] = SPLAT(8.0f);  // round -> 8.0, floor -> 8.0, clamp -> 5.0 => 21.0
+
+    CREATE_BINDING(0, ubo);
+    RUN_JIT();
+    GET_GL_POS();
+
+    SimtVec4 expected;
+    expected.elem[0] = SPLAT(4.6f);
+    expected.elem[1] = SPLAT(-5.0f);
+    expected.elem[2] = SPLAT(10.5f);
+    expected.elem[3] = SPLAT(21.0f);
+
+    ASSERT_NEAR_VEC4(glPos, expected, 0.01f);
+})
+
+TEST(ext_all, "out/ext_all.spv", VERTEX_SHADER, {
+    struct ubo_t {
+        SimtVec4 v;
+        SimtVec4 iv;
+        SimtVec4 uv;
+        SimtMat4 m;
+    };
+    struct ubo_t ubo;
+    ubo.v.elem[0] = SPLAT(0.5f);
+    ubo.v.elem[1] = SPLAT(-0.5f);
+    ubo.v.elem[2] = SPLAT(0.2f);
+    ubo.v.elem[3] = SPLAT(1.0f);
+
+    int32_t iv_arr[4] = { -4, 8, -16, 32 };
+    uint32_t uv_arr[4] = { 4, 12, 1, 9 };
+
+    for (int comp = 0; comp < 4; comp++) {
+        float f_i;
+        memcpy(&f_i, &iv_arr[comp], sizeof(float));
+        ubo.iv.elem[comp] = SPLAT(f_i);
+
+        float f_u;
+        memcpy(&f_u, &uv_arr[comp], sizeof(float));
+        ubo.uv.elem[comp] = SPLAT(f_u);
+    }
+
+    // Identity matrix
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+            ubo.m.cols[col][row] = SPLAT(col == row ? 1.0f : 0.0f);
+        }
+    }
+
+    CREATE_BINDING(0, ubo);
+    RUN_JIT();
+    GET_GL_POS();
+    PRINT_VEC4("ext_all gl_Position:\n", glPos);
+})
+
 SimtVec4 simt_mat4_mul_vec4(SimtMat4 m, SimtVec4 v)
 {
     SimtVec4 result;

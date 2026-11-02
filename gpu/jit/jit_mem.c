@@ -102,7 +102,7 @@ void handle_op_variable(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint
     }
 }
 
-static LLVMValueRef build_recursive_load(JitContext *ctx, LLVMTypeRef type, LLVMValueRef ptr) 
+LLVMValueRef build_recursive_load(JitContext *ctx, LLVMTypeRef type, LLVMValueRef ptr) 
 {
     LLVMTypeKind kind = LLVMGetTypeKind(type);
 
@@ -164,7 +164,7 @@ void handle_op_load(JitContext* ctx, uint32_t res_id, uint32_t res_type_id, uint
 }
 
 
-static void build_recursive_store(JitContext *ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask) {
+void build_recursive_store(JitContext *ctx, LLVMValueRef val_to_store, LLVMValueRef ptr, LLVMValueRef mask) {
     LLVMTypeRef type = LLVMTypeOf(val_to_store);
     LLVMTypeKind kind = LLVMGetTypeKind(type);
 

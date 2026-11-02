@@ -100,6 +100,8 @@ QEMU_FILES=(
     "gpu/jit/jit.h"
     "gpu/jit/jit_alu.c"
     "gpu/jit/jit_alu.h"
+    "gpu/jit/jit_ext.c"
+    "gpu/jit/jit_ext.h"
     "gpu/jit/jit_decorators.c"
     "gpu/jit/jit_decorators.h"
     "gpu/gen/spirv_jit_meta.h"
