@@ -102,6 +102,11 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
         default=None,
         help="Explicit path to OVMF firmware file.",
     )
+    parser.add_argument(
+        "--force-disable-kvm",
+        action="store_true",
+        help="Force disable KVM virtualization and utilise TGC CPU emulation",
+    )
 
     args, extra_args = parser.parse_known_args()
     return args, extra_args
@@ -160,13 +165,15 @@ def verify_binaries(
     return True
 
 
-def check_virt(kvm_path: Path = Path("/dev/kvm")) -> list[str]:
+def check_virt(kvm_path: Path = Path("/dev/kvm"), force_disable_kvm: bool = False) -> list[str]:
     """Check for KVM hardware virtualization availability and return QEMU accelerator arguments."""
-    if kvm_path.exists() and os.access(kvm_path, os.R_OK | os.W_OK):
+    if kvm_path.exists() and os.access(kvm_path, os.R_OK | os.W_OK) and not force_disable_kvm:
         log_info("Hardware virtualization (KVM) detected and enabled.")
         return ["-enable-kvm", "-cpu", "host"]
-
-    log_warn("KVM not available or not writable. Falling back to TCG CPU emulation (-cpu max).")
+    elif force_disable_kvm:
+        log_info("Force disable KVM flag detected. Utilising TCG CPU emulation (-cpu max)")
+    else:
+        log_warn("KVM not available or not writable. Falling back to TCG CPU emulation (-cpu max).")
     return ["-cpu", "max"]
 
 
@@ -345,7 +352,7 @@ def main() -> int:
         return 1
 
     # Virtualization check (KVM vs TCG)
-    accel_args = check_virt()
+    accel_args = check_virt(force_disable_kvm=args.force_disable_kvm)
 
     # Bootloader check
     efi_boot_dir = check_bootloader(disk_dir)
