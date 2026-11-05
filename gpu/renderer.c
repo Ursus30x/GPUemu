@@ -1,14 +1,46 @@
 #include "renderer.h"
+#include "primitive_assembly.h"
+#include "rasterizer_simt.h"
 #include "math3d.h"
-#include "math.h"
+#include <math.h>
 #include "debug_gpu.h"
+#include "qemu/thread.h"
+#include "asm.h"
 
 #define PRINT_V4(v) DEBUG_PRINT("[%f, %f, %f, %f]\n", v.x, v.y, v.z, v.w);
 
+static RendererThreads render;
+QemuMutex jit_mutex;
+
+static inline float get_blend_factor(GpuBlendFactor factor, float src_a, float dst_a, float src_c, float dst_c) 
+{
+    switch (factor) 
+    {
+        case GPU_BLEND_FACTOR_ZERO:                return 0.0f;
+        case GPU_BLEND_FACTOR_ONE:                 return 1.0f;
+        case GPU_BLEND_FACTOR_SRC_ALPHA:           return src_a;
+        case GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA: return 1.0f - src_a;
+        case GPU_BLEND_FACTOR_DST_ALPHA:           return dst_a;
+        case GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA: return 1.0f - dst_a;
+        case GPU_BLEND_FACTOR_SRC_COLOR:           return src_c;
+        case GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR: return 1.0f - src_c;
+        case GPU_BLEND_FACTOR_DST_COLOR:           return dst_c;
+        case GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR: return 1.0f - dst_c;
+        default:                                   return 1.0f;
+    }
+}
+
+static inline uint8_t color_to_u8(float c)
+{
+    if (c <= 0.0f) return 0;
+    float scaled = c * 255.0f;
+    if (scaled >= 255.0f) return 255;
+    return (uint8_t)(scaled + 0.5f);
+}
 
 void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
 {
-    if(1) // TO DO TRIGGER FRAGMENT
+    if(gpu->use_legacy_asm) 
     {
         gpu->pRegs[REG_PX].f32 = (float)x;
         gpu->pRegs[REG_PY].f32 = (float)y;
@@ -18,16 +50,88 @@ void put_pixel(GpuState *gpu, int x, int y, uint32_t color)
         gpu->pRegs[REG_PR].u32 = r;
         gpu->pRegs[REG_PG].u32 = g;
         gpu->pRegs[REG_PB].u32 = b;
-        exec_shader(gpu, gpu->fs_code_addr);     
+        exec_shader(gpu, gpu->fs_code_addr);
         color = (gpu->pRegs[REG_PR].u32 << 16) |
                 (gpu->pRegs[REG_PG].u32 << 8)  |
-                    gpu->pRegs[REG_PB].u32;         
+                    gpu->pRegs[REG_PB].u32;
+    }
+    int idx = y * gpu->width + x;
+
+    if (!gpu->blend_enable) 
+    {
+        FB(gpu)[idx] = color;
+        return;
     }
 
-    FB(gpu)[y * GPU_FB_WIDTH + x] = color;
+    float src_b = (color & 0xFF) / 255.0f;
+    float src_g = ((color >> 8) & 0xFF) / 255.0f;
+    float src_r = ((color >> 16) & 0xFF) / 255.0f;
+    float src_a = ((color >> 24) & 0xFF) / 255.0f;
+
+    uint32_t dst_u32 = FB(gpu)[idx];
+    float dst_b = (dst_u32 & 0xFF) / 255.0f;
+    float dst_g = ((dst_u32 >> 8) & 0xFF) / 255.0f;
+    float dst_r = ((dst_u32 >> 16) & 0xFF) / 255.0f;
+    float dst_a = ((dst_u32 >> 24) & 0xFF) / 255.0f;
+
+    float f_src_r = get_blend_factor(gpu->blend_src_factor, src_a, dst_a, src_r, dst_r);
+    float f_src_g = get_blend_factor(gpu->blend_src_factor, src_a, dst_a, src_g, dst_g);
+    float f_src_b = get_blend_factor(gpu->blend_src_factor, src_a, dst_a, src_b, dst_b);
+
+    float f_dst_r = get_blend_factor(gpu->blend_dst_factor, src_a, dst_a, src_r, dst_r);
+    float f_dst_g = get_blend_factor(gpu->blend_dst_factor, src_a, dst_a, src_g, dst_g);
+    float f_dst_b = get_blend_factor(gpu->blend_dst_factor, src_a, dst_a, src_b, dst_b);
+
+    float term_s_r = src_r * f_src_r;
+    float term_d_r = dst_r * f_dst_r;
+    float term_s_g = src_g * f_src_g;
+    float term_d_g = dst_g * f_dst_g;
+    float term_s_b = src_b * f_src_b;
+    float term_d_b = dst_b * f_dst_b;
+
+    float out_r, out_g, out_b, out_a;
+    switch (gpu->blend_op) 
+    {
+        case GPU_BLEND_OP_SUBTRACT:
+            out_r = term_s_r - term_d_r;
+            out_g = term_s_g - term_d_g;
+            out_b = term_s_b - term_d_b;
+            out_a = src_a - dst_a;
+            break;
+        case GPU_BLEND_OP_REVERSE_SUBTRACT:
+            out_r = term_d_r - term_s_r;
+            out_g = term_d_g - term_s_g;
+            out_b = term_d_b - term_s_b;
+            out_a = dst_a - src_a;
+            break;
+        case GPU_BLEND_OP_MIN:
+            out_r = fminf(src_r, dst_r);
+            out_g = fminf(src_g, dst_g);
+            out_b = fminf(src_b, dst_b);
+            out_a = fminf(src_a, dst_a);
+            break;
+        case GPU_BLEND_OP_MAX:
+            out_r = fmaxf(src_r, dst_r);
+            out_g = fmaxf(src_g, dst_g);
+            out_b = fmaxf(src_b, dst_b);
+            out_a = fmaxf(src_a, dst_a);
+            break;
+        case GPU_BLEND_OP_ADD:
+        default:
+            out_r = term_s_r + term_d_r;
+            out_g = term_s_g + term_d_g;
+            out_b = term_s_b + term_d_b;
+            out_a = src_a + dst_a * (1.0f - src_a);
+            break;
+    }
+
+    uint8_t r = color_to_u8(out_r);
+    uint8_t g = color_to_u8(out_g);
+    uint8_t b = color_to_u8(out_b);
+    uint8_t a = color_to_u8(out_a);
+
+    FB(gpu)[idx] = ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
-
-
 
 void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, uint32_t color2) 
 {
@@ -39,7 +143,7 @@ void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, u
     if (length == 0) length = 1;
     int step = 0;
 
-    for (;;) 
+    for (;;)
     {
         float t = (float)step / length;
 
@@ -63,758 +167,50 @@ void draw_line(GpuState *gpu, int x0, int y0, int x1, int y1, uint32_t color1, u
         if (x0 == x1 && y0 == y1) break;
 
         e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x0 += sx; }
-        if (e2 <= dx) { err += dx; y0 += sy; }
+        if (e2 >= dy) 
+        { err += dy; x0 += sx; }
+        if (e2 <= dx) 
+        { err += dx; y0 += sy; }
         step++;
     }
 }
 
-
-
-
-
-uint8_t cmp_u32(uint32_t a, uint32_t b, uint8_t flag)
-{
-    
-    switch (flag) {
-        case C_FLAG_EQ: return a == b;
-        case C_FLAG_NEQ: return a != b;
-        case C_FLAG_LT: return a <  b;
-        case C_FLAG_GT: return a >  b;
-        case C_FLAG_LTE: return a <= b;
-        case C_FLAG_GTE: return a >= b;
-        default: return 0;
-    }
-}
-
-uint8_t cmp_f32(float a, float b, uint8_t flag)
-{
-    switch (flag) {
-        case C_FLAG_EQ: return a == b;
-        case C_FLAG_NEQ: return a != b;
-        case C_FLAG_LT: return a <  b;
-        case C_FLAG_GT: return a >  b;
-        case C_FLAG_LTE: return a <= b;
-        case C_FLAG_GTE: return a >= b;
-        default: return 0;
-    }
-}
-
-static inline InstrArg get_arg_scalar_value(GpuState *gpu, uint8_t argType, InstrArg arg)
-{
-    if(argType == ARG_TYPE_IMM) return arg;
-        return gpu->pRegs[arg.u32];
-}
-#define ARITHMETIC_OP(op) \
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0); \
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1); \
-            if(instr.opType == OP_TYPE_U32) { \
-                gpu->pRegs[instr.dest].u32 = a.u32 op b.u32; } \
-            else { \
-                gpu->pRegs[instr.dest].f32 = a.f32 op b.f32; }
-
-
-void exec_shader(GpuState *gpu, uint32_t program_offset)
-{
-    void *program_address = gpu->vram_ptr+program_offset;
-    void *program_begin =program_address;
-    int end = 1;
-    do{ 
-        Instr instr = *(Instr*)program_address;
-        if(instr.cFlag == C_FLAG_ENABLE && gpu->cFlag != 1)
-        {
-            program_address+=sizeof(Instr);
-            continue;
-        }
-        switch (instr.opcode)
-        {
-        
-        case INSTR_MOV:
-        {
-            if(instr.opType == OP_TYPE_MATRIX)
-            {
-                gpu->regs[instr.dest] = gpu->regs[instr.arg0.u32];
-                DEBUG_PRINT("MOV MATRIX: reg[%u] -> reg[%u]\n", instr.arg0.u32, instr.dest);
-                break;
-            }
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            gpu->pRegs[instr.dest] = a;
-            DEBUG_PRINT("MOV: in=%u -> reg[%u]=%u\n", a.u32, instr.dest, gpu->pRegs[instr.dest].u32);
-            break;
-        }
-        case INSTR_ROTX:
-        {
-            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            gpu->regs[instr.dest] = mat4_rotate_x(rot.f32);
-            print_mat4(&gpu->regs[instr.dest], "ROTX");
-            DEBUG_PRINT("ROTX: angle=%f\n", rot.f32);
-            break;
-        }
-        case INSTR_ROTY:
-        {
-            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            gpu->regs[instr.dest] = mat4_rotate_y(rot.f32);
-            print_mat4(&gpu->regs[instr.dest], "ROTY");
-            DEBUG_PRINT("ROTY: angle=%f\n", rot.f32);
-            break;
-        }
-        case INSTR_SIN:
-        {
-            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            gpu->pRegs[instr.dest].f32 = sinf(rot.f32);
-            DEBUG_PRINT("SIN: angle=%f -> sin=%f\n", rot.f32, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_COS:
-        {
-            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            gpu->pRegs[instr.dest].f32 = cosf(rot.f32);
-            DEBUG_PRINT("COS: angle=%f -> cos=%f\n", rot.f32, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_SQRT:
-        {
-            InstrArg rot = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            gpu->pRegs[instr.dest].f32 = sqrtf(rot.f32);
-            DEBUG_PRINT("SQRT: %f -> %f\n", rot.f32, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_FSAN:
-        {
-            float val = gpu->pRegs[instr.dest].f32;
-            if(!isfinite(val))
-                gpu->pRegs[instr.dest].f32 = 0.0f;
-            DEBUG_PRINT("FSAN: %f -> %f\n", val, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_IDENT:
-        {
-            gpu->regs[instr.dest] = mat4_identity();
-            DEBUG_PRINT("IDENT: identity matrix created\n");
-            break;
-        }
-        case INSTR_MVP:
-        {
-            gpu->v_out.right = gpu->regs[instr.dest].right;
-            print_mat4(&gpu->regs[instr.dest], "V_OUT");
-            DEBUG_PRINT("MVP: matrix applied to output\n");
-            break;
-        }
-        case INSTR_MOD:
-        {
-            InstrArg a = gpu->pRegs[instr.arg0.u32];
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            gpu->pRegs[instr.dest].u32 = a.u32 % b.u32;
-            DEBUG_PRINT("MOD: %u %% %u -> %u\n", a.u32, b.u32, gpu->pRegs[instr.dest].u32);
-            break;
-        }
-
-        case INSTR_COL:
-        {
-          
-            Vec3Raw col = gpu->regs[instr.dest].vec3;
-            gpu->pRegs[REG_PR].u32 = (uint32_t)(fmaxf(0.0f, fminf(1.0f, col.x)) * 255.0f);
-            gpu->pRegs[REG_PG].u32 = (uint32_t)(fmaxf(0.0f, fminf(1.0f, col.y)) * 255.0f);
-            gpu->pRegs[REG_PB].u32 = (uint32_t)(fmaxf(0.0f, fminf(1.0f, col.z)) * 255.0f);
-            DEBUG_PRINT("COL VEC3: r=%u, g=%u, b=%u\n", gpu->pr, gpu->pg, gpu->pb);
-            DEBUG_PRINT("COL VEC3: r=%f, g=%f, b=%f\n", col.x, col.y, col.z);
-            
-            break;
-        }
-        case INSTR_ABS:
-        {
-            InstrArg a = gpu->pRegs[instr.arg0.u32];
-
-            if(instr.opType == OP_TYPE_F32)
-                gpu->pRegs[instr.dest].f32 = fabsf(a.f32);
-            else 
-                gpu->pRegs[instr.dest].u32 = abs(a.u32);
-            
-            DEBUG_PRINT("ABS: in=%u -> out=%u\n", a.u32, gpu->pRegs[instr.dest].u32);
-            break;
-        }
-        // a + (b - a) * t
-        case INSTR_LERP:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            InstrArg t = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
-
-            if(instr.opType == OP_TYPE_F32)
-                gpu->pRegs[instr.dest].f32 = a.f32 + (b.f32 - a.f32) * t.f32;
-            else 
-                gpu->pRegs[instr.dest].u32 = (int)((float)(a.u32 + (b.u32 - a.u32)) * t.f32);
-            
-            DEBUG_PRINT("LERP: a=%f, b=%f, t=%f -> out=%f\n", a.f32, b.f32, t.f32, gpu->pRegs[instr.dest].f32);
-            
-            break;
-        }
-        // a * (1 - weight) + b * weight
-        case INSTR_BLEND:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            InstrArg w = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
-
-            if(instr.opType == OP_TYPE_F32)
-                gpu->pRegs[instr.dest].f32 = a.f32 * (1.0 - w.f32)  + b.f32 * w.f32;
-            else 
-                gpu->pRegs[instr.dest].u32 = (int)(a.u32 * (1.0 - w.f32)  + b.u32 * w.f32);      
-            DEBUG_PRINT("BLEND: a=%u, b=%u, w=%u -> out=%u\n", a.u32, b.u32, w.u32, gpu->pRegs[instr.dest].u32);
-            break;
-        }
-        case INSTR_MUL:
-        {
-            if(instr.opType == OP_TYPE_MATRIX)
-            {
-                Mat4 *a =  &gpu->regs[instr.arg0.u32];
-                Mat4 *b =  &gpu->regs[instr.arg1.u32];
-                gpu->regs[instr.dest] = mat4_mul(a,b);
-                print_mat4(&gpu->regs[instr.dest], "MUL");
-                DEBUG_PRINT("MUL MATRIX: reg[%u] * reg[%u] -> reg[%u]\n", instr.arg0.u32, instr.arg1.u32, instr.dest);
-                break;
-            }
-            if(instr.opType == OP_TYPE_VEC4)
-            {
-                Mat4 *a =  &gpu->regs[instr.arg0.u32];
-                Vec4 b = gpu->regs[instr.arg1.u32].right;
-                if(instr.arg1.u32 == REG_M_IN)
-                    b = gpu->v_pos.right;
-                Vec4 res = mat4_mul_vec4(a,b);
-                gpu->regs[instr.dest].right = res;
-                print_mat4(&gpu->regs[instr.dest], "MUL");
-                DEBUG_PRINT("MUL VEC4: mat * vec -> out=[%f,%f,%f,%f]\n", res.x, res.y, res.z, res.w);
-                break;
-            }
-            if (instr.opType == OP_TYPE_VEC3)
-            {
-                Vec3Raw a = gpu->regs[instr.arg0.u32].vec3;
-                InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-                gpu->regs[instr.dest].vec3.x = a.x * b.f32;
-                gpu->regs[instr.dest].vec3.y = a.y * b.f32;
-                gpu->regs[instr.dest].vec3.z = a.z * b.f32;
-                print_mat4(&gpu->regs[instr.dest], "MUL");
-                DEBUG_PRINT("MUL VEC3: [%f,%f,%f] * %f -> out=[%f,%f,%f]\n", a.x, a.y, a.z, b.f32, gpu->regs[instr.dest].vec3.x, gpu->regs[instr.dest].vec3.y, gpu->regs[instr.dest].vec3.z);
-                break;
-            }
-            DEBUG_VAR InstrArg a_DBG = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            DEBUG_VAR InstrArg b_DBG = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            ARITHMETIC_OP(*);
-            if(instr.opType == OP_TYPE_U32)
-            {               
-                DEBUG_PRINT("MUL SCALAR: a=%u * b=%u -> dest=%u\n", a_DBG.u32, b_DBG.u32, gpu->pRegs[instr.dest].u32);
-            }
-            else
-            {
-                DEBUG_PRINT("MUL SCALAR: a=%f * b=%f -> dest=%f\n", a_DBG.f32, b_DBG.f32, gpu->pRegs[instr.dest].f32);
-            }
-            break;
-        }
-        case INSTR_ADD:
-        {
-            if(instr.opType == OP_TYPE_VEC4)
-            {
-                Vec4 a = gpu->regs[instr.arg0.u32].right;
-                Vec4 b = gpu->regs[instr.arg1.u32].right;
-                if(instr.arg1.u32 == REG_M_IN)
-                    b = gpu->v_pos.right;
-                Vec4 res = vec4_add(a,b);
-                gpu->regs[instr.dest].right = res;
-                print_mat4(&gpu->regs[instr.dest], "ADD");
-                DEBUG_PRINT("ADD VEC4: [%f,%f,%f,%f] + [%f,%f,%f,%f] -> [%f,%f,%f,%f]\n", a.x, a.y, a.z, a.w, b.x, b.y, b.z, b.w, res.x, res.y, res.z, res.w);
-                break;
-            }
-            if (instr.opType == OP_TYPE_VEC3)
-            {
-                Vec3Raw a = gpu->regs[instr.arg0.u32].vec3;
-                InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-                Vec3Raw res;
-                res.x = a.x + b.f32;
-                res.y = a.y + b.f32;
-                res.z = a.z + b.f32;
-                gpu->regs[instr.dest].vec3 = res;
-                print_mat4(&gpu->regs[instr.dest], "ADD");
-                DEBUG_PRINT("ADD VEC3: [%f,%f,%f] + %f -> [%f,%f,%f]\n", a.x, a.y, a.z, b.f32, res.x, res.y, res.z);
-                break;
-            }
-            
-            DEBUG_VAR InstrArg a_DBG = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            DEBUG_VAR InstrArg b_DBG = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            ARITHMETIC_OP(+);
-            if(instr.opType == OP_TYPE_U32)
-            {
-                DEBUG_PRINT("ADD SCALAR: a=%u + b=%u -> dest=%u\n", a_DBG.u32, b_DBG.u32, gpu->pRegs[instr.dest].u32);
-            }
-            else
-            {
-                DEBUG_PRINT("ADD SCALAR: a=%f + b=%f -> dest=%f\n", a_DBG.f32, b_DBG.f32, gpu->pRegs[instr.dest].f32);
-            }
-            break;
-        }
-        case INSTR_SUB:
-        {
-            if (instr.opType == OP_TYPE_VEC4)
-            {
-                Vec4 a = gpu->regs[instr.arg0.u32].right;
-                Vec4 b = gpu->regs[instr.arg1.u32].right;
-                if(instr.arg1.u32 == REG_M_IN)
-                    b = gpu->v_pos.right;
-                Vec4 res;
-                res.x = a.x - b.x;
-                res.y = a.y - b.y;
-                res.z = a.z - b.z;
-                res.w = a.w - b.w;
-                gpu->regs[instr.dest].right = res;
-                print_mat4(&gpu->regs[instr.dest], "SUB");
-                DEBUG_PRINT("SUB VEC4: [%f,%f,%f,%f] - [%f,%f,%f,%f] -> [%f,%f,%f,%f]\n", a.x, a.y, a.z, a.w, b.x, b.y, b.z, b.w, res.x, res.y, res.z, res.w);
-                break;
-            }
-            if (instr.opType == OP_TYPE_VEC3)
-            {
-                Vec3Raw a = gpu->regs[instr.arg0.u32].vec3;
-                InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-                Vec3Raw res;
-                res.x = a.x - b.f32;
-                res.y = a.y - b.f32;
-                res.z = a.z - b.f32;
-                gpu->regs[instr.dest].vec3 = res;
-                print_mat4(&gpu->regs[instr.dest], "SUB");
-                DEBUG_PRINT("SUB VEC3: [%f,%f,%f] - %f -> [%f,%f,%f]\n", a.x, a.y, a.z, b.f32, res.x, res.y, res.z);
-                break;
-            }
-            
-            DEBUG_VAR InstrArg a_DBG = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            DEBUG_VAR InstrArg b_DBG = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            ARITHMETIC_OP(-);
-            if(instr.opType == OP_TYPE_U32)
-            {
-                DEBUG_PRINT("SUB SCALAR: a=%u - b=%u -> dest=%u\n", a_DBG.u32, b_DBG.u32, gpu->pRegs[instr.dest].u32);
-            }
-            else
-            {
-                DEBUG_PRINT("SUB SCALAR: a=%f - b=%f -> dest=%f\n", a_DBG.f32, b_DBG.f32, gpu->pRegs[instr.dest].f32);
-            }
-            break;
-        }
-        case INSTR_DIV:
-        {
-            if(instr.opType == OP_TYPE_VEC4)
-            {
-                Vec4 a = gpu->regs[instr.arg0.u32].right;
-                Vec4 b = gpu->regs[instr.arg1.u32].right;
-                if(instr.arg1.u32 == REG_M_IN)
-                    b = gpu->v_pos.right;
-                Vec4 res;
-                res.x = a.x / b.x;
-                res.y = a.y / b.y;
-                res.z = a.z / b.z;
-                res.w = a.w / b.w;
-                gpu->regs[instr.dest].right = res;
-                print_mat4(&gpu->regs[instr.dest], "DIV");
-                DEBUG_PRINT("DIV VEC4: [%f,%f,%f,%f] / [%f,%f,%f,%f] -> [%f,%f,%f,%f]\n", a.x, a.y, a.z, a.w, b.x, b.y, b.z, b.w, res.x, res.y, res.z, res.w);
-                break;
-            }
-            if (instr.opType == OP_TYPE_VEC3)
-            {
-                Vec3Raw a = gpu->regs[instr.arg0.u32].vec3;
-                InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-                Vec3Raw res;
-                res.x = a.x / b.f32;
-                res.y = a.y / b.f32;
-                res.z = a.z / b.f32;
-                gpu->regs[instr.dest].vec3 = res;
-                print_mat4(&gpu->regs[instr.dest], "DIV");
-                DEBUG_PRINT("DIV VEC3: [%f,%f,%f] / %f -> [%f,%f,%f]\n", a.x, a.y, a.z, b.f32, res.x, res.y, res.z);
-                break;
-            }
-            DEBUG_VAR InstrArg a_DBG = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            DEBUG_VAR InstrArg b_DBG = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            ARITHMETIC_OP(/);
-            if(instr.opType == OP_TYPE_U32)
-            {
-                DEBUG_PRINT("DIV SCALAR: a=%u / b=%u -> dest=%u\n", a_DBG.u32, b_DBG.u32, gpu->pRegs[instr.dest].u32);
-            }
-            else
-            {
-                DEBUG_PRINT("DIV SCALAR: a=%f / b=%f -> dest=%f\n", a_DBG.f32, b_DBG.f32, gpu->pRegs[instr.dest].f32);  
-            }
-            break;
-        }
-        case INSTR_CMP:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            if(instr.opType == OP_TYPE_F32)
-                gpu->cFlag = cmp_f32(a.f32, b.f32, instr.cFlag);
-            else 
-                gpu->cFlag = cmp_u32(a.u32, b.u32, instr.cFlag);   
-            DEBUG_PRINT("CMP: in_a=%u, in_b=%u, flag=%u -> cFlag=%u\n", a.u32, b.u32, instr.cFlag, gpu->cFlag);
-            break;
-        }
-        case INSTR_CAST:
-        {
-            if(instr.opType == OP_TYPE_F32)
-                gpu->pRegs[instr.arg0.u32].f32 = (float) (gpu->pRegs[instr.arg0.u32].u32);
-            else 
-                gpu->pRegs[instr.arg0.u32].u32 = (int)(gpu->pRegs[instr.arg0.u32].f32);   
-            DEBUG_PRINT("CAST: reg[%u] -> reg[%u]\n", instr.arg0.u32, instr.arg0.u32);
-            break;
-        }
-        case INSTR_TRANS:
-        {
-            InstrArg x = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg y = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            InstrArg z = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
-            gpu->regs[instr.dest] = mat4_translate(x.u32, y.u32, z.u32);
-            print_mat4(&gpu->regs[instr.dest], "TRANS");
-            DEBUG_PRINT("TRANS: x=%u, y=%u, z=%u\n", x.u32, y.u32, z.u32);
-            break;
-        }
-        case INSTR_LDU:
-        {
-            uint32_t offset = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0).u32;
-            void *ptr = gpu->vram_ptr + gpu->uinform_config.addr + offset;
-            switch (instr.opType)
-            {
-            case OP_TYPE_MATRIX:
-                gpu->regs[instr.dest] = *(Mat4 *)ptr;
-                print_mat4(& gpu->regs[instr.dest] , "LDUM");
-                DEBUG_PRINT("LDU MATRIX: offset=%u\n", offset);
-                break;
-            case OP_TYPE_VEC4:
-                gpu->regs[instr.dest].right = (*(Mat4 *)ptr).right;
-                DEBUG_PRINT("LDU VEC4: offset=%u\n", offset);
-                break;
-            case OP_TYPE_U32:
-                gpu->pRegs[instr.dest].u32 = *(uint32_t *)ptr;
-                DEBUG_PRINT("LDU U32: offset=%u, value=%u\n", offset, gpu->pRegs[instr.dest].u32);
-                break;
-            case OP_TYPE_F32:
-                gpu->pRegs[instr.dest].f32 =  *(float *)ptr;
-                DEBUG_PRINT("LDU F32: offset=%u, value=%f\n", offset, gpu->pRegs[instr.dest].f32);
-            break;
-
-            default:
-                break;
-            } 
-            break;
-        }
-        case INSTR_CLAMP:
-        {
-            InstrArg val = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg min = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            InstrArg max = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
-
-            if(instr.opType == OP_TYPE_F32)
-            {
-                if(val.f32 < min.f32) gpu->pRegs[instr.dest].f32 = min.f32;
-                else if(val.f32 > max.f32) gpu->pRegs[instr.dest].f32 = max.f32;
-                else gpu->pRegs[instr.dest].f32 = val.f32;
-                DEBUG_PRINT("CLAMP F32: %f -> %f\n", val.f32, gpu->pRegs[instr.dest].f32);
-            }
-            else 
-            {
-                if(val.u32 < min.u32) gpu->pRegs[instr.dest].u32 = min.u32;
-                else if(val.u32 > max.u32) gpu->pRegs[instr.dest].u32 = max.u32;
-                else gpu->pRegs[instr.dest].u32 = val.u32;
-                DEBUG_PRINT("CLAMP U32: %u -> %u\n", val.u32, gpu->pRegs[instr.dest].u32);
-            }
-            break;
-        }
-        case INSTR_NEG:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-
-            if(instr.opType == OP_TYPE_F32)
-            {
-                gpu->pRegs[instr.dest].f32 = -a.f32;
-                DEBUG_PRINT("NEG F32: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);  
-            }
-            else 
-            {
-                gpu->pRegs[instr.dest].u32 = (uint32_t)(-((int32_t)a.u32));   
-                DEBUG_PRINT("NEG U32: %u -> %u\n", a.u32, gpu->pRegs[instr.dest].u32);
-            }
-            break;
-        }
-        case INSTR_RECIP:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-
-            if(instr.opType == OP_TYPE_F32)
-            {
-                gpu->pRegs[instr.dest].f32 = 1.0f / a.f32;
-                DEBUG_PRINT("RECIP F32: in=%f -> out=%f\n", a.f32, gpu->pRegs[instr.dest].f32);
-            }
-            else 
-            {
-                gpu->pRegs[instr.dest].u32 = (uint32_t)(1 / (float)(a.u32));
-                DEBUG_PRINT("RECIP U32: in=%u -> out=%u\n", a.u32, gpu->pRegs[instr.dest].u32);
-            }
-            break;
-        }
-        case INSTR_RSQRT:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            gpu->pRegs[instr.dest].f32 = 1.0f / sqrtf(a.f32);
-            DEBUG_PRINT("RSQRT: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_MIN:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-
-            if(instr.opType == OP_TYPE_F32)
-            {
-                gpu->pRegs[instr.dest].f32 = fminf(a.f32, b.f32);
-                DEBUG_PRINT("MIN F32: %f, %f -> %f\n", a.f32, b.f32, gpu->pRegs[instr.dest].f32);
-            }
-            else 
-            {
-                gpu->pRegs[instr.dest].u32 = (a.u32 < b.u32) ? a.u32 : b.u32;   
-                DEBUG_PRINT("MIN U32: %u, %u -> %u\n", a.u32, b.u32, gpu->pRegs[instr.dest].u32);
-            }
-            break;
-        }
-        case INSTR_MAX:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-
-            if(instr.opType == OP_TYPE_F32)
-            {
-                gpu->pRegs[instr.dest].f32 = fmaxf(a.f32, b.f32);
-                DEBUG_PRINT("MAX F32: %f, %f -> %f\n", a.f32, b.f32, gpu->pRegs[instr.dest].f32);
-            }
-            else 
-            {
-                gpu->pRegs[instr.dest].u32 = (a.u32 > b.u32) ? a.u32 : b.u32;  
-                DEBUG_PRINT("MAX U32: %u, %u -> %u\n", a.u32, b.u32, gpu->pRegs[instr.dest].u32);
-            }
-            break;
-        }
-        case INSTR_FMA:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            InstrArg c = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
-
-            if(instr.opType == OP_TYPE_F32)
-                gpu->pRegs[instr.dest].f32 = a.f32 * b.f32 + c.f32;
-            else 
-                gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) );  
-            DEBUG_PRINT("FMA: %u * %u + %u -> %u\n", a.u32, b.u32, c.u32, gpu->pRegs[instr.dest].u32);
-    
-            break;
-        }
-        case INSTR_MAD:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            InstrArg c = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
-
-            if(instr.opType == OP_TYPE_F32)
-                gpu->pRegs[instr.dest].f32 = a.f32 * b.f32 + c.f32;
-            else 
-                gpu->pRegs[instr.dest].u32 = (uint32_t)( (float)(a.u32 * b.u32) + (float)(c.u32) ); 
-           // DEBUG_PRINT("MAD: %u * %u + %u -> %u\n", a.u32, b.u32, c.u32, gpu->pRegs[instr.dest].u32);
-            break;
-        }
-        case INSTR_SAT:
-        {
-            InstrArg val = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-
-            if(instr.opType == OP_TYPE_F32)
-            {
-                if(val.f32 < 0.0f) gpu->pRegs[instr.dest].f32 = 0.0f;
-                else if(val.f32 > 1.0f) gpu->pRegs[instr.dest].f32 = 1.0f;
-                else gpu->pRegs[instr.dest].f32 = val.f32;
-                DEBUG_PRINT("SAT F32: %f -> %f\n", val.f32, gpu->pRegs[instr.dest].f32);
-            }
-            else 
-            {
-                if((int)val.u32 < 0) gpu->pRegs[instr.dest].u32 = 0;
-                else if(val.u32 > 255) gpu->pRegs[instr.dest].u32 = 255;
-                else gpu->pRegs[instr.dest].u32 = val.u32;
-                DEBUG_PRINT("SAT U32: %u -> %u\n", val.u32, gpu->pRegs[instr.dest].u32);
-            }
-            break;
-        }
-        case INSTR_ATAN:
-        {
-            InstrArg y = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg x = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-
-            gpu->pRegs[instr.dest].f32 = atan2f(y.f32, x.f32);
-            DEBUG_PRINT("ATAN2: y=%f, x=%f -> %f\n", y.f32, x.f32, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_TAN:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-
-            gpu->pRegs[instr.dest].f32 = tanf(a.f32);
-            DEBUG_PRINT("TAN: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_EXP:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-
-            gpu->pRegs[instr.dest].f32 = expf(a.f32);
-            DEBUG_PRINT("EXP: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_PCMP:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            if(instr.opType == OP_TYPE_F32)
-                gpu->pRegs[instr.dest].u32 = cmp_f32(a.f32, b.f32, instr.cFlag);
-            else 
-                gpu->pRegs[instr.dest].u32 = cmp_u32(a.u32, b.u32, instr.cFlag);   
-            DEBUG_PRINT("PCMP: in_a=%u, in_b=%u, flag=%u -> out=%u\n", a.u32, b.u32, instr.cFlag, gpu->pRegs[instr.dest].u32);
-            break;
-        }
-        case INSTR_VEC3:
-        {
-            InstrArg x = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-            InstrArg y = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-            InstrArg z = get_arg_scalar_value(gpu, instr.arg2Type, instr.arg2);
-            Vec3Raw vec = {x.f32, y.f32, z.f32};
-            gpu->regs[instr.dest].vec3 = vec;
-            print_mat4(&gpu->regs[instr.dest], "VEC3");
-            DEBUG_PRINT("VEC3: x=%f, y=%f, z=%f\n", x.f32, y.f32, z.f32);
-            break;
-        }
-    
-        case INSTR_LEN:
-        {
-            if(instr.opType == OP_TYPE_F32)
-            {
-                InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-                InstrArg b = get_arg_scalar_value(gpu, instr.arg1Type, instr.arg1);
-                gpu->pRegs[instr.dest].f32 = sqrtf(a.f32 * a.f32 + b.f32 * b.f32);
-                DEBUG_PRINT("LEN2: x=%f, y=%f -> length=%f\n", a.f32, b.f32, gpu->pRegs[instr.dest].f32);
-                break;
-            }
-            Vec3Raw vec = gpu->regs[instr.arg0.u32].vec3;
-            gpu->pRegs[instr.dest].f32 = sqrtf(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
-            DEBUG_PRINT("LEN: vec=(%f,%f,%f) -> length=%f\n", vec.x, vec.y, vec.z, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_NORM:
-        {
-            Vec3Raw vec = gpu->regs[instr.arg0.u32].vec3;
-            float len = sqrtf(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
-            if(len > 0.0f)
-            {
-                vec.x /= len;
-                vec.y /= len;
-                vec.z /= len;
-            }
-            gpu->regs[instr.dest].vec3 = vec;
-            print_mat4(&gpu->regs[instr.dest], "NORM");
-            DEBUG_PRINT("NORM: vec=(%f,%f,%f) -> normalized\n", vec.x, vec.y, vec.z);
-            break;
-        }
-        case INSTR_DOT:
-        {
-            Vec3Raw v1 = gpu->regs[instr.arg0.u32].vec3;
-            Vec3Raw v2 = gpu->regs[instr.arg1.u32].vec3;
-            gpu->pRegs[instr.dest].f32 = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-            DEBUG_PRINT("DOT: v1=(%f,%f,%f) dot v2=(%f,%f,%f) -> %f\n", v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, gpu->pRegs[instr.dest].f32);
-            break;
-        }
-        case INSTR_CROSS:
-        {
-            Vec3Raw v1 = gpu->regs[instr.arg0.u32].vec3;
-            Vec3Raw v2 = gpu->regs[instr.arg1.u32].vec3;
-            Vec3Raw res;
-            res.x = v1.y * v2.z - v1.z * v2.y;
-            res.y = v1.z * v2.x - v1.x * v2.z;
-            res.z = v1.x * v2.y - v1.y * v2.x;
-            gpu->regs[instr.dest].vec3 = res;
-            print_mat4(&gpu->regs[instr.dest], "CROSS");
-            DEBUG_PRINT("CROSS: res=(%f,%f,%f)\n", res.x, res.y, res.z);
-            break;
-        }
-        case INSTR_SIGN:
-        {
-            InstrArg a = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0);
-
-            if(instr.opType == OP_TYPE_F32)
-            {
-                if(a.f32 > 0.0f) gpu->pRegs[instr.dest].f32 = 1.0f;
-                else if(a.f32 < 0.0f) gpu->pRegs[instr.dest].f32 = -1.0f;
-                else gpu->pRegs[instr.dest].f32 = 0.0f;
-                DEBUG_PRINT("SIGN F32: %f -> %f\n", a.f32, gpu->pRegs[instr.dest].f32);
-            }
-            else 
-            {
-                int32_t val = (int32_t)a.u32;
-                if(val > 0) gpu->pRegs[instr.dest].u32 = 1;
-                else if(val < 0) gpu->pRegs[instr.dest].u32 = (uint32_t)(-1);
-                else gpu->pRegs[instr.dest].u32 = 0;
-                DEBUG_PRINT("SIGN U32: %d -> %d\n", val, (int32_t)gpu->pRegs[instr.dest].u32);
-            }
-            break;
-        }
-        case INSTR_JMP:
-        {
-            uint32_t target = get_arg_scalar_value(gpu, instr.arg0Type, instr.arg0).u32;
-            program_address = program_begin + target;
-            DEBUG_PRINT("JMP to %u\n", target);
-            continue;
-        }
-        case INSTR_EXIT:
-            DEBUG_PRINT("EXIT: shader execution complete\n");
-            end = 0;
-            return;
-        break;
-        }
-        program_address+=sizeof(Instr);
-    }while(end);
-
-}
-
-float edge_func(Vec3 a, Vec3 b, Vec3 c) 
+float edge_func(Vec3 a, Vec3 b, Vec3 c)
 {
     return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
 }
 
-void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
+static void draw_triangle_band(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu, int band_min_y, int band_max_y)
 {
     uint32_t width = gpu->width;
     uint32_t height =  gpu->height;
     Vec3 s[3];
     Vec4 v[3] = {v0, v1, v2};
 
-    for(int i = 0; i < 3; i++) 
+    for(int i = 0; i < 3; i++)
     {
         float w = (v[i].w < 0.1f) ? 0.1f : v[i].w;
         float inv_w = 1.0f / w;
-        
+
         float ndc_x = v[i].x * inv_w;
         float ndc_y = v[i].y * inv_w;
 
         s[i].x = (ndc_x + 1.0f) * 0.5f * width;
         s[i].y = (1.0f - (ndc_y + 1.0f) * 0.5f) * height;
-        s[i].z = inv_w; 
+        s[i].z = inv_w;
     }
 
-   
     float area = edge_func(s[0], s[1], s[2]);
-   // if (area >= 0) return; 
 
     int min_x = fmax(0, fmin(s[0].x, fmin(s[1].x, s[2].x)));
     int max_x = fmin(width-1, fmax(s[0].x, fmax(s[1].x, s[2].x)));
-    int min_y = fmax(0, fmin(s[0].y, fmin(s[1].y, s[2].y)));
-    int max_y = fmin(height-1, fmax(s[0].y, fmax(s[1].y, s[2].y)));
+    
+    int min_y = fmax(band_min_y, fmin(s[0].y, fmin(s[1].y, s[2].y)));
+    int max_y = fmin(band_max_y, fmax(s[0].y, fmax(s[1].y, s[2].y)));
 
-   
-    for (int y = min_y; y <= max_y; y++) 
+    if (min_y > max_y || min_x > max_x) return;
+
+    for (int y = min_y; y <= max_y; y++)
     {
         for (int x = min_x; x <= max_x; x++)
         {
@@ -823,86 +219,436 @@ void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
             float w1 = edge_func(s[2], s[0], p) / area;
             float w2 = edge_func(s[0], s[1], p) / area;
 
-            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                //float z_inv = w0 * s[0].z + w1 * s[1].z + w2 * s[2].z;
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) 
+            {
                 float z = w0 * (1.0f/s[0].z) + w1 * (1.0f/s[1].z) + w2 * (1.0f/s[2].z);
-                
-                if (z < Z_BUFFER(gpu)[y * width + x]) {
-                    Z_BUFFER(gpu)[y * width + x] = z;
+                int idx = y * width + x;
+
+                if (z < Z_BUFFER(gpu)[idx]) 
+                {
+                    if(gpu->depth_write_enable == 1)
+                    {
+                        Z_BUFFER(gpu)[idx] = z;
+                    }
                     uint8_t r = (uint8_t)(w0 * GET_R(color.a_col) + w1 * GET_R(color.b_col) + w2 * GET_R(color.c_col));
                     uint8_t g = (uint8_t)(w0 * GET_G(color.a_col) + w1 * GET_G(color.b_col) + w2 * GET_G(color.c_col));
                     uint8_t b = (uint8_t)(w0 * GET_B(color.a_col) + w1 * GET_B(color.b_col) + w2 * GET_B(color.c_col));
-                    put_pixel(gpu, x,y, RGB_TO_UINT(r,g,b));
+                    put_pixel(gpu, x, y, RGB_TO_UINT(r,g,b));
                 }
             }
         }
     }
 }
-void gpu_render_triangles(void *opaque)
+
+void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu)
+{
+    draw_triangle_band(v0, v1, v2, color, gpu, 0, gpu->height - 1);
+}
+
+static void worker_transform_vertices_impl(RenderThreadArgs *args) 
+{
+    GpuState local_gpu = *(args->orig_gpu); 
+    GpuState *gpu = &local_gpu;
+
+    Vec3 *vertices = VERTEX_TABLE(gpu);
+    TransformedVertex *out_vertices = args->transformed_vertices;
+
+    for (uint32_t i = args->start_idx; i < args->end_idx; i++)
+    {
+        Vec4 v = {vertices[i].x, vertices[i].y, vertices[i].z, 1.0f};
+        gpu->v_pos.right = v;
+
+        uint32_t color = vertices[i].rgba;
+        gpu->pRegs[REG_PR].u32 = GET_R(color);
+        gpu->pRegs[REG_PG].u32 = GET_G(color);
+        gpu->pRegs[REG_PB].u32 = GET_B(color);
+
+        exec_shader(gpu, gpu->vs_code_addr);
+
+        out_vertices[i].pos = gpu->v_out.right;
+        out_vertices[i].color = RGB_TO_UINT(
+            (uint8_t)gpu->pRegs[REG_PR].u32,
+            (uint8_t)gpu->pRegs[REG_PG].u32,
+            (uint8_t)gpu->pRegs[REG_PB].u32);
+        out_vertices[i].u = vertices[i].u;
+        out_vertices[i].v = vertices[i].v;
+        out_vertices[i].normal = (Vec3Raw){0.0f, 0.0f, 1.0f};
+    }
+}
+
+static void worker_rasterize_bands_impl(RenderThreadArgs *args) 
+{
+    GpuState local_gpu = *(args->orig_gpu);
+    GpuState *gpu = &local_gpu;
+
+    TransformedVertex *vertices = args->transformed_vertices;
+    Triangle *indices = TRIANGLES_TABLE(gpu);
+    uint32_t triangle_size = args->triangle_size;
+
+    int band_min_y = args->start_y;
+    int band_max_y = args->end_y - 1;
+
+    for (uint32_t i = 0; i < triangle_size; i++) 
+    {
+        Vec4 v0 = vertices[indices[i].a].pos;
+        Vec4 v1 = vertices[indices[i].b].pos;
+        Vec4 v2 = vertices[indices[i].c].pos;
+
+        Col3 color = {
+            .a_col = vertices[indices[i].a].color,
+            .b_col = vertices[indices[i].b].color,
+            .c_col = vertices[indices[i].c].color,
+        };
+
+        draw_triangle_band(v0, v1, v2, color, gpu, band_min_y, band_max_y);
+   }
+}
+
+static void worker_wireframe_vertices_impl(RenderThreadArgs *args) 
+{
+    GpuState local_gpu = *(args->orig_gpu);
+    GpuState *gpu = &local_gpu;
+    
+    uint32_t width = gpu->width;
+    uint32_t height = gpu->height;
+    Vec3 *vertices = VERTEX_TABLE(gpu);
+
+    for(uint32_t i = args->start_idx; i < args->end_idx; i++)
+    {
+        Vec4 v = {vertices[i].x, vertices[i].y, vertices[i].z, 1.0f};
+        gpu->v_pos.right = v;
+
+        uint32_t color = vertices[i].rgba;
+        uint8_t r  = GET_R(color);
+        uint8_t g  = GET_G(color);
+        uint8_t b  = GET_B(color);
+        gpu->pRegs[REG_PR].u32 = r;
+        gpu->pRegs[REG_PG].u32 = g;
+        gpu->pRegs[REG_PB].u32 = b;
+        
+        exec_shader(gpu, gpu->vs_code_addr);
+
+        vertices[i].rgba = RGB_TO_UINT(
+            (uint8_t)gpu->pRegs[REG_PR].u32,
+            (uint8_t)gpu->pRegs[REG_PG].u32,
+            (uint8_t)gpu->pRegs[REG_PB].u32);
+
+        Vec4 tv = gpu->v_out.right;
+        float ndc_x = tv.x / tv.w;
+        float ndc_y = tv.y / tv.w;
+        args->px[i] = (int)((ndc_x*0.5f + 0.5f) * width);
+        args->py[i] = (int)((-ndc_y*0.5f + 0.5f) * height);
+    }
+}
+
+static void worker_wireframe_edges_impl(RenderThreadArgs *args) 
+{
+    GpuState local_gpu = *(args->orig_gpu);
+    GpuState *gpu = &local_gpu;
+    
+    Edge *edges = EDGES_TABLE(gpu);
+    Vec3 *vertices = VERTEX_TABLE(gpu);
+
+    for(uint32_t i = args->start_idx; i < args->end_idx; i++)
+    {
+        Edge e = edges[i];
+        DEBUG_PRINT("[GPU State] px[e.a]: %u, py[e.a]: %u, px[e.b]: %u, py[e.b]: %u, e.a: %u, e.b %u\n",
+            args->px[e.a], args->py[e.a], args->px[e.b], args->py[e.b], e.a, e.b);
+        draw_line(gpu, args->px[e.a], args->py[e.a], args->px[e.b], args->py[e.b], vertices[e.a].rgba, vertices[e.b].rgba);
+    }
+}
+
+static void* worker_thread(void* arg) 
+{
+    RenderThreadArgs* my_args = (RenderThreadArgs*)arg;
+    int local_generation = 0;
+
+    while (1) 
+    {
+        qemu_mutex_lock(&render.pool_mutex);
+        while (local_generation == render.work_generation)
+        {
+            qemu_cond_wait(&render.pool_cond, &render.pool_mutex);
+        }
+        local_generation = render.work_generation;
+        RenderTaskType task_to_run = render.current_task;
+        qemu_mutex_unlock(&render.pool_mutex);
+
+        if (task_to_run == TASK_EXIT) break;
+
+        switch (task_to_run)
+        {
+            case TASK_TRANSFORM_VERTICES:      worker_transform_vertices_impl(my_args); break;
+            case TASK_TRANSFORM_VERTICES_SIMT: worker_transform_vertices_simt_impl(my_args); break;
+            case TASK_RASTERIZE_BANDS:         worker_rasterize_bands_impl(my_args); break;
+            case TASK_RASTERIZE_BANDS_SIMT:    worker_rasterize_bands_simt_impl(my_args); break;
+            case TASK_RASTERIZE_POINTS_SIMT:   worker_rasterize_points_simt_impl(my_args); break;
+            case TASK_RASTERIZE_LINES_SIMT:    worker_rasterize_lines_simt_impl(my_args); break;
+            case TASK_WIREFRAME_VERTICES:      worker_wireframe_vertices_impl(my_args); break;
+            case TASK_WIREFRAME_EDGES:         worker_wireframe_edges_impl(my_args); break;
+            case TASK_COMPUTE_SIMT:            worker_compute_simt_impl(my_args); break;
+            default: break;
+        }
+
+        qemu_mutex_lock(&render.pool_mutex);
+        render.completed_workers++;
+        if (render.completed_workers == NUM_RENDER_THREADS) 
+        {
+            qemu_cond_signal(&render.main_cond);
+        }
+        qemu_mutex_unlock(&render.pool_mutex);
+    }
+    return NULL;
+}
+
+void init_thread_pool(void) 
+{
+    if (render.threads_initialized) return;
+
+    render.work_generation = 0;
+    render.completed_workers = 0;
+    render.current_task = TASK_NONE;
+
+    qemu_mutex_init(&render.pool_mutex);
+    qemu_cond_init(&render.pool_cond);
+    qemu_cond_init(&render.main_cond);
+    qemu_mutex_init(&jit_mutex);
+
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+    {
+        qemu_thread_create(&render.threads[i], "gpu_render_worker", worker_thread, &render.args[i], QEMU_THREAD_JOINABLE);
+    }
+    render.threads_initialized = 1;
+}
+
+void dispatch_task(RenderTaskType task) 
+{
+    qemu_mutex_lock(&render.pool_mutex);
+    render.current_task = task;
+    render.completed_workers = 0;
+    render.work_generation++;
+    qemu_cond_broadcast(&render.pool_cond);
+
+    while (render.completed_workers < NUM_RENDER_THREADS)
+    {
+        qemu_cond_wait(&render.main_cond, &render.pool_mutex);
+    }
+    qemu_mutex_unlock(&render.pool_mutex);
+}
+
+void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float point_size, float line_width)
 {
     GpuState *gpu = opaque;
-    if(gpu->gpu_mode == GPU_MODE_IDLE)//REG_EXEC_VERTEX_SHADER(gpu) == 1
+    if (gpu->gpu_mode == GPU_MODE_IDLE)
     {
         return;
     }
     gpu->gpu_mode = GPU_MODE_IDLE;
-    uint32_t triangle_size =  gpu->edge_config.size;
-
-        
-    Vec3 *vertices = VERTEX_TABLE(gpu);
-    Triangle *indices = TRIANGLES_TABLE(gpu);
-    for (int i = 0; i < triangle_size; i++) 
-    {
-            Vec4 v[3];
-            v[0].x = vertices[indices[i].a].x;
-            v[0].y = vertices[indices[i].a].y;
-            v[0].z = vertices[indices[i].a].z;
-            v[0].w = 1.0f;
-
-            v[1].x = vertices[indices[i].b].x;
-            v[1].y = vertices[indices[i].b].y;
-            v[1].z = vertices[indices[i].b].z;
-            v[1].w = 1.0f;
-
-            v[2].x = vertices[indices[i].c].x;
-            v[2].y = vertices[indices[i].c].y;
-            v[2].z = vertices[indices[i].c].z;
-            v[2].w = 1.0f;
-
-            uint32_t colors[3] = {vertices[indices[i].a].rgba, vertices[indices[i].b].rgba, vertices[indices[i].c].rgba};
-            for(int j=0; j<3; j++) 
-            {
-                gpu->v_pos.right = v[j];
-                uint32_t color = colors[j];
-                uint8_t r  = GET_R(color);
-                uint8_t g  = GET_G(color);
-                uint8_t b  = GET_B(color);
-                gpu->pRegs[REG_PR].u32 = r;
-                gpu->pRegs[REG_PG].u32 = g;
-                gpu->pRegs[REG_PB].u32 = b;
-                exec_shader(gpu, gpu->vs_code_addr);     
-                v[j] = gpu->v_out.right;
-                colors[j] = RGB_TO_UINT(
-                    (uint8_t)gpu->pRegs[REG_PR].u32, 
-                    (uint8_t)gpu->pRegs[REG_PG].u32, 
-                    (uint8_t)gpu->pRegs[REG_PB].u32);
-            }
-            Col3 color = {
-                .a_col = colors[0],
-                .b_col = colors[1],
-                .c_col = colors[2],
-            };
-            draw_triangle(v[0], v[1], v[2], color, gpu);
-    }
     
+    uint32_t vertex_size = gpu->vbo_config.size;
+    if (vertex_size == 0)
+    {
+        gpu->gpu_mode = GPU_MODE_3D;
+        return;
+    }
 
+    TransformedVertex *transformed_vertices = malloc(sizeof(TransformedVertex) * vertex_size);
+    if (!transformed_vertices)
+    {
+        gpu->gpu_mode = GPU_MODE_3D;
+        return;
+    }
+
+    float *transformed_varyings = NULL;
+    if (gpu->vs_output_location_mask != 0)
+    {
+        transformed_varyings = calloc((size_t)vertex_size * MAX_ATTRIBUTES * 4, sizeof(float));
+        if (!transformed_varyings)
+        {
+            free(transformed_vertices);
+            gpu->gpu_mode = GPU_MODE_3D;
+            return;
+        }
+    }
+
+    // PASS 1: Vertex Transformations (SIMT 16-element blocks)
+    uint32_t total_vertex_blocks = (vertex_size + 15) / SIMT_WIDTH;
+    uint32_t chunk_v_blocks = total_vertex_blocks / NUM_RENDER_THREADS;
+    
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+    {
+        render.args[i].orig_gpu = gpu;
+        render.args[i].transformed_vertices = transformed_vertices;
+        render.args[i].transformed_varyings = transformed_varyings;
+        render.args[i].primitive_type = prim_type;
+        render.args[i].point_size = point_size;
+        render.args[i].line_width = line_width;
+        
+        render.args[i].start_block = i * chunk_v_blocks;
+        render.args[i].end_block = (i == NUM_RENDER_THREADS - 1) ? total_vertex_blocks : (i + 1) * chunk_v_blocks;
+    }
+    dispatch_task(TASK_TRANSFORM_VERTICES_SIMT);
+
+    // PASS 2: Primitive Assembly & Rasterization Dispatch
+    uint32_t height = gpu->height;
+    uint32_t chunk_y = height / NUM_RENDER_THREADS;
+    chunk_y = (chunk_y + 3) & ~3; 
+
+    if (prim_type == GPU_PRIM_POINTS)
+    {
+        for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+        {
+            render.args[i].orig_gpu = gpu;
+            render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].transformed_varyings = transformed_varyings;
+            render.args[i].primitive_type = prim_type;
+            render.args[i].point_size = point_size;
+            render.args[i].line_width = line_width;
+            
+            render.args[i].start_y = i * chunk_y;
+            render.args[i].jit_ctx_fs = gpu->jit_ctx_fs;
+            uint32_t end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
+            if (end_y > height) end_y = height;
+            render.args[i].end_y = end_y;
+        }
+        dispatch_task(TASK_RASTERIZE_POINTS_SIMT);
+    }
+    else if (prim_type == GPU_PRIM_LINES || prim_type == GPU_PRIM_LINE_STRIP)
+    {
+        uint32_t line_count = 0;
+        Edge *assembled_lines = assemble_primitive_lines(gpu, prim_type, vertex_size, &line_count);
+
+        for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+        {
+            render.args[i].orig_gpu = gpu;
+            render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].transformed_varyings = transformed_varyings;
+            render.args[i].assembled_triangles = (Triangle *)assembled_lines;
+            render.args[i].assembled_triangle_count = line_count;
+            render.args[i].primitive_type = prim_type;
+            render.args[i].point_size = point_size;
+            render.args[i].line_width = line_width;
+            
+            render.args[i].start_y = i * chunk_y;
+            render.args[i].jit_ctx_fs = gpu->jit_ctx_fs;
+            uint32_t end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
+            if (end_y > height) end_y = height;
+            render.args[i].end_y = end_y;
+        }
+        dispatch_task(TASK_RASTERIZE_LINES_SIMT);
+
+        if (assembled_lines) free(assembled_lines);
+    }
+    else /* GPU_PRIM_TRIANGLES, GPU_PRIM_TRIANGLE_STRIP, GPU_PRIM_TRIANGLE_FAN, GPU_PRIM_QUADS */
+    {
+        uint32_t tri_count = 0;
+        Triangle *assembled_triangles = assemble_primitive_triangles(gpu, prim_type, vertex_size, &tri_count);
+
+        for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+        {
+            render.args[i].orig_gpu = gpu;
+            render.args[i].transformed_vertices = transformed_vertices;
+            render.args[i].transformed_varyings = transformed_varyings;
+            render.args[i].assembled_triangles = assembled_triangles;
+            render.args[i].assembled_triangle_count = tri_count;
+            render.args[i].primitive_type = prim_type;
+            render.args[i].point_size = point_size;
+            render.args[i].line_width = line_width;
+            
+            render.args[i].start_y = i * chunk_y;
+            render.args[i].jit_ctx_fs = gpu->jit_ctx_fs;
+            uint32_t end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
+            if (end_y > height) end_y = height;
+            render.args[i].end_y = end_y;
+        }
+        dispatch_task(TASK_RASTERIZE_BANDS_SIMT);
+
+        if (assembled_triangles) free(assembled_triangles);
+    }
+
+    free(transformed_vertices);
+    free(transformed_varyings);
+    gpu->gpu_mode = GPU_MODE_3D;
+}
+
+void gpu_render_triangles_simt(void *opaque)
+{
+    GpuState *gpu = opaque;
+    float psize = gpu->point_size > 0.0f ? gpu->point_size : 1.0f;
+    float lwidth = gpu->line_width > 0.0f ? gpu->line_width : 1.0f;
+    GpuPrimitiveType prim = (gpu->primitive_type != 0) ? (GpuPrimitiveType)gpu->primitive_type : GPU_PRIM_TRIANGLES;
+    gpu_render_primitives_simt(opaque, prim, psize, lwidth);
+}
+
+void compute_mode(GpuState *gpu)
+{
+    if(gpu->gpu_mode == GPU_MODE_IDLE)
+    {
+        return;
+    }
+    gpu->gpu_mode = GPU_MODE_IDLE;
+    uint32_t total_wg = gpu->dispatch_total_workgroups;
+    uint32_t chunk_wg = (total_wg + NUM_RENDER_THREADS - 1) / NUM_RENDER_THREADS;
+
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) {
+        render.args[i].orig_gpu = gpu;
+        render.args[i].start_block = i * chunk_wg;
+        render.args[i].end_block = (i == NUM_RENDER_THREADS - 1) ? total_wg : (i + 1) * chunk_wg;
+        if (render.args[i].start_block > total_wg) render.args[i].start_block = total_wg;
+        if (render.args[i].end_block > total_wg) render.args[i].end_block = total_wg;
+    }
+    dispatch_task(TASK_COMPUTE_SIMT);
+    gpu->gpu_mode = GPU_MODE_3D;
+}
+void gpu_render_triangles(void *opaque)
+{
+    GpuState *gpu = opaque;
+    if(gpu->gpu_mode == GPU_MODE_IDLE)
+    {
+        return;
+    }
+    gpu->gpu_mode = GPU_MODE_IDLE;
+    
+    uint32_t vertex_size = gpu->vbo_config.size;
+    uint32_t triangle_size = gpu->edge_config.size; 
+
+    TransformedVertex *transformed_vertices = malloc(sizeof(TransformedVertex) * vertex_size);
+    if (!transformed_vertices)
+    {
+        gpu->gpu_mode = GPU_MODE_3D;
+        return;
+    }
+
+    uint32_t chunk_v = vertex_size / NUM_RENDER_THREADS;
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+    {
+        render.args[i].orig_gpu = gpu;
+        render.args[i].transformed_vertices = transformed_vertices;
+        render.args[i].start_idx = i * chunk_v;
+        render.args[i].end_idx = (i == NUM_RENDER_THREADS - 1) ? vertex_size : (i + 1) * chunk_v;
+    }
+    dispatch_task(TASK_TRANSFORM_VERTICES);
+
+    uint32_t height = gpu->height;
+    uint32_t chunk_y = height / NUM_RENDER_THREADS;
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) 
+    {
+        render.args[i].orig_gpu = gpu;
+        render.args[i].transformed_vertices = transformed_vertices;
+        render.args[i].triangle_size = triangle_size;
+        render.args[i].start_y = i * chunk_y;
+        render.args[i].end_y = (i == NUM_RENDER_THREADS - 1) ? height : (i + 1) * chunk_y;
+    }
+    dispatch_task(TASK_RASTERIZE_BANDS);
+
+    free(transformed_vertices);
     gpu->gpu_mode = GPU_MODE_3D;
 }
 
 void gpu_render_wireframe(void *opaque)
 {
     GpuState *gpu = opaque;
-    if(gpu->gpu_mode == GPU_MODE_IDLE)//REG_EXEC_VERTEX_SHADER(gpu) == 1
+    if(gpu->gpu_mode == GPU_MODE_IDLE)
     {
         DEBUG_PRINT("[Render Frame] GPU IS IDLE\n");
         return;
@@ -913,63 +659,36 @@ void gpu_render_wireframe(void *opaque)
     debug_dump_vertices(opaque);
     debug_dump_ubo(opaque);
 
-    uint32_t width = gpu->width;
-    uint32_t height =  gpu->height;
     uint32_t vertex_size = gpu->vbo_config.size;
     uint32_t edges_size =  gpu->edge_config.size;
-    DEBUG_PRINT("[GPU State] Width: %u, Height: %u, Vertex Size: %u, Edge Size: %u\n", 
-       gpu->width, 
-       gpu->height, 
-       gpu->vbo_config.size, 
-       gpu->edge_config.size);
-        
-    Vec3 *vertices = VERTEX_TABLE(gpu);
-    Edge *edges = EDGES_TABLE(gpu);
     
-    uint32_t *px = malloc(sizeof(uint32_t)* vertex_size);
-    uint32_t *py = malloc(sizeof(uint32_t)* vertex_size);
-    for(uint32_t i=0;i<vertex_size;i++) 
+    DEBUG_PRINT("[GPU State] Width: %u, Height: %u, Vertex Size: %u, Edge Size: %u\n",
+       gpu->width, gpu->height, gpu->vbo_config.size, gpu->edge_config.size);
+
+    uint32_t *px = malloc(sizeof(uint32_t) * vertex_size);
+    uint32_t *py = malloc(sizeof(uint32_t) * vertex_size);
+
+    uint32_t chunk_v = vertex_size / NUM_RENDER_THREADS;
+    for (int i = 0; i < NUM_RENDER_THREADS; i++) 
     {
-        Vec4 v = {vertices[i].x, vertices[i].y, vertices[i].z, 1.0f};
-        gpu->v_pos.right = v;
-        
-        uint32_t color = vertices[i].rgba;
-        uint8_t r  = GET_R(color);
-        uint8_t g  = GET_G(color);
-        uint8_t b  = GET_B(color);
-        gpu->pRegs[REG_PR].u32 = r;
-        gpu->pRegs[REG_PG].u32 = g;
-        gpu->pRegs[REG_PB].u32 = b;
-        //exec vertex shader
-        exec_shader(gpu, gpu->vs_code_addr);    
-
-        vertices[i].rgba = RGB_TO_UINT(
-            (uint8_t)gpu->pRegs[REG_PR].u32, 
-            (uint8_t)gpu->pRegs[REG_PG].u32, 
-            (uint8_t)gpu->pRegs[REG_PB].u32);
-
-        Vec4 tv = gpu->v_out.right;
-        float ndc_x = tv.x / tv.w;
-        float ndc_y = tv.y / tv.w;
-        px[i] = (int)((ndc_x*0.5f + 0.5f) * width);
-        py[i] = (int)((-ndc_y*0.5f + 0.5f) * height);
+        render.args[i].orig_gpu = gpu;
+        render.args[i].px = px;
+        render.args[i].py = py;
+        render.args[i].start_idx = i * chunk_v;
+        render.args[i].end_idx = (i == NUM_RENDER_THREADS - 1) ? vertex_size : (i + 1) * chunk_v;
     }
+    dispatch_task(TASK_WIREFRAME_VERTICES);
+
     DEBUG_PRINT("[Render Frame] Drawing lines\n");
 
-    DEBUG_PRINT("[GPU State] px: %p, py: %p, vert: %p,\n", 
-       (void*)px, 
-       (void*)py, 
-       (void*)vertices
-        );
-        
-    for(uint32_t i=0;i<edges_size;i++)
+    uint32_t chunk_e = edges_size / NUM_RENDER_THREADS;
+    for (int i = 0; i < NUM_RENDER_THREADS; i++)
     {
-        Edge e = edges[i];
-        DEBUG_PRINT("[GPU State] px[e.a]: %u, py[e.a]: %u, px[e.b]: %u, py[e.b]: %u, e.a: %u, e.b %u\n", 
-            px[e.a], py[e.a], px[e.b], py[e.b], e.a, e.b);
-        draw_line(gpu, px[e.a], py[e.a], px[e.b], py[e.b],  vertices[e.a].rgba, vertices[e.b].rgba);
+        render.args[i].start_idx = i * chunk_e;
+        render.args[i].end_idx = (i == NUM_RENDER_THREADS - 1) ? edges_size : (i + 1) * chunk_e;
     }
-    
+    dispatch_task(TASK_WIREFRAME_EDGES);
+
     free(px);
     free(py);
     gpu->gpu_mode = GPU_MODE_3D;

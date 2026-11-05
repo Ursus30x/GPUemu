@@ -1,6 +1,8 @@
 #ifndef __GOP_3D_H__
 #define __GOP_3D_H__
 
+#define MAX_MIP_LEVELS 14
+
 #include <Uefi.h>
 #include <Protocol/PciIo.h>
 #include <Library/UefiLib.h>
@@ -14,32 +16,158 @@
 
 typedef struct GOP_3D_PROTOCOL GOP_3D_PROTOCOL;
 
-/* ---------------------------- Data structures --------------------------- */
+#ifndef MAX_ATTRIBUTES_PER_SHADER
+#define MAX_ATTRIBUTES_PER_SHADER 8
+#endif
+
+#ifndef _GPU_ATTRIB_TYPE_DEFINED
+#define _GPU_ATTRIB_TYPE_DEFINED
+typedef enum {
+    GPU_ATTRIB_FLOAT       = 1, 
+    GPU_ATTRIB_UBYTE_NORM  = 2,  
+    GPU_ATTRIB_INT32       = 3,  
+    GPU_ATTRIB_UINT32      = 4   
+} GpuAttribType;
+#endif
+
+#ifndef _GPU_VERTEX_ATTRIB_DESC_DEFINED
+#define _GPU_VERTEX_ATTRIB_DESC_DEFINED
+typedef struct __attribute__((packed)) {
+    UINT32 location;      /* Shader input location (0 .. 7) */
+    UINT32 size;          /* Component count: 1, 2, 3, or 4 */
+    UINT32 type;          /* GpuAttribType */
+    UINT8  normalized;    /* 1 = normalize integer types to float; 0 = direct */
+    UINT8  enabled;       /* 1 = active; 0 = disabled */
+    UINT16 reserved;      /* Padding for 4-byte alignment */
+    UINT32 stride;        /* Byte offset between consecutive vertices (0 = tightly packed) */
+    UINT32 offset;        /* Byte offset of attribute from VBO base address */
+} GpuVertexAttribDesc;
+
+typedef struct __attribute__((packed)) {
+    UINT32 enabled_mask;  /* Bitmask: bit i indicates if location i is enabled */
+    GpuVertexAttribDesc attribs[MAX_ATTRIBUTES_PER_SHADER];
+} SetVertexAttribConfigPayload;
+#endif
+
+typedef enum {
+  Gop3dAttribFloat     = GPU_ATTRIB_FLOAT,
+  Gop3dAttribUbyteNorm = GPU_ATTRIB_UBYTE_NORM,
+  Gop3dAttribInt32     = GPU_ATTRIB_INT32,
+  Gop3dAttribUint32    = GPU_ATTRIB_UINT32
+} GOP_3D_ATTRIB_TYPE;
 
 typedef UINT32 VRAMADDR;
+
+#define GPU_NULL_ADDR ((VRAMADDR)0)
+
+#define MAX_MIP_LEVELS 14
+// Global DMA fence
+typedef struct{
+  BOOLEAN               DmaBusy;
+  BOOLEAN               CmdBusy;
+  VOID                  *MapPtr;
+  EFI_PHYSICAL_ADDRESS  DeviceAdress;
+} GPU_DMA_FENCE;
 
 // Needed to distinguish buffer types during Transfer
 typedef enum {
   Gop3dBufferTypeVertex,
   Gop3dBufferTypeIndex,
   Gop3dBufferTypeUniform,
-  Gop3dBufferTypeShaderCode
+  Gop3dBufferTypeShaderCode,
+  Gop3dBufferTypeTexture,
+  Gop3dBufferTypeTextureDesc,
+  Gop3dBufferTypeSSBO
 } GOP_3D_BUFFER_TYPE;
+
+typedef enum {
+  Gop3dTexture2D   = 0,
+  Gop3dTexture3D   = 1,
+  Gop3dTextureCube = 2
+} GOP_3D_TEXTURE_DEMENSION;
+
+typedef enum {
+  Gop3dFilterNearest               = 0,
+  Gop3dFilterLinear                = 1,
+  Gop3dFilterNearestMipmapNearest  = 2,
+  Gop3dFilterLinearMipmapNearest   = 3,
+  Gop3dFilterNearestMipmapLinear   = 4,
+  Gop3dFilterLinearMipmapLinear    = 5  // Trilinear filtering
+} GOP_3D_FILTER_MODE;
+
+typedef enum {
+  Gop3dWrapRepeat = 0,
+  Gop3dWrapClamp  = 1,
+  Gop3dWrapMirror = 2
+} GOP_3D_WRAP_MODE;
+
+typedef struct __attribute__((packed))  {
+  VRAMADDR                  DataAddr;    // VRAM offset where pixel bytes start
+  VRAMADDR                  MipData[MAX_MIP_LEVELS]; 
+  UINT32                    Width;
+  UINT32                    Height;
+  UINT32                    Depth;
+  UINT32                    Channels;    // 1, 2, 3, 4
+  GOP_3D_TEXTURE_DEMENSION  Dimention;
+  GOP_3D_FILTER_MODE        Filter;      
+  GOP_3D_WRAP_MODE          Wrap;       
+  GOP_3D_WRAP_MODE          WrapU;
+  GOP_3D_WRAP_MODE          WrapV;
+  GOP_3D_WRAP_MODE          WrapW;
+  UINT32                    NumMipLevels;
+  float                     MaxAnisotropy;
+  float                     MinLod;
+  float                     MaxLod;
+  float                     LodBias;
+} GOP_3D_TEXTURE_DESC;
 
 // Needed for Draw command
 typedef enum {
   Gop3dTopologyPoints,
   Gop3dTopologyLines,
-  Gop3dTopologyTriangles
+  Gop3dTopologyLineStrip,
+  Gop3dTopologyTriangles,
+  Gop3dTopologyTriangleStrip,
+  Gop3dTopologyTriangleFan,
+  Gop3dTopologyQuads
 } GOP_3D_TOPOLOGY;
+
+typedef enum {
+  Gop3dBlendFactorZero = 0,
+  Gop3dBlendFactorOne = 1,
+  Gop3dBlendFactorSrcAlpha = 2,
+  Gop3dBlendFactorOneMinusSrcAlpha = 3,
+  Gop3dBlendFactorDstAlpha = 4,
+  Gop3dBlendFactorOneMinusDstAlpha = 5,
+  Gop3dBlendFactorSrcColor = 6,
+  Gop3dBlendFactorOneMinusSrcColor = 7,
+  Gop3dBlendFactorDstColor = 8,
+  Gop3dBlendFactorOneMinusDstColor = 9
+} GOP_3D_BLEND_FACTOR;
+
+typedef enum {
+  Gop3dBlendOpAdd = 0,
+  Gop3dBlendOpSubtract = 1,
+  Gop3dBlendOpReverseSubtract = 2,
+  Gop3dBlendOpMin = 3,
+  Gop3dBlendOpMax = 4
+} GOP_3D_BLEND_OP;
+
+typedef GOP_3D_BLEND_OP GOP_3D_BLEND_EQUATION;
+
+#define Gop3dBlendOpRevSubtract           Gop3dBlendOpReverseSubtract
+#define Gop3dBlendEquationAdd             Gop3dBlendOpAdd
+#define Gop3dBlendEquationSubtract        Gop3dBlendOpSubtract
+#define Gop3dBlendEquationReverseSubtract Gop3dBlendOpReverseSubtract
+#define Gop3dBlendEquationRevSubtract     Gop3dBlendOpReverseSubtract
 
 /* ------------------------- Function declarations ------------------------ */
 
 /**
  * Initializes the GPU driver state and PCI I/O.
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_INIT)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -47,8 +175,8 @@ EFI_STATUS
 /**
  * Cleans up resources and shuts down the GPU driver.
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_DESTROY)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -56,8 +184,8 @@ EFI_STATUS
 /**
  * Sets GPU mode (GOP/3D).
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_SET_MODE)(
   IN GOP_3D_PROTOCOL      *This,
   IN UINT32 Mode
@@ -66,8 +194,8 @@ EFI_STATUS
 /**
  * Resets the command buffer head/cursor, preparing for new commands.
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_CMD_BEGIN)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -75,8 +203,8 @@ EFI_STATUS
 /**
  * Finalizes the recording phase (adds debug markers/padding if needed).
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_CMD_END)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -87,10 +215,36 @@ EFI_STATUS
  */
 typedef
 EFI_STATUS
-(EFIAPI *GOP_3D_BIND_RESOURCE)(
+(EFIAPI *GOP_3D_CMD_BIND_RESOURCE)(
   GOP_3D_PROTOCOL *This,
   VRAMADDR         Addr,
   UINT32           Size
+  );
+
+
+
+/**
+ * Frees VRAM allocated resource.
+ * @param GpuAddress  Adress under which resource is located.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_FREE_BUFFER)(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN VRAMADDR            *GpuAddress
+  );
+
+/**
+ * Binds a texture descriptor in VRAM to a specific shader sampler binding slot.
+ * @param BindingSlot   The shader binding slot (e.g. layout(binding = X)).
+ * @param DescAddress   VRAM address of the texture descriptor.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_BIND_TEXTURE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               BindingSlot,
+  IN VRAMADDR             DescAddress
   );
 
 /**
@@ -100,9 +254,9 @@ EFI_STATUS
  * @param Size        Size in bytes to allocate and copy.
  * @param GpuAddress  [OUT] The resulting VRAM address of the uploaded buffer.
  */
-typedef 
-EFI_STATUS 
-(EFIAPI *GOP_3D_TRANSFER_BUFFER)(
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_TRANSFER_BUFFER)(
   IN  GOP_3D_PROTOCOL     *This,
   IN  GOP_3D_BUFFER_TYPE  Type,
   IN  VOID                *HostData,
@@ -119,7 +273,7 @@ EFI_STATUS
  */
 typedef
 EFI_STATUS
-(EFIAPI *GOP_3D_UPDATE_BUFFER)(
+(EFIAPI *GOP_3D_CMD_UPDATE_BUFFER)(
   IN  GOP_3D_PROTOCOL     *This,
   IN  GOP_3D_BUFFER_TYPE  Type,
   IN  VOID                *HostData,
@@ -139,13 +293,28 @@ EFI_STATUS
   );
 
 /**
+ * Reads data from GPU VRAM to Host Memory.
+ * @param GpuAddress  VRAM offset to read from.
+ * @param HostData    Pointer to destination buffer in System Memory.
+ * @param Size        Size in bytes to copy.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_READ_BUFFER)(
+  IN  GOP_3D_PROTOCOL     *This,
+  IN  VRAMADDR            GpuAddress,
+  OUT VOID                *HostData,
+  IN  UINT32              Size
+  );
+
+/**
  * Issues a draw call.
  * @param Topology    Primitive type (Points, Lines, Triangles).
  * @param VertexCount Number of vertices (or indices if IBO is bound) to draw.
  */
-typedef 
-EFI_STATUS 
-(EFIAPI *GOP_3D_DRAW)(
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_DRAW)(
   IN GOP_3D_PROTOCOL      *This,
   IN GOP_3D_TOPOLOGY      Topology,
   IN UINT32               VertexCount
@@ -155,9 +324,9 @@ EFI_STATUS
  * Clears the framebuffer.
  * @param Color       32-bit color value (0xAARRGGBB).
  */
-typedef 
-EFI_STATUS 
-(EFIAPI *GOP_3D_CLEAR_FRAME)(
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_CLEAR_FRAME)(
   IN GOP_3D_PROTOCOL      *This,
   IN UINT32               Color
   );
@@ -165,8 +334,8 @@ EFI_STATUS
 /**
  * Submits the recorded command buffer to the GPU (updates RING_HEAD).
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_SUBMIT_CMD)(
   IN GOP_3D_PROTOCOL      *This
   );
@@ -174,42 +343,185 @@ EFI_STATUS
 /**
  * Swaps buffers or flushes execution (Present).
  */
-typedef 
-EFI_STATUS 
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_PRESENT)(
   IN GOP_3D_PROTOCOL      *This
   );
 
 
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_BLEND_STATE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableBlend,
+  IN GOP_3D_BLEND_FACTOR  SrcFactor,
+  IN GOP_3D_BLEND_FACTOR  DstFactor
+);
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_BLEND_OP)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN GOP_3D_BLEND_OP      BlendOp
+);
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_BLEND_EQUATION)(
+  IN GOP_3D_PROTOCOL        *This,
+  IN GOP_3D_BLEND_EQUATION  BlendEquation
+);
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_BLEND_STATE_EX)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableBlend,
+  IN GOP_3D_BLEND_FACTOR  SrcFactor,
+  IN GOP_3D_BLEND_FACTOR  DstFactor,
+  IN GOP_3D_BLEND_OP      BlendOp
+);
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SET_DEPTH_WRITE)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN BOOLEAN              EnableDepthWrite
+);
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_BIND_SSBO)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               BindingSlot,
+  IN VRAMADDR             GpuAddress,
+  IN UINT32               Size
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_CMD_3D_DISPATCH)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               GroupCountX,
+  IN UINT32               GroupCountY,
+  IN UINT32               GroupCountZ
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_CMD_3D_DISPATCH_INDIRECT)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_VERTEX_ATTRIB_POINTER)(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location,
+  IN UINT32          NumComponents,   /* 1, 2, 3, or 4 */
+  IN UINT32          Type,            /* GPU_ATTRIB_FLOAT, etc. */
+  IN BOOLEAN         Normalized,      /* TRUE / FALSE */
+  IN UINT32          Stride,          /* Distance to next vertex in bytes */
+  IN UINT32          Offset           /* Byte offset in vertex buffer */
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_ENABLE_VERTEX_ATTRIB_ARRAY)(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_DISABLE_VERTEX_ATTRIB_ARRAY)(
+  IN GOP_3D_PROTOCOL *This,
+  IN UINT32          Location
+  );
 /* -------------------------- Protocol structure -------------------------- */
 
 struct GOP_3D_PROTOCOL {
-  GOP_3D_INIT               GpuInit;
-  GOP_3D_DESTROY            GpuDestroy;
+  GOP_3D_INIT                  GpuInit;
+  GOP_3D_DESTROY               GpuDestroy;
+
+  GOP_3D_SET_MODE              GpuSetMode;
+
+  GOP_3D_CMD_BEGIN             GpuCmdBegin;
+  GOP_3D_CMD_END               GpuCmdEnd;
+
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindUBO;
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindVBO;
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindIBO;
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindFragShader;
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindVertShader;
+  GOP_3D_CMD_BIND_TEXTURE      GpuCmdBindTexture;
+
+  GOP_3D_CMD_SET_BLEND_STATE   GpuCmdSetBlendState;
+  GOP_3D_CMD_SET_DEPTH_WRITE   GpuCmdSetDepthWrite;
+
+  GOP_3D_FREE_BUFFER           GpuFreeBuffer;
+  GOP_3D_CMD_TRANSFER_BUFFER   GpuCmdTransferBuffer;
+  GOP_3D_CMD_UPDATE_BUFFER     GpuCmdUpdateBuffer;
+
+  GOP_3D_CMD_BIND_RESOURCE     GpuCmdBindCompShader;
+  GOP_3D_BIND_SSBO             GpuCmdBindSSBO;
   
-  GOP_3D_SET_MODE           GpuSetMode;
+  GOP_3D_CMD_READ_BUFFER       GpuCmdReadBuffer;
 
-  GOP_3D_CMD_BEGIN          GpuCmdBegin;
-  GOP_3D_CMD_END            GpuCmdEnd;
 
-  GOP_3D_BIND_RESOURCE      GpuBindUBO;
-  GOP_3D_BIND_RESOURCE      GpuBindVBO;
-  GOP_3D_BIND_RESOURCE      GpuBindIBO;
-  GOP_3D_BIND_RESOURCE      GpuBindFragShader;
-  GOP_3D_BIND_RESOURCE      GpuBindVertShader;
+  GOP_CMD_3D_DISPATCH          GpuCmdDispatchCompute;
+  GOP_CMD_3D_DISPATCH_INDIRECT GpuCmdDispatchComputeIndirect;
 
-  GOP_3D_TRANSFER_BUFFER    GpuTransferBuffer; 
-  GOP_3D_UPDATE_BUFFER      GpuUpdateBuffer;
-  GOP_3D_FREE_BUFFER        GpuFreeBuffer;
 
-  GOP_3D_DRAW               GpuDraw;
-  GOP_3D_CLEAR_FRAME        GpuClearFrame;
+  GOP_3D_CMD_DRAW              GpuCmdDraw;
+  GOP_3D_CMD_CLEAR_FRAME       GpuCmdClearFrame;
 
-  GOP_3D_SUBMIT_CMD         GpuSubmitCmd;
-  GOP_3D_PRESENT            GpuPresent;
+  GOP_3D_SUBMIT_CMD            GpuSubmitCmd;
+  GOP_3D_PRESENT               GpuPresent;
+
+  GOP_3D_CMD_VERTEX_ATTRIB_POINTER       GpuCmdVertexAttribPointer;       
+  GOP_3D_CMD_ENABLE_VERTEX_ATTRIB_ARRAY  GpuCmdEnableVertexAttribArray;   
+  GOP_3D_CMD_DISABLE_VERTEX_ATTRIB_ARRAY GpuCmdDisableVertexAttribArray;  
+
+  GOP_3D_CMD_SET_BLEND_OP                GpuCmdSetBlendOp;
+  GOP_3D_CMD_SET_BLEND_EQUATION          GpuCmdSetBlendEquation;
+  GOP_3D_CMD_SET_BLEND_STATE_EX          GpuCmdSetBlendStateEx;
+
 };
 
 /* ----------------------------------------------------------------------- */
+
+STATIC
+inline
+VOID
+EFIAPI
+Gop3dCalculateMipMapOffsets(
+  IN OUT GOP_3D_TEXTURE_DESC *Desc
+  )
+{
+  if (Desc == NULL) return;
+
+  UINT32 Width = Desc->Width > 0 ? Desc->Width : 1;
+  UINT32 Height = Desc->Height > 0 ? Desc->Height : 1;
+  UINT32 Depth = Desc->Depth > 0 ? Desc->Depth : 1;
+  UINT32 Channels = Desc->Channels > 0 ? Desc->Channels : 4;
+  UINT32 NumLevels = Desc->NumMipLevels > 0 ? Desc->NumMipLevels : 1;
+
+  Desc->MipData[0] = 0;
+  UINT32 CurrentOffset = Width * Height * Depth * Channels;
+
+  for (UINT32 k = 1; k < NumLevels && k < MAX_MIP_LEVELS; k++)
+  {
+    UINT32 Wk = Width >> k;  if (Wk == 0) Wk = 1;
+    UINT32 Hk = Height >> k; if (Hk == 0) Hk = 1;
+    UINT32 Dk = Depth >> k;  if (Dk == 0) Dk = 1;
+
+    Desc->MipData[k] = CurrentOffset;
+    CurrentOffset += Wk * Hk * Dk * Channels;
+  }
+}
 
 extern EFI_GUID gGop3dProtocolGuid;
 

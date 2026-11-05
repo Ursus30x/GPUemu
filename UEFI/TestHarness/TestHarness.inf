@@ -1,20 +1,26 @@
 [Defines]
   INF_VERSION    = 0x00010005
-  BASE_NAME      = DemoApp
-  FILE_GUID      = a33be53a-998f-4e14-9506-1d77dda4e951
+  BASE_NAME      = TestHarness
+  FILE_GUID      = 82854f9f-a6a8-487a-9356-6cc074380bb8
   MODULE_TYPE    = UEFI_APPLICATION
   VERSION_STRING = 1.0
-  ENTRY_POINT    = DemoAppEntry
+  ENTRY_POINT    = TestHarnessEntry
 
 [Sources]
   app.c
-
+  test_registry.c
+  cases/compute/test_vec_add.c
+  cases/raster/test_blend.c
+  cases/raster/test_triangles.c
+  cases/sampler/test_sampler_2d.c
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   OvmfPkg/OvmfPkg.dec
 
 [LibraryClasses]
+  BaseLib
+  BaseMemoryLib
   DebugLib
   PciLib
   PrintLib
@@ -28,4 +34,4 @@
   gEfiGraphicsOutputProtocolGuid                # PROTOCOL BY_START
   gEfiDevicePathProtocolGuid                    # PROTOCOL BY_START
   gEfiPciIoProtocolGuid                         # PROTOCOL TO_START
-  gGop3dProtocolGuid 
+  gGop3dProtocolGuid

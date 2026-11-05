@@ -18,7 +18,7 @@
 
 ### Registers
 
-**Matrix:** `m0–m7`, `mv` (M_IN)  
+**Matrix:** `m0–m7`, `mv` (M_IN)
 **Scalar:** `p0–p7`, `px`, `py`, `pr`, `pg`, `pb`
 
 ### Operands
@@ -185,7 +185,7 @@ exit
 
 ## Label Resolution (Two-Pass)
 
-**Pass 1:** Tokenize, scan labels, record addresses  
+**Pass 1:** Tokenize, scan labels, record addresses
 **Pass 2:** Generate code, resolve label references
 
 Forward references supported:

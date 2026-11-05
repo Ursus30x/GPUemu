@@ -15,7 +15,7 @@ EFI_STATUS EFIAPI MyGpuBlt(
     IN  UINTN                              Width,
     IN  UINTN                              Height,
     IN  UINTN                              Delta
-    ) 
+    )
 {
     GPU_CONTEXT *Private = MY_GPU_PRIVATE_DATA_FROM_THIS(This);
     // Performs a simple FrameBufferBlt form FrameBufferBltLib
@@ -43,7 +43,7 @@ EFI_STATUS EFIAPI MyGpuSetMode(
 
   Private =  MY_GPU_PRIVATE_DATA_FROM_THIS(This);
 
-  DEBUG((EFI_D_INFO, "hr %d vr %d\n FrameBufferBltConfigureSize: %d\n", 
+  DEBUG((EFI_D_INFO, "hr %d vr %d\n FrameBufferBltConfigureSize: %d\n",
     This->Mode->Info->HorizontalResolution,
     This->Mode->Info->VerticalResolution,
     Private->FrameBufferBltConfigureSize
@@ -128,7 +128,7 @@ EFI_STATUS EFIAPI GopSetup(IN OUT GPU_CONTEXT *Private) {
   Private->Gop.Mode->Mode = 0;
   Private->Gop.Mode->Info = &Private->Info;
   Private->Gop.Mode->SizeOfInfo = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
-  
+
   UINT32 FbSize = Private->Info.HorizontalResolution * Private->Info.VerticalResolution * sizeof(EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
   Private->Gop.Mode->FrameBufferBase = Private->VRAMBaseAddr;
   Private->Gop.Mode->FrameBufferSize = FbSize;
