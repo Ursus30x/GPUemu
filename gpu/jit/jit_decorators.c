@@ -22,6 +22,12 @@ void handle_op_decorate(JitContext* ctx, uint32_t* operands, int op_count)
         case SpvDecorationBuiltIn:
             ctx->decorations[target_id].builtin = value;
             break;
+        case SpvDecorationArrayStride:
+            ctx->decorations[target_id].array_stride = value;
+            break;
+        case SpvDecorationPerPrimitiveEXT:
+            ctx->decorations[target_id].per_primitive = 1;
+            break;
         default:
             DEBUG_PRINT("Ignored decoration %d on ID %d\n", decoration, target_id);
             break;
@@ -29,18 +35,28 @@ void handle_op_decorate(JitContext* ctx, uint32_t* operands, int op_count)
 }
 void handle_op_type_pointer(JitContext* ctx, uint32_t res_id, uint32_t* operands) 
 {
-    //uint32_t storage_class = operands[0];
+    uint32_t storage_class = operands[0];
     uint32_t type_id =  operands[1];
     ctx->type_info[res_id].opcode = SpvOpTypePointer;
+    ctx->type_info[res_id].storage_class = storage_class;
     ctx->type_info[res_id].base_type_id = type_id; 
 }
 
 void handle_op_type_array(JitContext* ctx, uint32_t res_id, uint32_t* operands)
 {
     uint32_t element_type_id = operands[0];
-    //uint32_t length_id  = operands[1];
+    uint32_t length_id  = operands[1];
     ctx->type_info[res_id].opcode = SpvOpTypeArray;
     ctx->type_info[res_id].base_type_id = element_type_id;
+    ctx->type_info[res_id].array_length_id = length_id;
+}
+
+void handle_op_type_runtime_array(JitContext* ctx, uint32_t res_id, uint32_t* operands)
+{
+    uint32_t element_type_id = operands[0];
+    ctx->type_info[res_id].opcode = SpvOpTypeRuntimeArray;
+    ctx->type_info[res_id].base_type_id = element_type_id;
+    ctx->type_info[res_id].array_length_id = 0;
 }
 
 void handle_op_type_struct(JitContext* ctx, uint32_t res_id, uint32_t* member_types, int count) 
@@ -122,12 +138,12 @@ void handle_op_name(JitContext* ctx, uint32_t* operands)
     ctx->names[target_id] = strdup(name);
     DEBUG_PRINT("ID %u is named: %s\n", target_id, name);
 }
-void handle_op_member_decorate(JitContext* ctx, uint32_t* operands) 
+void handle_op_member_decorate(JitContext* ctx, uint32_t* operands, int op_count) 
 {
     uint32_t struct_id = operands[0];
     uint32_t member = operands[1];
     uint32_t decoration = operands[2];
-    uint32_t value = operands[3];
+    uint32_t value = (op_count > 3) ? operands[3] : 0;
     MemberDecoNode* node = ctx->member_decorations[struct_id];
     while(node) 
     {
@@ -139,12 +155,11 @@ void handle_op_member_decorate(JitContext* ctx, uint32_t* operands)
         node = malloc(sizeof(MemberDecoNode));
         node->matrix_stride = -1; // Default
         node->member_index = member;
-        node->offset = 0; // Default
+        node->offset = -1; // Default (-1 = no explicit Offset decoration)
+        node->buildin = -1;
         node->next = ctx->member_decorations[struct_id];
         ctx->member_decorations[struct_id] = node;
     }
-    node->buildin = -1;
-
   
     switch (decoration) {
         case SpvDecorationOffset:
@@ -153,6 +168,94 @@ void handle_op_member_decorate(JitContext* ctx, uint32_t* operands)
         case SpvDecorationBuiltIn:
             node->buildin = value;
             break;
+    }
+}
+
+uint32_t get_spv_scalar_type_op(JitContext* ctx, uint32_t type_id)
+{
+    while (type_id > 0 && type_id < ctx->bound) 
+    {
+        SpvOp op = ctx->type_info[type_id].opcode;
+        if (op == SpvOpTypeFloat || op == SpvOpTypeInt || op == SpvOpTypeBool) 
+        {
+            return op;
+        }
+        if (op == SpvOpTypeVector || op == SpvOpTypeMatrix ||
+            op == SpvOpTypeArray || op == SpvOpTypeRuntimeArray ||
+            op == SpvOpTypePointer) 
+        {
+            type_id = ctx->type_info[type_id].base_type_id;
+            continue;
+        }
+        break;
+    }
+    return SpvOpTypeFloat;
+}
+
+uint32_t get_spv_struct_member_offset(JitContext* ctx, uint32_t struct_type_id, uint32_t member_idx)
+{
+    MemberDecoNode* m = ctx->member_decorations[struct_type_id];
+    while (m) 
+    {
+        if (m->member_index == member_idx && m->offset >= 0) {
+            return (uint32_t)m->offset;
+        }
+        m = m->next;
+    }
+
+    uint32_t offset = 0;
+    uint32_t count = ctx->type_info[struct_type_id].member_count;
+    for (uint32_t i = 0; i < member_idx && i < count; i++) {
+        uint32_t m_type = ctx->type_info[struct_type_id].member_types[i];
+        offset += get_spv_natural_byte_size(ctx, m_type);
+    }
+    return offset;
+}
+
+uint32_t get_spv_natural_byte_size(JitContext* ctx, uint32_t type_id)
+{
+    if (type_id == 0 || type_id >= ctx->bound) return 4;
+    SpvTypeInfo* info = &ctx->type_info[type_id];
+    switch (info->opcode) {
+        case SpvOpTypeFloat:
+        case SpvOpTypeInt:
+        case SpvOpTypeBool:
+            return 4;
+        case SpvOpTypeVector:
+        case SpvOpTypeMatrix:
+            return info->member_count * get_spv_natural_byte_size(ctx, info->base_type_id);
+        case SpvOpTypeArray: 
+        {
+            uint32_t stride = (ctx->decorations[type_id].array_stride > 0)
+                ? (uint32_t)ctx->decorations[type_id].array_stride
+                : get_spv_natural_byte_size(ctx, info->base_type_id);
+            uint32_t len = 1;
+            if (info->array_length_id > 0 && info->array_length_id < ctx->bound) 
+            {
+                if (ctx->constant_uint_map[info->array_length_id] > 0) 
+                {
+                    len = ctx->constant_uint_map[info->array_length_id];
+                }
+            }
+            return stride * len;
+        }
+        case SpvOpTypeRuntimeArray: 
+        {
+            return (ctx->decorations[type_id].array_stride > 0)
+                ? (uint32_t)ctx->decorations[type_id].array_stride
+                : get_spv_natural_byte_size(ctx, info->base_type_id);
+        }
+        case SpvOpTypeStruct: {
+            uint32_t total = 0;
+            for (uint32_t i = 0; i < info->member_count; i++) {
+                uint32_t m_off = get_spv_struct_member_offset(ctx, type_id, i);
+                uint32_t m_sz = get_spv_natural_byte_size(ctx, info->member_types[i]);
+                if (m_off + m_sz > total) total = m_off + m_sz;
+            }
+            return total;
+        }
+        default:
+            return 4;
     }
 }   
 static uint32_t spirv_string_word_length(const char* str)
@@ -189,5 +292,39 @@ void handle_op_entry_point(JitContext* ctx, uint32_t* operands, uint32_t operand
     {
         ctx->shader_info.interface[i - interface_start].id = operands[i];
         DEBUG_PRINT("  Interface ID: %u\n", operands[i]);
+    }
+}
+
+void handle_op_ex_mode(JitContext* ctx, uint32_t operand_count, uint32_t* operands)
+{
+    if (operand_count >= 5 && operands[1] == SpvExecutionModeLocalSize)
+    {
+        ctx->shader_info.local_size_x = operands[2];
+        ctx->shader_info.local_size_y = operands[3];
+        ctx->shader_info.local_size_z = operands[4];
+    } 
+    else if (operand_count >= 3 && operands[1] == SpvExecutionModeOutputVertices)
+    {
+        ctx->shader_info.max_output_vertices = operands[2];
+    } 
+    else if (operand_count >= 3 && operands[1] == SpvExecutionModeOutputPrimitivesEXT)
+    {
+        ctx->shader_info.max_output_primitives = operands[2];
+    } 
+    else if (operand_count >= 2 &&
+                (operands[1] == SpvExecutionModeOutputPoints ||
+                operands[1] == SpvExecutionModeOutputLinesEXT ||
+                operands[1] == SpvExecutionModeOutputTrianglesEXT))
+    {
+        ctx->shader_info.output_topology = operands[1];
+    }
+}   
+void handle_op_ex_mode_id(JitContext* ctx, uint32_t operand_count, uint32_t* operands)
+{
+    if (operand_count >= 5 && operands[1] == SpvExecutionModeLocalSizeId)
+    {
+        ctx->shader_info.local_size_id[0] = operands[2];
+        ctx->shader_info.local_size_id[1] = operands[3];
+        ctx->shader_info.local_size_id[2] = operands[4];
     }
 }

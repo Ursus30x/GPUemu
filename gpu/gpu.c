@@ -426,6 +426,75 @@ static void execute_command(GpuState *gpu, Command *cmd)
             gpu->has_custom_vertex_layout = (gpu->vertex_attribs.enabled_mask != 0);
             break;
         }
+        case STATE_ID_TASK_SHADER_PTR:
+        {
+            DEBUG_PRINT("[CMD] Task shader config\n");
+            gpu->ts_code_addr = cmd->payload.state.value.shader_ptrs.ts_addr;
+            if (gpu->ts_code_addr == 0)
+            {
+                gpu->ts_shader_func = NULL;
+                gpu->ts_hash = 0;
+            }
+            else if (gpu->ts_code_addr + sizeof(uint32_t) <= GPU_VRAM_SIZE)
+            {
+                void* shader = gpu->vram_ptr + gpu->ts_code_addr;
+                uint32_t size = *((uint32_t *)shader);
+                if (size > 0 && (size % sizeof(uint32_t)) == 0 &&
+                    size <= GPU_VRAM_SIZE - gpu->ts_code_addr - sizeof(uint32_t))
+                {
+                    uint32_t* shader_code = ((uint32_t *)(shader + sizeof(uint32_t)));
+                    uint32_t hash = compute_shader_hash(shader_code, size / 4);
+                    if (gpu->ts_shader_func == NULL || gpu->ts_hash != hash)
+                    {
+                        free_jit(&gpu->jit_ctx_ts);
+                        init_jit(&gpu->jit_ctx_ts, TASK_SHADER);
+                        gpu->ts_shader_func = jit_compile_spirv(&gpu->jit_ctx_ts, shader_code, size / 4);
+                        gpu->ts_hash = hash;
+                        gpu->ts_local_size_x = gpu->jit_ctx_ts.shader_info.local_size_x;
+                        gpu->ts_local_size_y = gpu->jit_ctx_ts.shader_info.local_size_y;
+                        gpu->ts_local_size_z = gpu->jit_ctx_ts.shader_info.local_size_z;
+                        gpu->ts_barrier_count = gpu->jit_ctx_ts.shader_info.barrier_count;
+                    }
+                }
+            }
+            break;
+        }
+        case STATE_ID_MESH_SHADER_PTR:
+        {
+            DEBUG_PRINT("[CMD] Mesh shader config\n");
+            gpu->ms_code_addr = cmd->payload.state.value.shader_ptrs.ms_addr;
+            if (gpu->ms_code_addr == 0)
+            {
+                gpu->ms_shader_func = NULL;
+                gpu->ms_hash = 0;
+            }
+            else if (gpu->ms_code_addr + sizeof(uint32_t) <= GPU_VRAM_SIZE)
+            {
+                void* shader = gpu->vram_ptr + gpu->ms_code_addr;
+                uint32_t size = *((uint32_t *)shader);
+                if (size > 0 && (size % sizeof(uint32_t)) == 0 &&
+                    size <= GPU_VRAM_SIZE - gpu->ms_code_addr - sizeof(uint32_t))
+                {
+                    uint32_t* shader_code = ((uint32_t *)(shader + sizeof(uint32_t)));
+                    uint32_t hash = compute_shader_hash(shader_code, size / 4);
+                    if (gpu->ms_shader_func == NULL || gpu->ms_hash != hash)
+                    {
+                        free_jit(&gpu->jit_ctx_ms);
+                        init_jit(&gpu->jit_ctx_ms, MESH_SHADER);
+                        gpu->ms_shader_func = jit_compile_spirv(&gpu->jit_ctx_ms, shader_code, size / 4);
+                        gpu->ms_hash = hash;
+                        gpu->ms_local_size_x = gpu->jit_ctx_ms.shader_info.local_size_x;
+                        gpu->ms_local_size_y = gpu->jit_ctx_ms.shader_info.local_size_y;
+                        gpu->ms_local_size_z = gpu->jit_ctx_ms.shader_info.local_size_z;
+                        gpu->ms_barrier_count = gpu->jit_ctx_ms.shader_info.barrier_count;
+                        gpu->ms_max_vertices = gpu->jit_ctx_ms.shader_info.max_output_vertices;
+                        gpu->ms_max_primitives = gpu->jit_ctx_ms.shader_info.max_output_primitives;
+                        gpu->ms_output_topology = gpu->jit_ctx_ms.shader_info.output_topology;
+                    }
+                }
+            }
+            break;
+        }
         default:
             break;
         }
@@ -459,6 +528,38 @@ static void execute_command(GpuState *gpu, Command *cmd)
 
         if (configure_compute_dispatch(gpu, gx, gy, gz)) {
             compute_mode(gpu);
+        }
+        break;
+    }
+
+    case CMD_DRAW_MESH_TASKS:
+    {
+        uint32_t gx = cmd->payload.draw_mesh_tasks.group_count_x;
+        uint32_t gy = cmd->payload.draw_mesh_tasks.group_count_y;
+        uint32_t gz = cmd->payload.draw_mesh_tasks.group_count_z;
+        DEBUG_PRINT("[CMD] Draw Mesh Tasks: groups (%u, %u, %u)\n", gx, gy, gz);
+
+        if (gx > 0 && gy > 0 && gz > 0 && configure_compute_dispatch(gpu, gx, gy, gz)) {
+            gpu_render_mesh_tasks_simt(gpu);
+        }
+        break;
+    }
+
+    case CMD_DRAW_MESH_TASKS_INDIRECT:
+    {
+        uint32_t offset = cmd->payload.draw_mesh_tasks_indirect.indirect_offset;
+        uint32_t gx = 0, gy = 0, gz = 0;
+        if (offset <= GPU_VRAM_SIZE - sizeof(DrawMeshTasksPayload))
+        {
+            DrawMeshTasksPayload *indirect_params = (DrawMeshTasksPayload *)(gpu->vram_ptr + offset);
+            gx = indirect_params->group_count_x;
+            gy = indirect_params->group_count_y;
+            gz = indirect_params->group_count_z;
+        }
+        DEBUG_PRINT("[CMD] Draw Mesh Tasks Indirect: offset 0x%x, groups (%u, %u, %u)\n", offset, gx, gy, gz);
+
+        if (gx > 0 && gy > 0 && gz > 0 && configure_compute_dispatch(gpu, gx, gy, gz)) {
+            gpu_render_mesh_tasks_simt(gpu);
         }
         break;
     }
@@ -629,6 +730,12 @@ static void gpu_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case REG_COMPUTE_SHADER_ADDR:
         target_reg = &s->cs_code_addr;
         break;
+    case REG_TASK_SHADER_ADDR:
+        target_reg = &s->ts_code_addr;
+        break;
+    case REG_MESH_SHADER_ADDR:
+        target_reg = &s->ms_code_addr;
+        break;
     case REG_FB_WIDTH_ADDR:
         target_reg = &s->width;
         break;
@@ -732,6 +839,12 @@ static uint64_t gpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case REG_COMPUTE_SHADER_ADDR:
         reg_val = s->cs_code_addr;
+        break;
+    case REG_TASK_SHADER_ADDR:
+        reg_val = s->ts_code_addr;
+        break;
+    case REG_MESH_SHADER_ADDR:
+        reg_val = s->ms_code_addr;
         break;
     case REG_FB_WIDTH_ADDR:
         reg_val = s->width;
@@ -878,6 +991,8 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     gpu->vs_hash = 0;
     gpu->fs_hash = 0;
     gpu->cs_hash = 0;
+    gpu->ts_hash = 0;
+    gpu->ms_hash = 0;
     // init state
     gpu->height = 480;
     gpu->width = 640;
@@ -893,6 +1008,8 @@ static void pci_gpu_realize(PCIDevice *pdev, Error **errp)
     init_jit(&gpu->jit_ctx_fs, FRAGMENT_SHADER);
     init_jit(&gpu->jit_ctx_vs, VERTEX_SHADER);
     init_jit(&gpu->jit_ctx_cs, COMPUTE_SHADER);
+    init_jit(&gpu->jit_ctx_ts, TASK_SHADER);
+    init_jit(&gpu->jit_ctx_ms, MESH_SHADER);
 
     qemu_mutex_init(&gpu->cmd_mutex);
     qemu_cond_init(&gpu->cmd_cond);

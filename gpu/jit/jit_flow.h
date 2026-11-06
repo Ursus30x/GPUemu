@@ -11,6 +11,7 @@ void handle_op_branch_conditional(JitContext* ctx, uint32_t* operands);
 void handle_op_selection_merge(JitContext* ctx, uint32_t* operands);
 void handle_op_loop_merge(JitContext* ctx, uint32_t* operands);
 void handle_op_phi(JitContext* ctx, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count);
+void handle_op_barrier(JitContext* ctx, uint32_t res_id, uint32_t* operands, uint32_t opcode);
 
 void resolve_pending_globals(JitContext* ctx);
 LLVMValueRef jit_get_emask(JitContext* ctx);
