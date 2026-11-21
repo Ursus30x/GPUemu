@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "main"
+      - "dev"
+      
+  pull_request:
+    branches:
+      - "main"
+      - "dev"
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Prepare Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            python3 \
+            python3-pip \
+            nasm \
+            iasl \
+            uuid-dev \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            libgtk-3-dev \
+            ninja-build \
+            flex \
+            bison \
+            llvm-dev \
+            libjemalloc-dev \
+            glslc \
+            pkg-config \
+            wget
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          clean: true 
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh scripts/*.py
+
+      - name: Apply Patches
+        run: ./scripts/apply_patches.sh
+
+      - name: Build All
+        run: ./scripts/build_all.sh RELEASE
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpuemu-build-artifacts
+          path: |
+            qemu/build/qemu-system-x86_64
+            edk2/Build/OptionRom.rom
+            edk2/Build/OvmfX64/RELEASE_GCC/X64/
+          retention-days: 1
+
+  test-functional:
+    name: test-functional
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install Runtime Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ovmf \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            libgtk-3-dev \
+            libjemalloc-dev \
+            python3
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          clean: false
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: gpuemu-build-artifacts
+
+      - name: Make scripts and binaries executable
+        run: |
+          chmod +x scripts/*.sh scripts/*.py
+          chmod +x qemu/build/qemu-system-x86_64
+
+      - name: Run Functional Tests
+        run: python3 scripts/test_functional.py RELEASE
+
+      - name: Upload Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-functional-logs
+          path: |
+            serial.log
+            debug.log
+          retention-days: 7
+
+  test-performance:
+    name: test-performance
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Performance Tests
+        run: |
+          echo "stub"

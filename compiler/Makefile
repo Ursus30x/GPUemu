@@ -1,13 +1,16 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c11
 
-TARGET = compiler
+TARGET = ../tools/compiler
 SRC = compiler.c
 
+all: $(TARGET)
+
 $(TARGET): $(SRC)
+	@mkdir -p ../tools
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) compiler
 
-.PHONY: clean
+.PHONY: all clean

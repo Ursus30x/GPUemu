@@ -1,0 +1,31 @@
+[Defines]
+  INF_VERSION    = 0x00010005
+  BASE_NAME      = SpirvApp
+  FILE_GUID      = e716b943-4e31-419b-b605-1a29f8c67c02
+  MODULE_TYPE    = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = SpirvAppEntry
+
+[Sources]
+  app.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  OvmfPkg/OvmfPkg.dec
+
+[LibraryClasses]
+  DebugLib
+  PciLib
+  PrintLib
+  DevicePathLib
+  UefiApplicationEntryPoint
+  UefiLib
+  FrameBufferBltLib
+  TimerLib
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid                # PROTOCOL BY_START
+  gEfiDevicePathProtocolGuid                    # PROTOCOL BY_START
+  gEfiPciIoProtocolGuid                         # PROTOCOL TO_START
+  gGop3dProtocolGuid

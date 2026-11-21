@@ -1,0 +1,39 @@
+#version 450
+layout(local_size_x = 16) in;
+
+layout(binding = 0) buffer InputData {
+    float in_data[];
+};
+
+layout(binding = 1) buffer OutputData {
+    float out_data[];
+};
+
+shared float sdata[16];
+
+void main() {
+    uint tid = gl_LocalInvocationID.x;
+    uint gid = gl_GlobalInvocationID.x;
+
+    // Load from global SSBO into workgroup shared memory
+    sdata[tid] = in_data[gid];
+    barrier();
+
+    // Parallel reduction in shared memory using barrier()
+    if (tid < 8) { sdata[tid] += sdata[tid + 8]; }
+    barrier();
+
+    if (tid < 4) { sdata[tid] += sdata[tid + 4]; }
+    barrier();
+
+    if (tid < 2) { sdata[tid] += sdata[tid + 2]; }
+    barrier();
+
+    if (tid < 1) { sdata[tid] += sdata[tid + 1]; }
+    barrier();
+
+    // Thread 0 writes the sum for the workgroup to output SSBO
+    if (tid == 0) {
+        out_data[gl_WorkGroupID.x] = sdata[0];
+    }
+}

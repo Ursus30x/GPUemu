@@ -206,8 +206,8 @@ typedef union {
 
 **Types:**
   - matrix (`m`) operates on `float m[4][4];`
-  - vector 4x1 (`v4`) operates on `Vec4 right;`  
-  - vector 3x1 (`v3`) operates on `Vec3Raw vec3;`  
+  - vector 4x1 (`v4`) operates on `Vec4 right;`
+  - vector 3x1 (`v3`) operates on `Vec3Raw vec3;`
 
 **Typical Operations:**
 - `ROTX`, `ROTY`, `TRANS`, `IDENT` — Create transformation matrices

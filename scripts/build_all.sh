@@ -1,17 +1,19 @@
 #!/bin/bash
-set -e # Exit immediately if a command exits with a non-zero status
+# scripts/build_all.sh - Build all GPUemu components (QEMU, EDK2, Compiler)
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
+set -e
+source "$(dirname "$0")/common.sh"
 
-cd "$CWD/scripts"
+BUILD_TYPE="$(parse_build_type "$1")"
 
-if [ -z "$1" ]; then
-    BUILD_TYPE="DEBUG"
-else
-    BUILD_TYPE="$1"
-fi
+log_step "============================================================"
+log_step " Building all GPUemu components [$BUILD_TYPE]"
+log_step "============================================================"
 
-./build_qemu.sh $BUILD_TYPE
-./build_edk2.sh $BUILD_TYPE
-./build_compiler.sh
+"$SCRIPT_DIR/build_qemu.sh" "$BUILD_TYPE"
+"$SCRIPT_DIR/build_edk2.sh" "$BUILD_TYPE"
+"$SCRIPT_DIR/build_compiler.sh"
+
+log_step "============================================================"
+log_success "All GPUemu components built successfully [$BUILD_TYPE]"
+log_step "============================================================"

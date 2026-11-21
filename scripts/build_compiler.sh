@@ -1,11 +1,10 @@
 #!/bin/bash
-set -e # Exit immediately if a command exits with a non-zero status
+# scripts/build_compiler.sh - Build the custom shader assembler/compiler
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CWD="$(cd "$SCRIPT_DIR/.." && pwd)"
+set -e
+source "$(dirname "$0")/common.sh"
 
-cd "$CWD/compiler"
-make
+log_step "Building Shader Compiler (output: tools/compiler)..."
+make -C "$COMPILER_DIR"
 
-mkdir -p ../tools
-mv compiler ../tools/compiler
+log_success "Shader compiler built and installed to tools/compiler"
