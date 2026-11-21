@@ -10,7 +10,10 @@
   app.c
   test_registry.c
   cases/compute/test_vec_add.c
-  cases/mesh/test_meshlet.c
+  cases/mesh/test_edge_cases.c
+  cases/mesh/test_outputs.c
+  cases/mesh/test_pipeline.c
+  cases/mesh/test_sync.c
   cases/raster/test_blend.c
   cases/raster/test_triangles.c
   cases/sampler/test_sampler_2d.c

@@ -18,9 +18,19 @@ CONST GPU_TEST_NODE gTestRegistry[] = {
         Test_Mesh_IndirectDispatch
     },
     {
-        "test-mesh.edge.zero_outputs",
-        "Zero mesh tasks (EmitMeshTasksEXT(0,1,1)) and zero mesh outputs (SetMeshOutputsEXT(0,0))",
-        Test_Mesh_ZeroOutputs
+        "test-mesh.edge.zero_draw_dispatch",
+        "DrawMeshTasks(0, 1, 1) with non-empty meshlet leaves framebuffer untouched",
+        Test_Mesh_ZeroDrawDispatch
+    },
+    {
+        "test-mesh.edge.zero_mesh_outputs",
+        "Mesh shader emitting zero vertices and primitives via SetMeshOutputsEXT(0, 0)",
+        Test_Mesh_ZeroMeshOutputs
+    },
+    {
+        "test-mesh.edge.zero_task_emit",
+        "Task shader emitting zero mesh tasks via EmitMeshTasksEXT(0, 1, 1)",
+        Test_Mesh_ZeroTaskEmit
     },
     {
         "test-mesh.pipeline.mesh_only",
@@ -38,9 +48,14 @@ CONST GPU_TEST_NODE gTestRegistry[] = {
         Test_Mesh_WorkgroupBarrierShared
     },
     {
-        "test-mesh.topology.points_and_lines",
-        "Mesh shader OutputPoints (gl_PointSize) and OutputLinesEXT topologies",
-        Test_Mesh_PointsAndLines
+        "test-mesh.topology.lines",
+        "Mesh shader OutputLinesEXT topology",
+        Test_Mesh_TopologyLines
+    },
+    {
+        "test-mesh.topology.points",
+        "Mesh shader OutputPoints topology with gl_PointSize",
+        Test_Mesh_TopologyPoints
     },
     {
         "test-mesh.varying.per_primitive",

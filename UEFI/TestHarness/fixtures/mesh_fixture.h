@@ -23,6 +23,41 @@ typedef struct {
     UINT32 primitive_count;
 } MESH_TEST_MESHLET;
 
+STATIC inline VOID SetupQuadMeshlet(
+    OUT MESH_TEST_MESHLET *Meshlet,
+    OUT float             *Positions,
+    OUT UINT32            *Indices,
+    IN  float             MinX,
+    IN  float             MaxX,
+    IN  float             MinY,
+    IN  float             MaxY,
+    IN  float             R,
+    IN  float             G,
+    IN  float             B,
+    IN  UINT32            VertexOffset,
+    IN  UINT32            PrimitiveOffset
+    )
+{
+    ZeroMem(Meshlet, sizeof(MESH_TEST_MESHLET));
+    Meshlet->bounding_sphere[3] = 1.0f;
+    Meshlet->cone[0] = R;
+    Meshlet->cone[1] = G;
+    Meshlet->cone[2] = B;
+    Meshlet->cone[3] = 0.0f;
+    Meshlet->vertex_offset = VertexOffset;
+    Meshlet->vertex_count = 4;
+    Meshlet->primitive_offset = PrimitiveOffset;
+    Meshlet->primitive_count = 2;
+
+    Positions[0]  = MinX; Positions[1]  = MinY; Positions[2]  = 0.5f; Positions[3]  = 1.0f;
+    Positions[4]  = MaxX; Positions[5]  = MinY; Positions[6]  = 0.5f; Positions[7]  = 1.0f;
+    Positions[8]  = MaxX; Positions[9]  = MaxY; Positions[10] = 0.5f; Positions[11] = 1.0f;
+    Positions[12] = MinX; Positions[13] = MaxY; Positions[14] = 0.5f; Positions[15] = 1.0f;
+
+    Indices[0] = 0; Indices[1] = 1; Indices[2] = 2;
+    Indices[3] = 0; Indices[4] = 2; Indices[5] = 3;
+}
+
 typedef struct _MESH_FIXTURE {
     GOP_3D_PROTOCOL *Gop3D;
 
