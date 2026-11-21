@@ -1678,6 +1678,349 @@ VOID TestTorusPhongSimt(VOID)
     FpsCounterShowStats();
 }
 
+#define MESH_SCENE_NUM_OBJECTS      4
+#define MESH_SCENE_PATCH_RINGS      4
+#define MESH_SCENE_PATCH_SIDES      4
+#define MESH_SCENE_MESHLETS_PER_OBJ (MESH_SCENE_PATCH_RINGS * MESH_SCENE_PATCH_SIDES)
+#define MESH_SCENE_TOTAL_MESHLETS   (MESH_SCENE_NUM_OBJECTS * MESH_SCENE_MESHLETS_PER_OBJ)
+
+#define MESHLET_SUB_RINGS           2
+#define MESHLET_SUB_SIDES           4
+#define MESHLET_VERTS               ((MESHLET_SUB_RINGS + 1) * (MESHLET_SUB_SIDES + 1))
+#define MESHLET_TRIS                (MESHLET_SUB_RINGS * MESHLET_SUB_SIDES * 2)
+
+#define MESH_SCENE_TOTAL_VERTS      (MESH_SCENE_TOTAL_MESHLETS * MESHLET_VERTS)
+#define MESH_SCENE_TOTAL_TRIS       (MESH_SCENE_TOTAL_MESHLETS * MESHLET_TRIS)
+
+typedef struct {
+    UINT32 vertex_offset;
+    UINT32 vertex_count;
+    UINT32 primitive_offset;
+    UINT32 primitive_count;
+    float  bounding_sphere[4];
+    float  cone_axis[3];
+    float  cone_cutoff;
+} MeshSceneDescriptor;
+
+typedef struct {
+    float pos[3];
+    float hue;
+    float normal[3];
+    float pad;
+} MeshSceneVertex;
+
+typedef struct {
+    UINT32 i0, i1, i2, pad;
+} MeshSceneTri;
+
+typedef struct {
+    float mvp[4][16];
+    float model[4][16];
+    float view_dir[4];
+    float mode_info[4];
+} MeshSceneUniforms;
+
+STATIC VOID Mat4_ToColMajor(Mat4 *src, float dst[16])
+{
+    int idx = 0;
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+            dst[idx++] = src->m[row][col];
+        }
+    }
+}
+
+STATIC VOID BuildTorusMeshletObject(
+    UINT32               objIdx,
+    float                majorR,
+    float                minorR,
+    MeshSceneDescriptor *outDescs,
+    MeshSceneVertex     *outVerts,
+    MeshSceneTri        *outTris
+)
+{
+    for (UINT32 pr = 0; pr < MESH_SCENE_PATCH_RINGS; pr++) {
+        for (UINT32 ps = 0; ps < MESH_SCENE_PATCH_SIDES; ps++) {
+            UINT32 meshletId = objIdx * MESH_SCENE_MESHLETS_PER_OBJ + pr * MESH_SCENE_PATCH_SIDES + ps;
+            UINT32 vBase     = meshletId * MESHLET_VERTS;
+            UINT32 pBase     = meshletId * MESHLET_TRIS;
+
+            float cx = 0.0f, cy = 0.0f, cz = 0.0f;
+            float nx = 0.0f, ny = 0.0f, nz = 0.0f;
+
+            UINT32 localV = 0;
+            for (UINT32 sr = 0; sr <= MESHLET_SUB_RINGS; sr++) {
+                float uFrac = ((float)(pr * MESHLET_SUB_RINGS + sr)) /
+                              ((float)(MESH_SCENE_PATCH_RINGS * MESHLET_SUB_RINGS));
+                float u = uFrac * 2.0f * PI;
+                float cu, su;
+                Cos(u, &cu);
+                Sin(u, &su);
+
+                for (UINT32 ss = 0; ss <= MESHLET_SUB_SIDES; ss++) {
+                    float vFrac = ((float)(ps * MESHLET_SUB_SIDES + ss)) /
+                                  ((float)(MESH_SCENE_PATCH_SIDES * MESHLET_SUB_SIDES));
+                    float v = vFrac * 2.0f * PI;
+                    float cv, sv;
+                    Cos(v, &cv);
+                    Sin(v, &sv);
+
+                    float px = (majorR + minorR * cv) * cu;
+                    float py = minorR * sv;
+                    float pz = (majorR + minorR * cv) * su;
+
+                    float vnx = cv * cu;
+                    float vny = sv;
+                    float vnz = cv * su;
+
+                    outVerts[vBase + localV].pos[0]    = px;
+                    outVerts[vBase + localV].pos[1]    = py;
+                    outVerts[vBase + localV].pos[2]    = pz;
+                    outVerts[vBase + localV].hue       = uFrac;
+                    outVerts[vBase + localV].normal[0] = vnx;
+                    outVerts[vBase + localV].normal[1] = vny;
+                    outVerts[vBase + localV].normal[2] = vnz;
+                    outVerts[vBase + localV].pad       = 0.0f;
+
+                    cx += px;
+                    cy += py;
+                    cz += pz;
+                    nx += vnx;
+                    ny += vny;
+                    nz += vnz;
+                    localV++;
+                }
+            }
+
+            float invV = 1.0f / (float)MESHLET_VERTS;
+            cx *= invV;
+            cy *= invV;
+            cz *= invV;
+            nx *= invV;
+            ny *= invV;
+            nz *= invV;
+
+            UINT32 localP = 0;
+            for (UINT32 sr = 0; sr < MESHLET_SUB_RINGS; sr++) {
+                for (UINT32 ss = 0; ss < MESHLET_SUB_SIDES; ss++) {
+                    UINT32 cur  = sr * (MESHLET_SUB_SIDES + 1) + ss;
+                    UINT32 next = cur + (MESHLET_SUB_SIDES + 1);
+
+                    outTris[pBase + localP].i0  = cur;
+                    outTris[pBase + localP].i1  = next;
+                    outTris[pBase + localP].i2  = cur + 1;
+                    outTris[pBase + localP].pad = 0;
+                    localP++;
+
+                    outTris[pBase + localP].i0  = cur + 1;
+                    outTris[pBase + localP].i1  = next;
+                    outTris[pBase + localP].i2  = next + 1;
+                    outTris[pBase + localP].pad = 0;
+                    localP++;
+                }
+            }
+
+            outDescs[meshletId].vertex_offset       = vBase;
+            outDescs[meshletId].vertex_count        = MESHLET_VERTS;
+            outDescs[meshletId].primitive_offset    = pBase;
+            outDescs[meshletId].primitive_count     = MESHLET_TRIS;
+            outDescs[meshletId].bounding_sphere[0]  = cx;
+            outDescs[meshletId].bounding_sphere[1]  = cy;
+            outDescs[meshletId].bounding_sphere[2]  = cz;
+            outDescs[meshletId].bounding_sphere[3]  = minorR * 1.5f;
+            outDescs[meshletId].cone_axis[0]        = nx;
+            outDescs[meshletId].cone_axis[1]        = ny;
+            outDescs[meshletId].cone_axis[2]        = nz;
+            // Conservative cone cutoff (~0.55) for a 1/4-ring x 1/4-tube torus patch
+            outDescs[meshletId].cone_cutoff         = 0.55f;
+        }
+    }
+}
+
+VOID TestMeshShaderScene(VOID)
+{
+    EFI_INPUT_KEY Key;
+
+    #include "mesh_scene_ts.h"
+    #include "mesh_scene_ms.h"
+    #include "phong_fs.h"
+
+    STATIC MeshSceneDescriptor sMeshlets[MESH_SCENE_TOTAL_MESHLETS];
+    STATIC MeshSceneVertex     sVerts[MESH_SCENE_TOTAL_VERTS];
+    STATIC MeshSceneTri        sTris[MESH_SCENE_TOTAL_TRIS];
+
+    // Object 0: Central Torus (R = 0.85, r = 0.32)
+    BuildTorusMeshletObject(0, 0.85f, 0.32f, sMeshlets, sVerts, sTris);
+    // Object 1: Outer Gyroscope Ring (R = 1.45, r = 0.16)
+    BuildTorusMeshletObject(1, 1.45f, 0.16f, sMeshlets, sVerts, sTris);
+    // Object 2: Orbiting Satellite 1 (R = 0.38, r = 0.16)
+    BuildTorusMeshletObject(2, 0.38f, 0.16f, sMeshlets, sVerts, sTris);
+    // Object 3: Orbiting Satellite 2 (R = 0.38, r = 0.16)
+    BuildTorusMeshletObject(3, 0.38f, 0.16f, sMeshlets, sVerts, sTris);
+
+    mGOP3D->GpuSetMode(mGOP3D, 1);
+
+    VRAMADDR hTS        = GPU_NULL_ADDR;
+    VRAMADDR hMS        = GPU_NULL_ADDR;
+    VRAMADDR hFS        = GPU_NULL_ADDR;
+    VRAMADDR hSceneSSBO = GPU_NULL_ADDR;
+    VRAMADDR hDescSSBO  = GPU_NULL_ADDR;
+    VRAMADDR hVertSSBO  = GPU_NULL_ADDR;
+    VRAMADDR hTriSSBO   = GPU_NULL_ADDR;
+
+    mGOP3D->GpuCmdBegin(mGOP3D);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_mesh_scene_ts, sizeof(bin_mesh_scene_ts), &hTS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_mesh_scene_ms, sizeof(bin_mesh_scene_ms), &hMS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeShaderCode, bin_phong_fs,      sizeof(bin_phong_fs),      &hFS);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO,       sMeshlets,         sizeof(sMeshlets),         &hDescSSBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO,       sVerts,            sizeof(sVerts),            &hVertSSBO);
+    mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO,       sTris,             sizeof(sTris),             &hTriSSBO);
+    mGOP3D->GpuCmdEnd(mGOP3D);
+    mGOP3D->GpuSubmitCmd(mGOP3D);
+
+    Print(L"==================================================================\n");
+    Print(L"  3D Task + Mesh Shader Scene: 4 Objects, 64 Meshlets, 1024 Tris  \n");
+    Print(L"  Controls: [C] Toggle Task Cone Culling | [V] Toggle Color Mode  \n");
+    Print(L"            Press any other key to exit scene.                    \n");
+    Print(L"==================================================================\n");
+
+    BOOLEAN cullEnabled = TRUE;
+    BOOLEAN smoothColor = FALSE;
+
+    FpsCounterStart();
+    mTimerInit = FALSE;
+
+    while (TRUE) {
+        if (gST->ConIn->ReadKeyStroke(gST->ConIn, &Key) == EFI_SUCCESS) {
+            if (Key.UnicodeChar == L'c' || Key.UnicodeChar == L'C') {
+                cullEnabled = !cullEnabled;
+            } else if (Key.UnicodeChar == L'v' || Key.UnicodeChar == L'V') {
+                smoothColor = !smoothColor;
+            } else {
+                break;
+            }
+        }
+
+        float time = 0.0f;
+        GetTimeSeconds(&time);
+        float angle = (2.0f * PI * time) / 4.0f;
+
+        Mat4 proj;
+        Mat4_Perspective(PI / 3.5f, 640.0f / 480.0f, 0.2f, 50.0f, &proj);
+
+        MeshSceneUniforms uniforms;
+        SetMem(&uniforms, sizeof(uniforms), 0);
+
+        // Object 0: Central Torus
+        {
+            Mat4 ry, rx, trans, model, viewModel, mvp;
+            Mat4_RotateY(angle * 1.1f, &ry);
+            Mat4_RotateX(angle * 0.8f, &rx);
+            Mat4_Translate(0.0f, 0.0f, 4.6f, &trans);
+            Mat4_Mul(&ry, &rx, &model);
+            Mat4_Mul(&trans, &model, &viewModel);
+            Mat4_Mul(&proj, &viewModel, &mvp);
+            Mat4_ToColMajor(&mvp,   uniforms.mvp[0]);
+            Mat4_ToColMajor(&model, uniforms.model[0]);
+        }
+
+        // Object 1: Counter-Rotating Outer Gyroscope Ring
+        {
+            Mat4 ry, rx, trans, model, viewModel, mvp;
+            Mat4_RotateY(-angle * 0.9f, &ry);
+            Mat4_RotateX(angle * 1.3f + 1.0f, &rx);
+            Mat4_Translate(0.0f, 0.0f, 4.6f, &trans);
+            Mat4_Mul(&rx, &ry, &model);
+            Mat4_Mul(&trans, &model, &viewModel);
+            Mat4_Mul(&proj, &viewModel, &mvp);
+            Mat4_ToColMajor(&mvp,   uniforms.mvp[1]);
+            Mat4_ToColMajor(&model, uniforms.model[1]);
+        }
+
+        // Orbiting Satellites 2 & 3
+        float orbitS, orbitC;
+        Sin(angle * 1.2f, &orbitS);
+        Cos(angle * 1.2f, &orbitC);
+
+        {
+            Mat4 ry, rx, trans, model, viewModel, mvp;
+            Mat4_RotateY(angle * 2.2f, &ry);
+            Mat4_RotateX(angle * 1.7f, &rx);
+            Mat4_Translate(2.1f * orbitC, 1.15f * orbitS, 4.6f + 0.6f * orbitS, &trans);
+            Mat4_Mul(&ry, &rx, &model);
+            Mat4_Mul(&trans, &model, &viewModel);
+            Mat4_Mul(&proj, &viewModel, &mvp);
+            Mat4_ToColMajor(&mvp,   uniforms.mvp[2]);
+            Mat4_ToColMajor(&model, uniforms.model[2]);
+        }
+
+        {
+            Mat4 ry, rx, trans, model, viewModel, mvp;
+            Mat4_RotateY(-angle * 2.2f, &ry);
+            Mat4_RotateX(-angle * 1.7f, &rx);
+            Mat4_Translate(-2.1f * orbitC, -1.15f * orbitS, 4.6f - 0.6f * orbitS, &trans);
+            Mat4_Mul(&ry, &rx, &model);
+            Mat4_Mul(&trans, &model, &viewModel);
+            Mat4_Mul(&proj, &viewModel, &mvp);
+            Mat4_ToColMajor(&mvp,   uniforms.mvp[3]);
+            Mat4_ToColMajor(&model, uniforms.model[3]);
+        }
+
+        uniforms.view_dir[0]  = 0.0f;
+        uniforms.view_dir[1]  = 0.0f;
+        uniforms.view_dir[2]  = -1.0f;
+        uniforms.view_dir[3]  = cullEnabled ? 1.0f : 0.0f;
+
+        uniforms.mode_info[0] = smoothColor ? 1.0f : 0.0f;
+        uniforms.mode_info[1] = time;
+        uniforms.mode_info[2] = (float)MESH_SCENE_TOTAL_MESHLETS;
+        uniforms.mode_info[3] = 0.0f;
+
+        mGOP3D->GpuCmdBegin(mGOP3D);
+
+        if (hSceneSSBO == GPU_NULL_ADDR) {
+            mGOP3D->GpuCmdTransferBuffer(mGOP3D, Gop3dBufferTypeSSBO, &uniforms, sizeof(uniforms), &hSceneSSBO);
+        } else {
+            mGOP3D->GpuCmdUpdateBuffer(mGOP3D, Gop3dBufferTypeSSBO, &uniforms, sizeof(uniforms), &hSceneSSBO);
+        }
+
+        mGOP3D->GpuCmdClearFrame(mGOP3D, 0xFF10121C);
+        mGOP3D->GpuCmdSetBlendState(mGOP3D, FALSE, Gop3dBlendFactorOne, Gop3dBlendFactorZero);
+        mGOP3D->GpuCmdSetDepthWrite(mGOP3D, TRUE);
+
+        mGOP3D->GpuCmdBindTaskShader(mGOP3D, hTS, sizeof(bin_mesh_scene_ts));
+        mGOP3D->GpuCmdBindMeshShader(mGOP3D, hMS, sizeof(bin_mesh_scene_ms));
+        mGOP3D->GpuCmdBindFragShader(mGOP3D, hFS, sizeof(bin_phong_fs));
+
+        mGOP3D->GpuCmdBindSSBO(mGOP3D, 0, hSceneSSBO, sizeof(uniforms));
+        mGOP3D->GpuCmdBindSSBO(mGOP3D, 1, hDescSSBO,  sizeof(sMeshlets));
+        mGOP3D->GpuCmdBindSSBO(mGOP3D, 2, hVertSSBO,  sizeof(sVerts));
+        mGOP3D->GpuCmdBindSSBO(mGOP3D, 3, hTriSSBO,   sizeof(sTris));
+
+        // Dispatch 4 Task Shader workgroups (4 * 16 = 64 meshlets)
+        mGOP3D->GpuCmdDrawMeshTasks(mGOP3D, MESH_SCENE_NUM_OBJECTS, 1, 1);
+
+        mGOP3D->GpuCmdEnd(mGOP3D);
+        mGOP3D->GpuPresent(mGOP3D);
+
+        FpsCounterTick();
+    }
+
+    FpsCounterStop();
+
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hMS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hFS);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hSceneSSBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hDescSSBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hVertSSBO);
+    mGOP3D->GpuFreeBuffer(mGOP3D, &hTriSSBO);
+
+    mGOP3D->GpuSetMode(mGOP3D, 0);
+
+    FpsCounterShowStats();
+}
+
 EFI_STATUS EFIAPI Test() {
     EFI_STATUS Status;
     EFI_INPUT_KEY Key;
@@ -1711,6 +2054,8 @@ EFI_STATUS EFIAPI Test() {
           mGraphicsOutput->Mode->Info->VerticalResolution);
     Print(L"Pixel Format: %d\n", mGraphicsOutput->Mode->Info->PixelFormat);
     
+    Print(L"Press key for SPIR-V 3D Task + Mesh Shader Multi-Object Scene...\n");
+    TestMeshShaderScene();
     WAIT_FOR_KEYPRESS()
 
     Print(L"Press key for SPIR-V Compute Shader Test (Vector Add)...\n");

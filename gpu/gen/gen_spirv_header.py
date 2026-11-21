@@ -39,7 +39,10 @@ def generate_header(json_path, output_path):
         # Generate Enums from SPIR-V Grammar
         write_enum_from_kind("Decoration", "SpvDecoration")
         write_enum_from_kind("StorageClass", "SpvStorageClass")
-        write_enum_from_kind("BuiltIn", "SpvBuiltIn") 
+        write_enum_from_kind("BuiltIn", "SpvBuiltIn")
+        write_enum_from_kind("ExecutionModel", "SpvExecutionModel")
+        write_enum_from_kind("ExecutionMode", "SpvExecutionMode")
+        write_enum_from_kind("GroupOperation", "SpvGroupOperation")
 
         # ================================
         # SpvOpMeta struct

@@ -417,6 +417,22 @@ EFI_STATUS
 
 typedef
 EFI_STATUS
+(EFIAPI *GOP_3D_CMD_DRAW_MESH_TASKS)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               GroupCountX,
+  IN UINT32               GroupCountY,
+  IN UINT32               GroupCountZ
+  );
+
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_DRAW_MESH_TASKS_INDIRECT)(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  );
+
+typedef
+EFI_STATUS
 (EFIAPI *GOP_3D_CMD_VERTEX_ATTRIB_POINTER)(
   IN GOP_3D_PROTOCOL *This,
   IN UINT32          Location,
@@ -488,6 +504,11 @@ struct GOP_3D_PROTOCOL {
   GOP_3D_CMD_SET_BLEND_OP                GpuCmdSetBlendOp;
   GOP_3D_CMD_SET_BLEND_EQUATION          GpuCmdSetBlendEquation;
   GOP_3D_CMD_SET_BLEND_STATE_EX          GpuCmdSetBlendStateEx;
+
+  GOP_3D_CMD_BIND_RESOURCE               GpuCmdBindTaskShader;
+  GOP_3D_CMD_BIND_RESOURCE               GpuCmdBindMeshShader;
+  GOP_3D_CMD_DRAW_MESH_TASKS             GpuCmdDrawMeshTasks;
+  GOP_3D_CMD_DRAW_MESH_TASKS_INDIRECT    GpuCmdDrawMeshTasksIndirect;
 
 };
 

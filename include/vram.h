@@ -54,14 +54,16 @@ typedef struct
 
 
 typedef enum {
-    CMD_NOOP               = 0x00,
-    CMD_DRAW_PRIMITIVE     = 0x01,
-    CMD_SET_STATE          = 0x02,
-    CMD_CLEAR_FRAMEBUFFER  = 0x03,
-    CMD_DMA_TRANSFER       = 0x04,
-    CMD_DMA_UPDATE         = 0x05,
-    CMD_DISPATCH           = 0x06,
-    CMD_DISPATCH_INDIRECT  = 0x07
+    CMD_NOOP                      = 0x00,
+    CMD_DRAW_PRIMITIVE            = 0x01,
+    CMD_SET_STATE                 = 0x02,
+    CMD_CLEAR_FRAMEBUFFER         = 0x03,
+    CMD_DMA_TRANSFER              = 0x04,
+    CMD_DMA_UPDATE                = 0x05,
+    CMD_DISPATCH                  = 0x06,
+    CMD_DISPATCH_INDIRECT         = 0x07,
+    CMD_DRAW_MESH_TASKS           = 0x08,
+    CMD_DRAW_MESH_TASKS_INDIRECT  = 0x09
 } CommandOpcode;
 
 
@@ -77,7 +79,9 @@ typedef enum {
     STATE_ID_COMPUTE_SHADER_PTR,
     STATE_ID_SSBO_CONFIG,
     STATE_ID_VERTEX_ATTRIB_CONFIG,
-    STATE_ID_BLEND_OP
+    STATE_ID_BLEND_OP,
+    STATE_ID_TASK_SHADER_PTR,
+    STATE_ID_MESH_SHADER_PTR
 } StateID;
 #define MAX_MIP_LEVELS 14
 typedef struct __attribute__((packed)) {
@@ -89,6 +93,19 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     uint32_t indirect_offset;
 } DispatchIndirectPayload;
+
+typedef DispatchPayload DrawMeshTasksPayload;
+typedef DispatchIndirectPayload DrawMeshTasksIndirectPayload;
+
+typedef struct __attribute__((packed)) {
+    uint32_t vertex_offset;
+    uint32_t triangle_offset;
+    uint32_t vertex_count;
+    uint32_t triangle_count;
+    float    bounding_sphere[4];
+    float    cone_apex[4];
+    float    cone_axis[4];
+} GpuMeshletDescriptor;
 
 typedef struct __attribute__((packed)) {
     uint32_t binding;
@@ -196,6 +213,8 @@ typedef struct __attribute__((packed)) {
             uint32_t vs_addr;
             uint32_t fs_addr;
             uint32_t cs_addr;
+            uint32_t ts_addr;
+            uint32_t ms_addr;
         } shader_ptrs;
         SetTexturePayload texture_config;
         SetDepthPayload depth_config;
@@ -229,6 +248,8 @@ typedef struct __attribute__((packed)) {
         DmaTransferPayload dma;
         DispatchPayload dispatch;
         DispatchIndirectPayload dispatch_indirect;
+        DrawMeshTasksPayload draw_mesh_tasks;
+        DrawMeshTasksIndirectPayload draw_mesh_tasks_indirect;
         uint32_t raw_data[8];
     } payload;
 } Command;

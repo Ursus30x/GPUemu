@@ -193,6 +193,36 @@ EFI_STATUS EFIAPI GpuCmdBindCompShader(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
+EFI_STATUS EFIAPI GpuCmdBindTaskShader(
+  IN GOP_3D_PROTOCOL *This,
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size
+  )
+{
+    Command cmd;
+    ZeroMem(&cmd, sizeof(Command));
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_TASK_SHADER_PTR;
+    cmd.payload.state.value.shader_ptrs.ts_addr = GpuAddress;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdBindMeshShader(
+  IN GOP_3D_PROTOCOL *This,
+  IN VRAMADDR GpuAddress,
+  IN UINT32 Size
+  )
+{
+    Command cmd;
+    ZeroMem(&cmd, sizeof(Command));
+    cmd.opcode = CMD_SET_STATE;
+    cmd.payload.state.state_id = STATE_ID_MESH_SHADER_PTR;
+    cmd.payload.state.value.shader_ptrs.ms_addr = GpuAddress;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
 EFI_STATUS EFIAPI GpuCmdBindSSBO(
   IN GOP_3D_PROTOCOL *This,
   IN UINT32 BindingSlot,
@@ -502,6 +532,36 @@ EFI_STATUS EFIAPI GpuCmdDispatchComputeIndirect(
     return GpuRingBufferAddCmd(&cmd, sizeof(Command));
 }
 
+EFI_STATUS EFIAPI GpuCmdDrawMeshTasks(
+  IN GOP_3D_PROTOCOL      *This,
+  IN UINT32               GroupCountX,
+  IN UINT32               GroupCountY,
+  IN UINT32               GroupCountZ
+  )
+{
+    Command cmd;
+    ZeroMem(&cmd, sizeof(Command));
+    cmd.opcode = CMD_DRAW_MESH_TASKS;
+    cmd.payload.draw_mesh_tasks.group_count_x = GroupCountX;
+    cmd.payload.draw_mesh_tasks.group_count_y = GroupCountY;
+    cmd.payload.draw_mesh_tasks.group_count_z = GroupCountZ;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
+EFI_STATUS EFIAPI GpuCmdDrawMeshTasksIndirect(
+  IN GOP_3D_PROTOCOL      *This,
+  IN VRAMADDR             IndirectOffset
+  )
+{
+    Command cmd;
+    ZeroMem(&cmd, sizeof(Command));
+    cmd.opcode = CMD_DRAW_MESH_TASKS_INDIRECT;
+    cmd.payload.draw_mesh_tasks_indirect.indirect_offset = IndirectOffset;
+
+    return GpuRingBufferAddCmd(&cmd, sizeof(Command));
+}
+
 EFI_STATUS EFIAPI GpuSubmitCmd(
   IN GOP_3D_PROTOCOL *This
   )
@@ -664,6 +724,11 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
   Private->Gop3dProtocol.GpuCmdSetBlendOp                = GpuCmdSetBlendOp;
   Private->Gop3dProtocol.GpuCmdSetBlendEquation          = GpuCmdSetBlendEquation;
   Private->Gop3dProtocol.GpuCmdSetBlendStateEx          = GpuCmdSetBlendStateEx;
+
+  Private->Gop3dProtocol.GpuCmdBindTaskShader            = GpuCmdBindTaskShader;
+  Private->Gop3dProtocol.GpuCmdBindMeshShader            = GpuCmdBindMeshShader;
+  Private->Gop3dProtocol.GpuCmdDrawMeshTasks             = GpuCmdDrawMeshTasks;
+  Private->Gop3dProtocol.GpuCmdDrawMeshTasksIndirect     = GpuCmdDrawMeshTasksIndirect;
 
   return EFI_SUCCESS;
 }

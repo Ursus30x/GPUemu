@@ -249,231 +249,556 @@ void handle_op_atomic(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_
     set_val(ctx, res_id, jit_to_float_vector(ctx, res_vec));
 }
 
-void handle_op_group_non_uniform(JitContext* ctx, uint16_t opcode, uint32_t res_id, uint32_t type_id, uint32_t* operands, int operand_count)
+static LLVMValueRef group_lane_index(JitContext* ctx, int lane)
 {
-    (void)type_id;
-    (void)operand_count;
+    return LLVMConstInt(ctx->int_type, (uint64_t)lane, 0);
+}
 
-    if (opcode == SpvOpGroupNonUniformElect)
+static LLVMValueRef group_i1_constant(JitContext* ctx, int value)
+{
+    return LLVMConstInt(LLVMInt1TypeInContext(ctx->context), value, 0);
+}
+
+static LLVMValueRef create_group_broadcast_vector(
+    JitContext* ctx,
+    LLVMTypeRef vector_type,
+    LLVMValueRef scalar,
+    const char* name)
+{
+    LLVMValueRef result = LLVMGetUndef(vector_type);
+
+    for (int i = 0; i < SIMT_WIDTH; ++i)
     {
-        LLVMValueRef is_first_vec = LLVMGetUndef(ctx->vec_i1_type);
-        LLVMValueRef prev_any = LLVMConstInt(LLVMInt1TypeInContext(ctx->context), 0, 0);
+        result = LLVMBuildInsertElement(
+            ctx->builder, result, scalar, group_lane_index(ctx, i), name);
+    }
 
-        for (int i = 0; i < SIMT_WIDTH; i++) 
+    return result;
+}
+
+static LLVMValueRef get_group_ballot_i32(
+    JitContext* ctx,
+    LLVMValueRef ballot_uvec4,
+    const char* name)
+{
+    LLVMValueRef ballot_x =
+        LLVMBuildExtractValue(ctx->builder, ballot_uvec4, 0, "ballot_x");
+
+    LLVMTypeRef vec_i32_type =
+        LLVMVectorType(ctx->int_type, SIMT_WIDTH);
+
+    return LLVMBuildBitCast(
+        ctx->builder, ballot_x, vec_i32_type, name);
+}
+
+static bool handle_group_non_uniform_elect(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id)
+{
+    if (opcode != SpvOpGroupNonUniformElect)
+        return false;
+
+    LLVMValueRef is_first_vec = LLVMGetUndef(ctx->vec_i1_type);
+    LLVMValueRef prev_any = group_i1_constant(ctx, 0);
+
+    for (int i = 0; i < SIMT_WIDTH; ++i)
+    {
+        LLVMValueRef lane_idx = group_lane_index(ctx, i);
+        LLVMValueRef mask_i = LLVMBuildExtractElement(
+            ctx->builder, ctx->emask, lane_idx, "m_i");
+        LLVMValueRef not_prev =
+            LLVMBuildNot(ctx->builder, prev_any, "not_prev");
+        LLVMValueRef elected =
+            LLVMBuildAnd(ctx->builder, mask_i, not_prev, "elected");
+
+        is_first_vec = LLVMBuildInsertElement(
+            ctx->builder, is_first_vec, elected, lane_idx, "elect_ins");
+        prev_any = LLVMBuildOr(ctx->builder, prev_any, mask_i, "prev_any");
+    }
+
+    set_val(ctx, res_id, is_first_vec);
+    return true;
+}
+
+
+static bool handle_group_non_uniform_all(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    if (opcode != SpvOpGroupNonUniformAll &&
+        opcode != SpvOpSubgroupAllKHR)
+        return false;
+
+    LLVMValueRef pred_vec = get_val(ctx, operands[1]);
+    LLVMValueRef all_val = group_i1_constant(ctx, 1);
+
+    for (int i = 0; i < SIMT_WIDTH; ++i)
+    {
+        LLVMValueRef lane_idx = group_lane_index(ctx, i);
+        LLVMValueRef mask = LLVMBuildExtractElement(
+            ctx->builder, ctx->emask, lane_idx, "m_i");
+        LLVMValueRef pred = LLVMBuildExtractElement(
+            ctx->builder, pred_vec, lane_idx, "p_i");
+        LLVMValueRef not_mask =
+            LLVMBuildNot(ctx->builder, mask, "not_m");
+        LLVMValueRef condition =
+            LLVMBuildOr(ctx->builder, not_mask, pred, "lane_all_cond");
+
+        all_val = LLVMBuildAnd(
+            ctx->builder, all_val, condition, "all_acc");
+    }
+
+    LLVMValueRef result = create_group_broadcast_vector(
+        ctx, ctx->vec_i1_type, all_val, "all_ins");
+
+    set_val(ctx, res_id, result);
+    return true;
+}
+
+static bool handle_group_non_uniform_any(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    if (opcode != SpvOpGroupNonUniformAny &&
+        opcode != SpvOpSubgroupAnyKHR)
+        return false;
+
+    LLVMValueRef pred_vec = get_val(ctx, operands[1]);
+    LLVMValueRef any_val = group_i1_constant(ctx, 0);
+
+    for (int i = 0; i < SIMT_WIDTH; ++i)
+    {
+        LLVMValueRef lane_idx = group_lane_index(ctx, i);
+        LLVMValueRef mask = LLVMBuildExtractElement(
+            ctx->builder, ctx->emask, lane_idx, "m_i");
+        LLVMValueRef pred = LLVMBuildExtractElement(
+            ctx->builder, pred_vec, lane_idx, "p_i");
+        LLVMValueRef condition =
+            LLVMBuildAnd(ctx->builder, mask, pred, "lane_any_cond");
+
+        any_val = LLVMBuildOr(
+            ctx->builder, any_val, condition, "any_acc");
+    }
+
+    LLVMValueRef result = create_group_broadcast_vector(
+        ctx, ctx->vec_i1_type, any_val, "any_ins");
+
+    set_val(ctx, res_id, result);
+    return true;
+}
+
+static bool handle_group_non_uniform_all_equal(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    if (opcode != SpvOpGroupNonUniformAllEqual &&
+        opcode != SpvOpSubgroupAllEqualKHR)
+        return false;
+
+    LLVMValueRef val_vec = get_val(ctx, operands[1]);
+    LLVMValueRef first_val = LLVMBuildExtractElement(
+        ctx->builder, val_vec, group_lane_index(ctx, 0), "first_v");
+    LLVMValueRef all_eq = group_i1_constant(ctx, 1);
+
+    for (int i = 1; i < SIMT_WIDTH; ++i)
+    {
+        LLVMValueRef lane_idx = group_lane_index(ctx, i);
+        LLVMValueRef mask = LLVMBuildExtractElement(
+            ctx->builder, ctx->emask, lane_idx, "m_i");
+        LLVMValueRef value = LLVMBuildExtractElement(
+            ctx->builder, val_vec, lane_idx, "v_i");
+
+        LLVMValueRef equal;
+        if (is_float_type(LLVMTypeOf(value)))
         {
-            LLVMValueRef mask_i = LLVMBuildExtractElement(ctx->builder, ctx->emask, LLVMConstInt(ctx->int_type, i, 0), "m_i");
-            LLVMValueRef not_prev = LLVMBuildNot(ctx->builder, prev_any, "not_prev");
-            LLVMValueRef elected = LLVMBuildAnd(ctx->builder, mask_i, not_prev, "elected");
-
-            is_first_vec = LLVMBuildInsertElement(ctx->builder, is_first_vec, elected, LLVMConstInt(ctx->int_type, i, 0), "elect_ins");
-            prev_any = LLVMBuildOr(ctx->builder, prev_any, mask_i, "prev_any");
+            equal = LLVMBuildFCmp(
+                ctx->builder, LLVMRealOEQ, first_val, value, "cmp_eq");
         }
-        set_val(ctx, res_id, is_first_vec);
-        return;
-    }
-
-    if (opcode == SpvOpGroupNonUniformAll || opcode == SpvOpSubgroupAllKHR)
-    {
-        LLVMValueRef pred_vec = get_val(ctx, operands[1]);
-        LLVMValueRef all_val = LLVMConstInt(LLVMInt1TypeInContext(ctx->context), 1, 0);
-        for (int i = 0; i < SIMT_WIDTH; i++) 
+        else
         {
-            LLVMValueRef m = LLVMBuildExtractElement(ctx->builder, ctx->emask, LLVMConstInt(ctx->int_type, i, 0), "m_i");
-            LLVMValueRef p = LLVMBuildExtractElement(ctx->builder, pred_vec, LLVMConstInt(ctx->int_type, i, 0), "p_i");
-            LLVMValueRef not_m = LLVMBuildNot(ctx->builder, m, "not_m");
-            LLVMValueRef cond = LLVMBuildOr(ctx->builder, not_m, p, "lane_all_cond");
-            all_val = LLVMBuildAnd(ctx->builder, all_val, cond, "all_acc");
+            equal = LLVMBuildICmp(
+                ctx->builder, LLVMIntEQ, first_val, value, "cmp_eq");
         }
-        LLVMValueRef res_vec = LLVMGetUndef(ctx->vec_i1_type);
-        for (int i = 0; i < SIMT_WIDTH; i++) {
-            res_vec = LLVMBuildInsertElement(ctx->builder, res_vec, all_val, LLVMConstInt(ctx->int_type, i, 0), "all_ins");
-        }
-        set_val(ctx, res_id, res_vec);
-        return;
+
+        LLVMValueRef not_mask =
+            LLVMBuildNot(ctx->builder, mask, "not_m");
+        LLVMValueRef condition =
+            LLVMBuildOr(ctx->builder, not_mask, equal, "lane_eq_cond");
+
+        all_eq = LLVMBuildAnd(
+            ctx->builder, all_eq, condition, "all_eq_acc");
     }
 
-    if (opcode == SpvOpGroupNonUniformAny || opcode == SpvOpSubgroupAnyKHR)
+    LLVMValueRef result = create_group_broadcast_vector(
+        ctx, ctx->vec_i1_type, all_eq, "eq_ins");
+
+    set_val(ctx, res_id, result);
+    return true;
+}
+
+static bool handle_group_non_uniform_broadcast(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    if (opcode != SpvOpGroupNonUniformBroadcast &&
+        opcode != SpvOpSubgroupReadInvocationKHR)
+        return false;
+
+    LLVMValueRef val_vec = get_val(ctx, operands[1]);
+    LLVMValueRef id_val = get_val(ctx, operands[2]);
+    LLVMValueRef id_i32 = LLVMBuildExtractElement(
+        ctx->builder,
+        jit_to_int_vector(ctx, id_val),
+        group_lane_index(ctx, 0),
+        "bcast_id");
+
+    LLVMValueRef broadcast_val = LLVMBuildExtractElement(
+        ctx->builder, val_vec, id_i32, "bcast_v");
+
+    LLVMValueRef result = create_group_broadcast_vector(
+        ctx, LLVMTypeOf(val_vec), broadcast_val, "bcast_ins");
+
+    set_val(ctx, res_id, result);
+    return true;
+}
+
+static bool handle_group_non_uniform_broadcast_first(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    (void)operands;
+
+    if (opcode != SpvOpGroupNonUniformBroadcastFirst &&
+        opcode != SpvOpSubgroupFirstInvocationKHR)
+        return false;
+
+    LLVMValueRef val_vec = get_val(ctx, operands[1]);
+    LLVMValueRef first_val = LLVMBuildExtractElement(
+        ctx->builder, val_vec, group_lane_index(ctx, 0), "first_v");
+
+    LLVMValueRef result = create_group_broadcast_vector(
+        ctx, LLVMTypeOf(val_vec), first_val, "bcast_ins");
+
+    set_val(ctx, res_id, result);
+    return true;
+}
+
+static bool handle_group_non_uniform_ballot(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    if (opcode != SpvOpGroupNonUniformBallot &&
+        opcode != SpvOpSubgroupBallotKHR)
+        return false;
+
+    LLVMValueRef pred_vec = get_val(ctx, operands[1]);
+    LLVMValueRef ballot_mask =
+        LLVMConstInt(ctx->int_type, 0, 0);
+
+    for (int i = 0; i < SIMT_WIDTH; ++i)
     {
-        LLVMValueRef pred_vec = get_val(ctx, operands[1]);
-        LLVMValueRef any_val = LLVMConstInt(LLVMInt1TypeInContext(ctx->context), 0, 0);
-        for (int i = 0; i < SIMT_WIDTH; i++) {
-            LLVMValueRef m = LLVMBuildExtractElement(ctx->builder, ctx->emask, LLVMConstInt(ctx->int_type, i, 0), "m_i");
-            LLVMValueRef p = LLVMBuildExtractElement(ctx->builder, pred_vec, LLVMConstInt(ctx->int_type, i, 0), "p_i");
-            LLVMValueRef cond = LLVMBuildAnd(ctx->builder, m, p, "lane_any_cond");
-            any_val = LLVMBuildOr(ctx->builder, any_val, cond, "any_acc");
-        }
-        LLVMValueRef res_vec = LLVMGetUndef(ctx->vec_i1_type);
-        for (int i = 0; i < SIMT_WIDTH; i++) {
-            res_vec = LLVMBuildInsertElement(ctx->builder, res_vec, any_val, LLVMConstInt(ctx->int_type, i, 0), "any_ins");
-        }
-        set_val(ctx, res_id, res_vec);
-        return;
+        LLVMValueRef lane_idx = group_lane_index(ctx, i);
+        LLVMValueRef mask = LLVMBuildExtractElement(
+            ctx->builder, ctx->emask, lane_idx, "m_i");
+        LLVMValueRef pred = LLVMBuildExtractElement(
+            ctx->builder, pred_vec, lane_idx, "p_i");
+        LLVMValueRef active_bit =
+            LLVMBuildAnd(ctx->builder, mask, pred, "act_bit");
+        LLVMValueRef bit_i32 = LLVMBuildZExt(
+            ctx->builder, active_bit, ctx->int_type, "bit_i32");
+        LLVMValueRef shifted = LLVMBuildShl(
+            ctx->builder, bit_i32, group_lane_index(ctx, i), "shifted");
+
+        ballot_mask = LLVMBuildOr(
+            ctx->builder, ballot_mask, shifted, "ballot_acc");
     }
 
-    if (opcode == SpvOpGroupNonUniformAllEqual || opcode == SpvOpSubgroupAllEqualKHR)
-    {
-        LLVMValueRef val_vec = get_val(ctx, operands[1]);
-        LLVMValueRef first_val = LLVMBuildExtractElement(ctx->builder, val_vec, LLVMConstInt(ctx->int_type, 0, 0), "first_v");
-        LLVMValueRef all_eq = LLVMConstInt(LLVMInt1TypeInContext(ctx->context), 1, 0);
+    LLVMValueRef ballot_float = LLVMBuildBitCast(
+        ctx->builder, ballot_mask, ctx->float_type, "b_f_cast");
 
-        for (int i = 1; i < SIMT_WIDTH; i++)
-        {
-            LLVMValueRef m = LLVMBuildExtractElement(ctx->builder, ctx->emask, LLVMConstInt(ctx->int_type, i, 0), "m_i");
-            LLVMValueRef v = LLVMBuildExtractElement(ctx->builder, val_vec, LLVMConstInt(ctx->int_type, i, 0), "v_i");
-            LLVMValueRef eq;
-            if (is_float_type(LLVMTypeOf(v))) 
-            {
-                eq = LLVMBuildFCmp(ctx->builder, LLVMRealOEQ, first_val, v, "cmp_eq");
-            } 
-            else 
-            {
-                eq = LLVMBuildICmp(ctx->builder, LLVMIntEQ, first_val, v, "cmp_eq");
-            }
-            LLVMValueRef not_m = LLVMBuildNot(ctx->builder, m, "not_m");
-            LLVMValueRef cond = LLVMBuildOr(ctx->builder, not_m, eq, "lane_eq_cond");
-            all_eq = LLVMBuildAnd(ctx->builder, all_eq, cond, "all_eq_acc");
-        }
-        LLVMValueRef res_vec = LLVMGetUndef(ctx->vec_i1_type);
-        for (int i = 0; i < SIMT_WIDTH; i++) 
-        {
-            res_vec = LLVMBuildInsertElement(ctx->builder, res_vec, all_eq, LLVMConstInt(ctx->int_type, i, 0), "eq_ins");
-        }
-        set_val(ctx, res_id, res_vec);
-        return;
+    LLVMValueRef broadcast_x = create_group_broadcast_vector(
+        ctx, ctx->vec_float_type, ballot_float, "bcast_b");
+
+    LLVMValueRef zero_vec = LLVMConstNull(ctx->vec_float_type);
+    LLVMValueRef result =
+        LLVMGetUndef(LLVMArrayType(ctx->vec_float_type, 4));
+
+    result = LLVMBuildInsertValue(
+        ctx->builder, result, broadcast_x, 0, "uvec4_0");
+    result = LLVMBuildInsertValue(
+        ctx->builder, result, zero_vec, 1, "uvec4_1");
+    result = LLVMBuildInsertValue(
+        ctx->builder, result, zero_vec, 2, "uvec4_2");
+    result = LLVMBuildInsertValue(
+        ctx->builder, result, zero_vec, 3, "uvec4_3");
+
+    set_val(ctx, res_id, result);
+    return true;
+}
+
+static bool handle_group_non_uniform_inverse_ballot(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    if (opcode != SpvOpGroupNonUniformInverseBallot)
+        return false;
+
+    LLVMValueRef ballot_uvec4 = get_val(ctx, operands[1]);
+    LLVMValueRef ballot_i32 =
+        get_group_ballot_i32(ctx, ballot_uvec4, "ballot_i32");
+
+    LLVMValueRef result = LLVMGetUndef(ctx->vec_i1_type);
+
+    for (int i = 0; i < SIMT_WIDTH; ++i)
+    {
+        LLVMValueRef lane_idx = group_lane_index(ctx, i);
+        LLVMValueRef ballot_lane = LLVMBuildExtractElement(
+            ctx->builder, ballot_i32, lane_idx, "bx_i");
+        LLVMValueRef bit_mask = LLVMConstInt(
+            ctx->int_type, (uint64_t)(1u << i), 0);
+        LLVMValueRef is_set = LLVMBuildAnd(
+            ctx->builder, ballot_lane, bit_mask, "is_set");
+        LLVMValueRef is_nonzero = LLVMBuildICmp(
+            ctx->builder,
+            LLVMIntNE,
+            is_set,
+            LLVMConstInt(ctx->int_type, 0, 0),
+            "cmp_set");
+
+        result = LLVMBuildInsertElement(
+            ctx->builder, result, is_nonzero, lane_idx, "inv_ins");
     }
 
-    if (opcode == SpvOpGroupNonUniformBroadcast || opcode == SpvOpSubgroupReadInvocationKHR)
-    {
-        LLVMValueRef val_vec = get_val(ctx, operands[1]);
-        LLVMValueRef id_val = get_val(ctx, operands[2]);
-        LLVMValueRef id_i32 = LLVMBuildExtractElement(ctx->builder, jit_to_int_vector(ctx, id_val), LLVMConstInt(ctx->int_type, 0, 0), "bcast_id");
+    set_val(ctx, res_id, result);
+    return true;
+}
 
-        LLVMValueRef broadcast_val = LLVMBuildExtractElement(ctx->builder, val_vec, id_i32, "bcast_v");
-        LLVMValueRef res_vec = LLVMGetUndef(LLVMTypeOf(val_vec));
-        for (int i = 0; i < SIMT_WIDTH; i++) 
-        {
-            res_vec = LLVMBuildInsertElement(ctx->builder, res_vec, broadcast_val, LLVMConstInt(ctx->int_type, i, 0), "bcast_ins");
-        }
-        set_val(ctx, res_id, res_vec);
-        return;
+static bool handle_group_non_uniform_ballot_bit_count(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    if (opcode != SpvOpGroupNonUniformBallotBitCount)
+        return false;
+
+    uint32_t group_op = operands[1];
+    LLVMValueRef ballot_uvec4 = get_val(ctx, operands[2]);
+    LLVMValueRef ballot_i32 =
+        get_group_ballot_i32(ctx, ballot_uvec4, "ballot_i32");
+
+    LLVMValueRef mask_vals[SIMT_WIDTH];
+    LLVMValueRef c1_vals[SIMT_WIDTH];
+    LLVMValueRef c2_vals[SIMT_WIDTH];
+    LLVMValueRef c4_vals[SIMT_WIDTH];
+    LLVMValueRef c8_vals[SIMT_WIDTH];
+    LLVMValueRef m55_vals[SIMT_WIDTH];
+    LLVMValueRef m33_vals[SIMT_WIDTH];
+    LLVMValueRef m0f_vals[SIMT_WIDTH];
+    LLVMValueRef mff_vals[SIMT_WIDTH];
+
+    for (int i = 0; i < SIMT_WIDTH; ++i)
+    {
+        uint32_t lane_mask = 0xFFFFu;
+
+        if (group_op == SpvGroupOperationInclusiveScan)
+            lane_mask = (1u << (i + 1)) - 1u;
+        else if (group_op == SpvGroupOperationExclusiveScan)
+            lane_mask = (1u << i) - 1u;
+
+        mask_vals[i] = LLVMConstInt(ctx->int_type, lane_mask, 0);
+        c1_vals[i] = LLVMConstInt(ctx->int_type, 1, 0);
+        c2_vals[i] = LLVMConstInt(ctx->int_type, 2, 0);
+        c4_vals[i] = LLVMConstInt(ctx->int_type, 4, 0);
+        c8_vals[i] = LLVMConstInt(ctx->int_type, 8, 0);
+        m55_vals[i] = LLVMConstInt(ctx->int_type, 0x5555, 0);
+        m33_vals[i] = LLVMConstInt(ctx->int_type, 0x3333, 0);
+        m0f_vals[i] = LLVMConstInt(ctx->int_type, 0x0F0F, 0);
+        mff_vals[i] = LLVMConstInt(ctx->int_type, 0x00FF, 0);
     }
 
-    if (opcode == SpvOpGroupNonUniformBroadcastFirst || opcode == SpvOpSubgroupFirstInvocationKHR)
+    LLVMValueRef value = LLVMBuildAnd(
+        ctx->builder, ballot_i32,
+        LLVMConstVector(mask_vals, SIMT_WIDTH), "bc_masked");
+
+    LLVMValueRef shr1 = LLVMBuildLShr(
+        ctx->builder, value,
+        LLVMConstVector(c1_vals, SIMT_WIDTH), "bc_shr1");
+    LLVMValueRef sub1 = LLVMBuildSub(
+        ctx->builder,
+        value,
+        LLVMBuildAnd(ctx->builder, shr1,
+                     LLVMConstVector(m55_vals, SIMT_WIDTH), "bc_a55"),
+        "bc_s1");
+
+    LLVMValueRef shr2 = LLVMBuildLShr(
+        ctx->builder, sub1,
+        LLVMConstVector(c2_vals, SIMT_WIDTH), "bc_shr2");
+    value = LLVMBuildAdd(
+        ctx->builder,
+        LLVMBuildAnd(ctx->builder, sub1,
+                     LLVMConstVector(m33_vals, SIMT_WIDTH), "bc_a33_1"),
+        LLVMBuildAnd(ctx->builder, shr2,
+                     LLVMConstVector(m33_vals, SIMT_WIDTH), "bc_a33_2"),
+        "bc_s2");
+
+    LLVMValueRef shr4 = LLVMBuildLShr(
+        ctx->builder, value,
+        LLVMConstVector(c4_vals, SIMT_WIDTH), "bc_shr4");
+    value = LLVMBuildAnd(
+        ctx->builder,
+        LLVMBuildAdd(ctx->builder, value, shr4, "bc_s4"),
+        LLVMConstVector(m0f_vals, SIMT_WIDTH), "bc_a0f");
+
+    LLVMValueRef shr8 = LLVMBuildLShr(
+        ctx->builder, value,
+        LLVMConstVector(c8_vals, SIMT_WIDTH), "bc_shr8");
+    value = LLVMBuildAnd(
+        ctx->builder,
+        LLVMBuildAdd(ctx->builder, value, shr8, "bc_s8"),
+        LLVMConstVector(mff_vals, SIMT_WIDTH), "bc_res_i32");
+
+    LLVMValueRef result = LLVMBuildUIToFP(
+        ctx->builder, value, ctx->vec_float_type, "bc_res_f");
+
+    set_val(ctx, res_id, result);
+    return true;
+}
+
+static bool handle_group_non_uniform_ballot_bit_extract(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    if (opcode != SpvOpGroupNonUniformBallotBitExtract)
+        return false;
+
+    LLVMValueRef ballot_uvec4 = get_val(ctx, operands[1]);
+    LLVMValueRef idx_vec =
+        jit_to_numeric_int_vector(ctx, get_val(ctx, operands[2]));
+    LLVMValueRef ballot_i32 =
+        get_group_ballot_i32(ctx, ballot_uvec4, "ballot_i32");
+
+    LLVMValueRef shifted = LLVMBuildLShr(
+        ctx->builder, ballot_i32, idx_vec, "be_shr");
+
+    LLVMValueRef ones[SIMT_WIDTH];
+    LLVMValueRef zeros[SIMT_WIDTH];
+
+    for (int i = 0; i < SIMT_WIDTH; ++i)
     {
-        LLVMValueRef val_vec = get_val(ctx, operands[1]);
-        LLVMValueRef first_val = LLVMBuildExtractElement(ctx->builder, val_vec, LLVMConstInt(ctx->int_type, 0, 0), "first_v");
-        LLVMValueRef res_vec = LLVMGetUndef(LLVMTypeOf(val_vec));
-        for (int i = 0; i < SIMT_WIDTH; i++)
-         {
-            res_vec = LLVMBuildInsertElement(ctx->builder, res_vec, first_val, LLVMConstInt(ctx->int_type, i, 0), "bcast_ins");
-        }
-        set_val(ctx, res_id, res_vec);
-        return;
+        ones[i] = LLVMConstInt(ctx->int_type, 1, 0);
+        zeros[i] = LLVMConstInt(ctx->int_type, 0, 0);
     }
 
-    if (opcode == SpvOpGroupNonUniformBallot || opcode == SpvOpSubgroupBallotKHR)
+    LLVMValueRef bit = LLVMBuildAnd(
+        ctx->builder, shifted,
+        LLVMConstVector(ones, SIMT_WIDTH), "be_bit");
+    LLVMValueRef result = LLVMBuildICmp(
+        ctx->builder, LLVMIntNE, bit,
+        LLVMConstVector(zeros, SIMT_WIDTH), "be_res");
+
+    set_val(ctx, res_id, result);
+    return true;
+}
+
+static bool is_group_non_uniform_shuffle_opcode(uint16_t opcode)
+{
+    return opcode == SpvOpGroupNonUniformShuffle ||
+           opcode == SpvOpGroupNonUniformShuffleXor ||
+           opcode == SpvOpGroupNonUniformShuffleUp ||
+           opcode == SpvOpGroupNonUniformShuffleDown;
+}
+
+static LLVMValueRef get_group_shuffle_source_index(
+    JitContext* ctx,
+    uint16_t opcode,
+    int lane,
+    LLVMValueRef parameter)
+{
+    LLVMValueRef lane_idx = group_lane_index(ctx, lane);
+
+    if (opcode == SpvOpGroupNonUniformShuffle)
     {
-        LLVMValueRef pred_vec = get_val(ctx, operands[1]);
-        LLVMValueRef ballot_mask = LLVMConstInt(ctx->int_type, 0, 0);
-
-        for (int i = 0; i < SIMT_WIDTH; i++) 
-        {
-            LLVMValueRef m = LLVMBuildExtractElement(ctx->builder, ctx->emask, LLVMConstInt(ctx->int_type, i, 0), "m_i");
-            LLVMValueRef p = LLVMBuildExtractElement(ctx->builder, pred_vec, LLVMConstInt(ctx->int_type, i, 0), "p_i");
-            LLVMValueRef active_bit = LLVMBuildAnd(ctx->builder, m, p, "act_bit");
-            LLVMValueRef bit_i32 = LLVMBuildZExt(ctx->builder, active_bit, ctx->int_type, "bit_i32");
-            LLVMValueRef shifted = LLVMBuildShl(ctx->builder, bit_i32, LLVMConstInt(ctx->int_type, i, 0), "shifted");
-            ballot_mask = LLVMBuildOr(ctx->builder, ballot_mask, shifted, "ballot_acc");
-        }
-
-        LLVMValueRef bcast_x = LLVMGetUndef(ctx->vec_float_type);
-        LLVMValueRef zero_v = LLVMConstNull(ctx->vec_float_type);
-        LLVMValueRef ballot_float = LLVMBuildBitCast(ctx->builder, ballot_mask, ctx->float_type, "b_f_cast");
-
-        for (int i = 0; i < SIMT_WIDTH; i++) 
-        {
-            bcast_x = LLVMBuildInsertElement(ctx->builder, bcast_x, ballot_float, LLVMConstInt(ctx->int_type, i, 0), "bcast_b");
-        }
-
-        LLVMValueRef uvec4_res = LLVMGetUndef(LLVMArrayType(ctx->vec_float_type, 4));
-        uvec4_res = LLVMBuildInsertValue(ctx->builder, uvec4_res, bcast_x, 0, "uvec4_0");
-        uvec4_res = LLVMBuildInsertValue(ctx->builder, uvec4_res, zero_v, 1, "uvec4_1");
-        uvec4_res = LLVMBuildInsertValue(ctx->builder, uvec4_res, zero_v, 2, "uvec4_2");
-        uvec4_res = LLVMBuildInsertValue(ctx->builder, uvec4_res, zero_v, 3, "uvec4_3");
-
-        set_val(ctx, res_id, uvec4_res);
-        return;
+        return LLVMBuildAnd(
+            ctx->builder, parameter,
+            LLVMConstInt(ctx->int_type, 15, 0), "shuf_idx");
     }
 
-    if (opcode == SpvOpGroupNonUniformInverseBallot)
+    if (opcode == SpvOpGroupNonUniformShuffleXor)
     {
-        LLVMValueRef ballot_uvec4 = get_val(ctx, operands[1]);
-        LLVMValueRef ballot_x = LLVMBuildExtractValue(ctx->builder, ballot_uvec4, 0, "ballot_x");
-        LLVMValueRef ballot_i32 = LLVMBuildBitCast(ctx->builder, ballot_x, LLVMVectorType(ctx->int_type, SIMT_WIDTH), "ballot_i32");
+        LLVMValueRef source = LLVMBuildXor(
+            ctx->builder, lane_idx, parameter, "shuf_xor");
 
-        LLVMValueRef res_vec = LLVMGetUndef(ctx->vec_i1_type);
-        for (int i = 0; i < SIMT_WIDTH; i++) {
-            LLVMValueRef bx = LLVMBuildExtractElement(ctx->builder, ballot_i32, LLVMConstInt(ctx->int_type, i, 0), "bx_i");
-            LLVMValueRef bit_mask = LLVMConstInt(ctx->int_type, 1 << i, 0);
-            LLVMValueRef is_set = LLVMBuildAnd(ctx->builder, bx, bit_mask, "is_set");
-            LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntNE, is_set, LLVMConstInt(ctx->int_type, 0, 0), "cmp_set");
-            res_vec = LLVMBuildInsertElement(ctx->builder, res_vec, cmp, LLVMConstInt(ctx->int_type, i, 0), "inv_ins");
-        }
-        set_val(ctx, res_id, res_vec);
-        return;
+        return LLVMBuildAnd(
+            ctx->builder, source,
+            LLVMConstInt(ctx->int_type, 15, 0), "shuf_idx");
     }
 
-    if (opcode == SpvOpGroupNonUniformShuffle || opcode == SpvOpGroupNonUniformShuffleXor ||
-        opcode == SpvOpGroupNonUniformShuffleUp || opcode == SpvOpGroupNonUniformShuffleDown)
+    if (opcode == SpvOpGroupNonUniformShuffleUp)
     {
-        LLVMValueRef val_vec = get_val(ctx, operands[1]);
-        LLVMValueRef param_vec = jit_to_numeric_int_vector(ctx, get_val(ctx, operands[2]));
-        LLVMValueRef res_vec = LLVMGetUndef(LLVMTypeOf(val_vec));
-
-        for (int i = 0; i < SIMT_WIDTH; i++) {
-            LLVMValueRef p = LLVMBuildExtractElement(ctx->builder, param_vec, LLVMConstInt(ctx->int_type, i, 0), "p_i");
-            LLVMValueRef src_idx;
-            if (opcode == SpvOpGroupNonUniformShuffle) 
-            {
-                src_idx = LLVMBuildAnd(ctx->builder, p, LLVMConstInt(ctx->int_type, 15, 0), "shuf_idx");
-            } 
-            else if (opcode == SpvOpGroupNonUniformShuffleXor) 
-            {
-                src_idx = LLVMBuildXor(ctx->builder, LLVMConstInt(ctx->int_type, i, 0), p, "shuf_xor");
-                src_idx = LLVMBuildAnd(ctx->builder, src_idx, LLVMConstInt(ctx->int_type, 15, 0), "shuf_idx");
-            } 
-            else if (opcode == SpvOpGroupNonUniformShuffleUp) 
-            {
-                src_idx = LLVMBuildSub(ctx->builder, LLVMConstInt(ctx->int_type, i, 0), p, "shuf_up");
-            } 
-            else 
-            {
-                src_idx = LLVMBuildAdd(ctx->builder, LLVMConstInt(ctx->int_type, i, 0), p, "shuf_down");
-            }
-            LLVMValueRef val_elem = LLVMBuildExtractElement(ctx->builder, val_vec, src_idx, "shuf_elem");
-            res_vec = LLVMBuildInsertElement(ctx->builder, res_vec, val_elem, LLVMConstInt(ctx->int_type, i, 0), "shuf_ins");
-        }
-        set_val(ctx, res_id, res_vec);
-        return;
+        return LLVMBuildSub(
+            ctx->builder, lane_idx, parameter, "shuf_up");
     }
 
-    uint32_t group_op = 0;
-    LLVMValueRef val_vec = NULL;
-    if (operand_count >= 3) 
+    return LLVMBuildAdd(
+        ctx->builder, lane_idx, parameter, "shuf_down");
+}
+
+static bool handle_group_non_uniform_shuffle(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands)
+{
+    if (!is_group_non_uniform_shuffle_opcode(opcode))
+        return false;
+
+    LLVMValueRef val_vec = get_val(ctx, operands[1]);
+    LLVMValueRef param_vec =
+        jit_to_numeric_int_vector(ctx, get_val(ctx, operands[2]));
+    LLVMValueRef result = LLVMGetUndef(LLVMTypeOf(val_vec));
+
+    for (int i = 0; i < SIMT_WIDTH; ++i)
     {
-        group_op = operands[1];
-        val_vec = get_val(ctx, operands[2]);
-    } 
-    else 
-    {
-        val_vec = get_val(ctx, operands[1]);
+        LLVMValueRef parameter = LLVMBuildExtractElement(
+            ctx->builder, param_vec, group_lane_index(ctx, i), "p_i");
+        LLVMValueRef source_idx = get_group_shuffle_source_index(
+            ctx, opcode, i, parameter);
+        LLVMValueRef value = LLVMBuildExtractElement(
+            ctx->builder, val_vec, source_idx, "shuf_elem");
+
+        result = LLVMBuildInsertElement(
+            ctx->builder, result, value, group_lane_index(ctx, i), "shuf_ins");
     }
 
-    bool is_float = is_float_type(LLVMTypeOf(val_vec));
-    LLVMValueRef res_vec = LLVMGetUndef(LLVMTypeOf(val_vec));
+    set_val(ctx, res_id, result);
+    return true;
+}
 
-    LLVMValueRef identity_val = NULL;
-    switch (opcode) 
+
+static LLVMValueRef get_group_non_uniform_identity(
+    JitContext* ctx,
+    uint16_t opcode,
+    bool is_float)
+{
+    switch (opcode)
     {
         case SpvOpGroupNonUniformIAdd:
         case SpvOpGroupNonUniformFAdd:
@@ -481,135 +806,276 @@ void handle_op_group_non_uniform(JitContext* ctx, uint16_t opcode, uint32_t res_
         case SpvOpGroupNonUniformBitwiseXor:
         case SpvOpGroupNonUniformLogicalOr:
         case SpvOpGroupNonUniformLogicalXor:
-            identity_val = is_float ? LLVMConstReal(ctx->float_type, 0.0) : LLVMConstInt(ctx->int_type, 0, 0);
-            break;
+            return is_float
+                ? LLVMConstReal(ctx->float_type, 0.0)
+                : LLVMConstInt(ctx->int_type, 0, 0);
+
         case SpvOpGroupNonUniformIMul:
         case SpvOpGroupNonUniformFMul:
-            identity_val = is_float ? LLVMConstReal(ctx->float_type, 1.0) : LLVMConstInt(ctx->int_type, 1, 0);
-            break;
+            return is_float
+                ? LLVMConstReal(ctx->float_type, 1.0)
+                : LLVMConstInt(ctx->int_type, 1, 0);
+
         case SpvOpGroupNonUniformBitwiseAnd:
         case SpvOpGroupNonUniformLogicalAnd:
-            identity_val = LLVMConstInt(ctx->int_type, ~0u, 0);
-            break;
+            return LLVMConstInt(ctx->int_type, ~0u, 0);
+
         case SpvOpGroupNonUniformFMin:
         case SpvOpGroupNonUniformSMin:
         case SpvOpGroupNonUniformUMin:
-            identity_val = is_float ? LLVMConstReal(ctx->float_type, 1e38) : LLVMConstInt(ctx->int_type, 0x7FFFFFFF, 0);
-            break;
+            return is_float
+                ? LLVMConstReal(ctx->float_type, 1e38)
+                : LLVMConstInt(ctx->int_type, 0x7FFFFFFF, 0);
+
         case SpvOpGroupNonUniformFMax:
         case SpvOpGroupNonUniformSMax:
         case SpvOpGroupNonUniformUMax:
-            identity_val = is_float ? LLVMConstReal(ctx->float_type, -1e38) : LLVMConstInt(ctx->int_type, 0x80000000, 0);
-            break;
+            return is_float
+                ? LLVMConstReal(ctx->float_type, -1e38)
+                : LLVMConstInt(ctx->int_type, 0x80000000, 0);
+
         default:
-            identity_val = is_float ? LLVMConstReal(ctx->float_type, 0.0) : LLVMConstInt(ctx->int_type, 0, 0);
-            break;
+            return is_float
+                ? LLVMConstReal(ctx->float_type, 0.0)
+                : LLVMConstInt(ctx->int_type, 0, 0);
+    }
+}
+
+static LLVMValueRef build_group_non_uniform_operation(
+    JitContext* ctx,
+    uint16_t opcode,
+    LLVMValueRef accum,
+    LLVMValueRef elem,
+    bool is_float)
+{
+    switch (opcode)
+    {
+        case SpvOpGroupNonUniformFAdd:
+            return LLVMBuildFAdd(ctx->builder, accum, elem, "fadd_acc");
+
+        case SpvOpGroupNonUniformIAdd:
+            return LLVMBuildAdd(ctx->builder, accum, elem, "iadd_acc");
+
+        case SpvOpGroupNonUniformFMul:
+            return LLVMBuildFMul(ctx->builder, accum, elem, "fmul_acc");
+
+        case SpvOpGroupNonUniformIMul:
+            return LLVMBuildMul(ctx->builder, accum, elem, "imul_acc");
+
+        case SpvOpGroupNonUniformFMin:
+        {
+            unsigned intrinsic_id =
+                LLVMLookupIntrinsicID("llvm.minnum", 11);
+            LLVMValueRef function = LLVMGetIntrinsicDeclaration(
+                ctx->module, intrinsic_id, &ctx->float_type, 1);
+            LLVMValueRef args[2] = { accum, elem };
+
+            return LLVMBuildCall2(
+                ctx->builder, LLVMGlobalGetValueType(function),
+                function, args, 2, "fmin_acc");
+        }
+
+        case SpvOpGroupNonUniformFMax:
+        {
+            unsigned intrinsic_id =
+                LLVMLookupIntrinsicID("llvm.maxnum", 11);
+            LLVMValueRef function = LLVMGetIntrinsicDeclaration(
+                ctx->module, intrinsic_id, &ctx->float_type, 1);
+            LLVMValueRef args[2] = { accum, elem };
+
+            return LLVMBuildCall2(
+                ctx->builder, LLVMGlobalGetValueType(function),
+                function, args, 2, "fmax_acc");
+        }
+
+        case SpvOpGroupNonUniformSMin:
+        {
+            LLVMValueRef cmp = LLVMBuildICmp(
+                ctx->builder, LLVMIntSLT, elem, accum, "smin_cmp");
+            return LLVMBuildSelect(
+                ctx->builder, cmp, elem, accum, "smin_acc");
+        }
+
+        case SpvOpGroupNonUniformSMax:
+        {
+            LLVMValueRef cmp = LLVMBuildICmp(
+                ctx->builder, LLVMIntSGT, elem, accum, "smax_cmp");
+            return LLVMBuildSelect(
+                ctx->builder, cmp, elem, accum, "smax_acc");
+        }
+
+        case SpvOpGroupNonUniformUMin:
+        {
+            LLVMValueRef cmp = LLVMBuildICmp(
+                ctx->builder, LLVMIntULT, elem, accum, "umin_cmp");
+            return LLVMBuildSelect(
+                ctx->builder, cmp, elem, accum, "umin_acc");
+        }
+
+        case SpvOpGroupNonUniformUMax:
+        {
+            LLVMValueRef cmp = LLVMBuildICmp(
+                ctx->builder, LLVMIntUGT, elem, accum, "umax_cmp");
+            return LLVMBuildSelect(
+                ctx->builder, cmp, elem, accum, "umax_acc");
+        }
+
+        case SpvOpGroupNonUniformBitwiseAnd:
+            return LLVMBuildAnd(ctx->builder, accum, elem, "band_acc");
+
+        case SpvOpGroupNonUniformBitwiseOr:
+            return LLVMBuildOr(ctx->builder, accum, elem, "bor_acc");
+
+        case SpvOpGroupNonUniformBitwiseXor:
+            return LLVMBuildXor(ctx->builder, accum, elem, "bxor_acc");
+
+        default:
+            return is_float
+                ? LLVMBuildFAdd(ctx->builder, accum, elem, "def_acc")
+                : LLVMBuildAdd(ctx->builder, accum, elem, "def_acc");
+    }
+}
+
+
+static LLVMValueRef store_group_non_uniform_scan_results(
+    JitContext* ctx,
+    LLVMValueRef result_vec,
+    LLVMValueRef* scan_results)
+{
+    for (int i = 0; i < SIMT_WIDTH; ++i)
+    {
+        result_vec = LLVMBuildInsertElement(
+            ctx->builder, result_vec, scan_results[i],
+            group_lane_index(ctx, i), "scan_ins");
     }
 
-    LLVMValueRef accum = identity_val;
+    return result_vec;
+}
+
+static LLVMValueRef store_group_non_uniform_reduction_result(
+    JitContext* ctx,
+    LLVMValueRef result_vec,
+    LLVMValueRef accum)
+{
+    for (int i = 0; i < SIMT_WIDTH; ++i)
+    {
+        result_vec = LLVMBuildInsertElement(
+            ctx->builder, result_vec, accum,
+            group_lane_index(ctx, i), "red_ins");
+    }
+
+    return result_vec;
+}
+
+static void handle_group_non_uniform_arithmetic(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t* operands,
+    int operand_count)
+{
+    uint32_t group_op = 0;
+    LLVMValueRef val_vec;
+
+    if (operand_count >= 3)
+    {
+        group_op = operands[1];
+        val_vec = get_val(ctx, operands[2]);
+    }
+    else
+    {
+        val_vec = get_val(ctx, operands[1]);
+    }
+
+    bool is_float = is_float_type(LLVMTypeOf(val_vec));
+    LLVMValueRef result = LLVMGetUndef(LLVMTypeOf(val_vec));
+    LLVMValueRef identity =
+        get_group_non_uniform_identity(ctx, opcode, is_float);
+
+    LLVMValueRef accum = identity;
     LLVMValueRef scan_results[SIMT_WIDTH];
 
-    for (int i = 0; i < SIMT_WIDTH; i++)
+    for (int i = 0; i < SIMT_WIDTH; ++i)
     {
-        LLVMValueRef elem = LLVMBuildExtractElement(ctx->builder, val_vec, LLVMConstInt(ctx->int_type, i, 0), "red_elem");
-        LLVMValueRef m = LLVMBuildExtractElement(ctx->builder, ctx->emask, LLVMConstInt(ctx->int_type, i, 0), "m_i");
+        LLVMValueRef lane_idx = group_lane_index(ctx, i);
+        LLVMValueRef elem = LLVMBuildExtractElement(
+            ctx->builder, val_vec, lane_idx, "red_elem");
+        LLVMValueRef mask = LLVMBuildExtractElement(
+            ctx->builder, ctx->emask, lane_idx, "m_i");
 
-        LLVMValueRef new_accum = NULL;
-        switch (opcode) 
-        {
-            case SpvOpGroupNonUniformFAdd:
-                new_accum = LLVMBuildFAdd(ctx->builder, accum, elem, "fadd_acc");
-                break;
-            case SpvOpGroupNonUniformIAdd:
-                new_accum = LLVMBuildAdd(ctx->builder, accum, elem, "iadd_acc");
-                break;
-            case SpvOpGroupNonUniformFMul:
-                new_accum = LLVMBuildFMul(ctx->builder, accum, elem, "fmul_acc");
-                break;
-            case SpvOpGroupNonUniformIMul:
-                new_accum = LLVMBuildMul(ctx->builder, accum, elem, "imul_acc");
-                break;
-            case SpvOpGroupNonUniformFMin: 
-            {
-                unsigned min_id = LLVMLookupIntrinsicID("llvm.minnum", 11);
-                LLVMValueRef min_func = LLVMGetIntrinsicDeclaration(ctx->module, min_id, &ctx->float_type, 1);
-                LLVMValueRef args[2] = { accum, elem };
-                new_accum = LLVMBuildCall2(ctx->builder, LLVMGlobalGetValueType(min_func), min_func, args, 2, "fmin_acc");
-                break;
-            }
-            case SpvOpGroupNonUniformFMax: 
-            {
-                unsigned max_id = LLVMLookupIntrinsicID("llvm.maxnum", 11);
-                LLVMValueRef max_func = LLVMGetIntrinsicDeclaration(ctx->module, max_id, &ctx->float_type, 1);
-                LLVMValueRef args[2] = { accum, elem };
-                new_accum = LLVMBuildCall2(ctx->builder, LLVMGlobalGetValueType(max_func), max_func, args, 2, "fmax_acc");
-                break;
-            }
-            case SpvOpGroupNonUniformSMin: 
-            {
-                LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntSLT, elem, accum, "smin_cmp");
-                new_accum = LLVMBuildSelect(ctx->builder, cmp, elem, accum, "smin_acc");
-                break;
-            }
-            case SpvOpGroupNonUniformSMax:
-            {
-                LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntSGT, elem, accum, "smax_cmp");
-                new_accum = LLVMBuildSelect(ctx->builder, cmp, elem, accum, "smax_acc");
-                break;
-            }
-            case SpvOpGroupNonUniformUMin: 
-            {
-                LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntULT, elem, accum, "umin_cmp");
-                new_accum = LLVMBuildSelect(ctx->builder, cmp, elem, accum, "umin_acc");
-                break;
-            }
-            case SpvOpGroupNonUniformUMax: 
-            {
-                LLVMValueRef cmp = LLVMBuildICmp(ctx->builder, LLVMIntUGT, elem, accum, "umax_cmp");
-                new_accum = LLVMBuildSelect(ctx->builder, cmp, elem, accum, "umax_acc");
-                break;
-            }
-            case SpvOpGroupNonUniformBitwiseAnd:
-                new_accum = LLVMBuildAnd(ctx->builder, accum, elem, "band_acc");
-                break;
-            case SpvOpGroupNonUniformBitwiseOr:
-                new_accum = LLVMBuildOr(ctx->builder, accum, elem, "bor_acc");
-                break;
-            case SpvOpGroupNonUniformBitwiseXor:
-                new_accum = LLVMBuildXor(ctx->builder, accum, elem, "bxor_acc");
-                break;
-            default:
-                new_accum = is_float ? LLVMBuildFAdd(ctx->builder, accum, elem, "def_acc") : LLVMBuildAdd(ctx->builder, accum, elem, "def_acc");
-                break;
-        }
+        LLVMValueRef new_accum = build_group_non_uniform_operation(
+            ctx, opcode, accum, elem, is_float);
 
-        if (group_op == 2) 
-        {
+        if (group_op == 2)
             scan_results[i] = accum;
-        }
 
-        accum = LLVMBuildSelect(ctx->builder, m, new_accum, accum, "sel_acc");
+        accum = LLVMBuildSelect(
+            ctx->builder, mask, new_accum, accum, "sel_acc");
 
-        if (group_op == 1) 
-        {
+        if (group_op == 1)
             scan_results[i] = accum;
-        }
     }
 
-    if (group_op == 0) 
+    if (group_op == 0)
     {
-        for (int i = 0; i < SIMT_WIDTH; i++) 
-        {
-            res_vec = LLVMBuildInsertElement(ctx->builder, res_vec, accum, LLVMConstInt(ctx->int_type, i, 0), "red_ins");
-        }
-    } 
-    else 
+        result = store_group_non_uniform_reduction_result(ctx, result, accum);
+    }
+    else
     {
-        for (int i = 0; i < SIMT_WIDTH; i++) 
-        {
-            res_vec = LLVMBuildInsertElement(ctx->builder, res_vec, scan_results[i], LLVMConstInt(ctx->int_type, i, 0), "scan_ins");
-        }
+        result = store_group_non_uniform_scan_results(ctx, result, scan_results);
     }
 
-    set_val(ctx, res_id, res_vec);
+    set_val(ctx, res_id, result);
+}
+
+
+void handle_op_group_non_uniform(
+    JitContext* ctx,
+    uint16_t opcode,
+    uint32_t res_id,
+    uint32_t type_id,
+    uint32_t* operands,
+    int operand_count)
+{
+    (void)type_id;
+
+    if (handle_group_non_uniform_elect(ctx, opcode, res_id))
+        return;
+
+    if (handle_group_non_uniform_all(ctx, opcode, res_id, operands))
+        return;
+
+    if (handle_group_non_uniform_any(ctx, opcode, res_id, operands))
+        return;
+
+    if (handle_group_non_uniform_all_equal(ctx, opcode, res_id, operands))
+        return;
+
+    if (handle_group_non_uniform_broadcast(ctx, opcode, res_id, operands))
+        return;
+
+    if (handle_group_non_uniform_broadcast_first(
+            ctx, opcode, res_id, operands))
+        return;
+
+    if (handle_group_non_uniform_ballot(ctx, opcode, res_id, operands))
+        return;
+
+    if (handle_group_non_uniform_inverse_ballot(
+            ctx, opcode, res_id, operands))
+        return;
+
+    if (handle_group_non_uniform_ballot_bit_count(
+            ctx, opcode, res_id, operands))
+        return;
+
+    if (handle_group_non_uniform_ballot_bit_extract(
+            ctx, opcode, res_id, operands))
+        return;
+
+    if (handle_group_non_uniform_shuffle(ctx, opcode, res_id, operands))
+        return;
+
+    handle_group_non_uniform_arithmetic(
+        ctx, opcode, res_id, operands, operand_count);
 }

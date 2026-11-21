@@ -50,6 +50,12 @@ typedef enum {
 } GpuPrimitiveType;
 
 typedef struct {
+    uint32_t wg_x, wg_y, wg_z;
+    uint32_t num_wg_x, num_wg_y, num_wg_z;
+    void *task_payload;
+} MeshWorkgroupTask;
+
+typedef struct {
     GpuState *orig_gpu;
     uint32_t start_idx;
     uint32_t end_idx;
@@ -78,9 +84,17 @@ typedef struct {
     float point_size;
     float line_width;
 
+    /* Task / Mesh shader workgroup execution state */
+    uint8_t *task_payloads;
+    uint32_t (*task_mesh_counts)[3];
+    MeshWorkgroupTask *mesh_tasks;
+    BuiltinMeshOutput *mesh_outputs;
+
     JitContext jit_ctx_vs; 
     JitContext jit_ctx_fs; 
     JitContext jit_ctx_cs;
+    JitContext jit_ctx_ts;
+    JitContext jit_ctx_ms;
 } RenderThreadArgs;
 
 typedef enum {
@@ -94,6 +108,8 @@ typedef enum {
     TASK_WIREFRAME_VERTICES,
     TASK_WIREFRAME_EDGES,
     TASK_COMPUTE_SIMT,
+    TASK_TASK_SHADER_SIMT,
+    TASK_MESH_SHADER_SIMT,
     TASK_EXIT
 } RenderTaskType;
 
@@ -136,6 +152,7 @@ float edge_func(Vec3 a, Vec3 b, Vec3 c);
 void draw_triangle(Vec4 v0, Vec4 v1, Vec4 v2, Col3 color, GpuState *gpu);
 void gpu_render_triangles_simt(void *opaque);
 void gpu_render_primitives_simt(void *opaque, GpuPrimitiveType prim_type, float point_size, float line_width);
+void gpu_render_mesh_tasks_simt(void *opaque);
 
 
 void compute_mode(GpuState *gpu);

@@ -19,8 +19,6 @@ void handle_op_select(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_slessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_ulessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_iequal(JitContext* ctx, uint32_t res_id, uint32_t* operands);
-void handle_op_fordlessthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
-void handle_op_fordgreaterthan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_fmod(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_bitwise_and(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_bitwise_or(JitContext* ctx, uint32_t res_id, uint32_t* operands);
@@ -53,6 +51,7 @@ void handle_op_any(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_all(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_is_nan(JitContext* ctx, uint32_t res_id, uint32_t* operands);
 void handle_op_is_inf(JitContext* ctx, uint32_t res_id, uint32_t* operands);
+void handle_op_fcmp(JitContext* ctx, uint32_t res_id, uint32_t* operands, const char* str, LLVMRealPredicate pred);
 
 
 void handle_op_composite_construct(JitContext* ctx, uint32_t res_id, uint32_t type_id,  uint32_t* operands);

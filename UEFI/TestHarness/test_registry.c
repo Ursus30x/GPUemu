@@ -13,6 +13,56 @@ CONST GPU_TEST_NODE gTestRegistry[] = {
         Test_Compute_VecAdd
     },
     {
+        "test-mesh.dispatch.indirect",
+        "Indirect mesh task dispatch from VRAM buffer offset",
+        Test_Mesh_IndirectDispatch
+    },
+    {
+        "test-mesh.edge.zero_draw_dispatch",
+        "DrawMeshTasks(0, 1, 1) with non-empty meshlet leaves framebuffer untouched",
+        Test_Mesh_ZeroDrawDispatch
+    },
+    {
+        "test-mesh.edge.zero_mesh_outputs",
+        "Mesh shader emitting zero vertices and primitives via SetMeshOutputsEXT(0, 0)",
+        Test_Mesh_ZeroMeshOutputs
+    },
+    {
+        "test-mesh.edge.zero_task_emit",
+        "Task shader emitting zero mesh tasks via EmitMeshTasksEXT(0, 1, 1)",
+        Test_Mesh_ZeroTaskEmit
+    },
+    {
+        "test-mesh.pipeline.mesh_only",
+        "Mesh-only pipeline without a Task shader bound",
+        Test_Mesh_MeshOnly
+    },
+    {
+        "test-mesh.pipeline.task_cull_raster",
+        "Task shader meshlet culling and mesh shader triangle rasterization",
+        Test_Mesh_TaskCullAndRaster
+    },
+    {
+        "test-mesh.sync.workgroup_barrier_shared",
+        "Multi-workgroup Task and Mesh shader shared memory and OpControlBarrier",
+        Test_Mesh_WorkgroupBarrierShared
+    },
+    {
+        "test-mesh.topology.lines",
+        "Mesh shader OutputLinesEXT topology",
+        Test_Mesh_TopologyLines
+    },
+    {
+        "test-mesh.topology.points",
+        "Mesh shader OutputPoints topology with gl_PointSize",
+        Test_Mesh_TopologyPoints
+    },
+    {
+        "test-mesh.varying.per_primitive",
+        "Per-primitive varying attribute (perprimitiveEXT) across shared vertices",
+        Test_Mesh_PerPrimitiveVarying
+    },
+    {
         "test-raster.blend.alpha",
         "Verifies alpha blending with background clear color",
         Test_Raster_BlendAlpha
