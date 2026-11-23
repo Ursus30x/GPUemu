@@ -349,6 +349,15 @@ EFI_STATUS
   IN GOP_3D_PROTOCOL      *This
   );
 
+/**
+ * Synchronizes with the GPU, blocking until all submitted commands finish execution.
+ */
+typedef
+EFI_STATUS
+(EFIAPI *GOP_3D_CMD_SYNC)(
+  IN GOP_3D_PROTOCOL      *This
+  );
+
 
 typedef
 EFI_STATUS
@@ -496,6 +505,7 @@ struct GOP_3D_PROTOCOL {
 
   GOP_3D_SUBMIT_CMD            GpuSubmitCmd;
   GOP_3D_PRESENT               GpuPresent;
+  GOP_3D_CMD_SYNC              GpuCmdSync;
 
   GOP_3D_CMD_VERTEX_ATTRIB_POINTER       GpuCmdVertexAttribPointer;       
   GOP_3D_CMD_ENABLE_VERTEX_ATTRIB_ARRAY  GpuCmdEnableVertexAttribArray;   

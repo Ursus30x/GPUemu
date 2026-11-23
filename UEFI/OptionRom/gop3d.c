@@ -596,6 +596,14 @@ EFI_STATUS EFIAPI GpuPresent(
 
     return EFI_SUCCESS;
 }
+
+EFI_STATUS EFIAPI GpuProtocolCmdSync(
+  IN GOP_3D_PROTOCOL *This
+  )
+{
+    (VOID)This;
+    return GpuCmdSync();
+}
 EFI_STATUS EFIAPI GpuCmdVertexAttribPointer(
   IN GOP_3D_PROTOCOL *This,
   IN UINT32          Location,
@@ -716,6 +724,7 @@ EFI_STATUS EFIAPI Gop3DSetup(IN OUT GPU_CONTEXT *Private)
 
   Private->Gop3dProtocol.GpuSubmitCmd                  = GpuSubmitCmd;
   Private->Gop3dProtocol.GpuPresent                    = GpuPresent;
+  Private->Gop3dProtocol.GpuCmdSync                    = GpuProtocolCmdSync;
 
   Private->Gop3dProtocol.GpuCmdVertexAttribPointer       = GpuCmdVertexAttribPointer;
   Private->Gop3dProtocol.GpuCmdEnableVertexAttribArray  = GpuCmdEnableVertexAttribArray;
